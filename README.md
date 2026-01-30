@@ -13,3 +13,13 @@ ADO_ORG=yourorg
 ADO_PROJECT=yourproject
 SITE_URL=https://yourcompany.sharepoint.com/sites/QA
 
+.vscode/mcp.json
+
+{
+  "servers": {
+    "ado-sharepoint": {
+      "command": "node",
+      "args": ["server.js"]
+    }
+  }
+}
