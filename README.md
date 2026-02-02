@@ -4,25 +4,32 @@ from bs4 import BeautifulSoup
 ALL_CHANNELS = ["WHL", "RTL", "DTC", "CL1"]
 
 def clean_html(raw_html: str) -> str:
-    """Convert ADO HTML description into plain text."""
     if not raw_html:
         return ""
     soup = BeautifulSoup(raw_html, "html.parser")
     return soup.get_text(separator=" ")
 
-def detect_channels_from_description(description: str) -> list:
+def detect_channels(description: str, acceptance_criteria: str) -> list:
     """
-    Detect channel names from cleaned user story description.
-    If none found, return all channels.
+    Detect channels from Description + Acceptance Criteria.
     """
 
-    clean_text = clean_html(description).upper()
+    combined_text = (
+        clean_html(description) + " " +
+        clean_html(acceptance_criteria)
+    ).upper()
 
     found_channels = []
 
     for channel in ALL_CHANNELS:
         pattern = r"\b" + re.escape(channel) + r"\b"
-        if re.search(pattern, clean_text):
+        if re.search(pattern, combined_text):
             found_channels.append(channel)
 
-    return found_channels if found_channels else ALL_CHANNELS
+    if not found_channels:
+        print("\n⚠️  No channel mentioned in Description or Acceptance Criteria.")
+        print("➡️  As per rule, selecting ALL channels: WHL, RTL, DTC, CL1\n")
+        return ALL_CHANNELS
+
+    print(f"\n✅ Channels detected: {found_channels}\n")
+    return found_channels
