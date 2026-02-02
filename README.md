@@ -1,23 +1,19 @@
-import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
 import fs from "fs";
 
 dotenv.config();
 
-const app = express();
-app.use(express.json());
+/* ------------ Get ID from command line ------------ */
+const userStoryId = process.argv[2];
 
-/* ------------ Extract Work Item ID from URL ------------ */
-function extractWorkItemIdFromUrl(url) {
-  const match = url.match(/workitems\/edit\/(\d+)/);
-  if (match && match[1]) {
-    return match[1];
-  }
-  throw new Error("Invalid Azure DevOps User Story URL");
+if (!userStoryId) {
+  console.log("❌ Please provide User Story ID");
+  console.log("Example: node server.js 718521");
+  process.exit(1);
 }
 
-/* ------------ Get User Story with Relations ------------ */
+/* ------------ Fetch User Story ------------ */
 async function getUserStoryWithAttachments(id) {
   const url = `https://dev.azure.com/${process.env.ADO_ORG}/${process.env.ADO_PROJECT}/_apis/wit/workitems/${id}?$expand=relations&api-version=7.0`;
 
@@ -45,21 +41,17 @@ async function downloadAttachment(url, fileName) {
 
   const filePath = `./attachments/${fileName}`;
   fs.writeFileSync(filePath, response.data);
-
-  console.log(`Attachment saved: ${filePath}`);
+  console.log(`📎 Attachment saved: ${filePath}`);
 }
 
-/* ------------ API Endpoint ------------ */
-app.post("/fetch-userstory", async (req, res) => {
+/* ------------ Main Execution ------------ */
+async function run() {
   try {
-    const { userStoryUrl } = req.body;
+    console.log(`\nFetching User Story: ${userStoryId}\n`);
 
-    const id = extractWorkItemIdFromUrl(userStoryUrl);
-    console.log("\nExtracted Work Item ID:", id);
+    const userStory = await getUserStoryWithAttachments(userStoryId);
 
-    const userStory = await getUserStoryWithAttachments(id);
-
-    console.log("\n========== USER STORY DETAILS ==========");
+    console.log("========== USER STORY DETAILS ==========");
     console.log("ID:", userStory.id);
     console.log("Title:", userStory.fields["System.Title"]);
     console.log("Description:", userStory.fields["System.Description"]);
@@ -82,17 +74,9 @@ app.post("/fetch-userstory", async (req, res) => {
     } else {
       console.log("No attachments found.");
     }
-
-    res.json({
-      message: "User story fetched. Check console logs and attachments folder.",
-    });
   } catch (e) {
     console.error("Error:", e.message);
-    res.status(500).send(e.message);
   }
-});
+}
 
-/* ------------ Start Server ------------ */
-app.listen(3000, () => {
-  console.log("ADO MCP Test Server running on port 3000");
-});
+run();
