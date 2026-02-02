@@ -1,32 +1,25 @@
 import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
-import xlsx from "xlsx";
+import fs from "fs";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 
-/* ---------------- GRAPH TOKEN ---------------- */
-
-async function getGraphToken() {
-  const url = `https://login.microsoftonline.com/${process.env.TENANT_ID}/oauth2/v2.0/token`;
-
-  const params = new URLSearchParams();
-  params.append("client_id", process.env.CLIENT_ID);
-  params.append("client_secret", process.env.CLIENT_SECRET);
-  params.append("scope", "https://graph.microsoft.com/.default");
-  params.append("grant_type", "client_credentials");
-
-  const res = await axios.post(url, params);
-  return res.data.access_token;
+/* ------------ Extract Work Item ID from URL ------------ */
+function extractWorkItemIdFromUrl(url) {
+  const match = url.match(/workitems\/edit\/(\d+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  throw new Error("Invalid Azure DevOps User Story URL");
 }
 
-/* ---------------- AZURE DEVOPS USER STORY ---------------- */
-
-async function getUserStory(id) {
-  const url = `https://dev.azure.com/${process.env.ADO_ORG}/${process.env.ADO_PROJECT}/_apis/wit/workitems/${id}?api-version=7.0`;
+/* ------------ Get User Story with Relations ------------ */
+async function getUserStoryWithAttachments(id) {
+  const url = `https://dev.azure.com/${process.env.ADO_ORG}/${process.env.ADO_PROJECT}/_apis/wit/workitems/${id}?$expand=relations&api-version=7.0`;
 
   const res = await axios.get(url, {
     headers: {
@@ -36,130 +29,70 @@ async function getUserStory(id) {
     },
   });
 
-  return res.data.fields;
-}
-
-/* ---------------- SHAREPOINT SEARCH ---------------- */
-
-async function searchSharePoint(text, token) {
-  const url = "https://graph.microsoft.com/v1.0/search/query";
-
-  const body = {
-    requests: [
-      {
-        entityTypes: ["driveItem"],
-        query: { queryString: text },
-      },
-    ],
-  };
-
-  const res = await axios.post(url, body, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
   return res.data;
 }
 
-/* ---------------- READ EXCEL FROM SHAREPOINT ---------------- */
-
-async function readExcelFromSharePoint(driveId, itemId, token) {
-  const url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}/content`;
-
+/* ------------ Download Attachment ------------ */
+async function downloadAttachment(url, fileName) {
   const response = await axios.get(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization:
+        "Basic " +
+        Buffer.from(":" + process.env.ADO_PAT).toString("base64"),
+    },
     responseType: "arraybuffer",
   });
 
-  const workbook = xlsx.read(response.data, { type: "buffer" });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
+  const filePath = `./attachments/${fileName}`;
+  fs.writeFileSync(filePath, response.data);
 
-  return rows;
+  console.log(`Attachment saved: ${filePath}`);
 }
 
-/* ---------------- GROUP INTO TEST SCRIPT STRUCTURE ---------------- */
-
-function groupTestScripts(rows) {
-  const grouped = {};
-
-  rows.forEach((row) => {
-    const id = row["Test Case ID / Test Script ID"];
-    if (!id) return;
-
-    if (!grouped[id]) {
-      grouped[id] = {
-        testCaseId: id,
-        preCondition: row["Pre-Condition & Assumptions"],
-        requirementMapping: row["Requirement Mapping"],
-        steps: [],
-      };
-    }
-
-    grouped[id].steps.push({
-      stepNo: row["Test Step No."],
-      description: row["Test Step Description"],
-      screen: row["Screen Name"],
-      data: row["Test Data"],
-      expected: row["Expected Results"],
-    });
-  });
-
-  return Object.values(grouped);
-}
-
-/* ---------------- MAIN API ---------------- */
-
-app.post("/find-testcases", async (req, res) => {
+/* ------------ API Endpoint ------------ */
+app.post("/fetch-userstory", async (req, res) => {
   try {
-    const { userStoryId } = req.body;
+    const { userStoryUrl } = req.body;
 
-    console.log("Fetching ADO User Story...");
-    const story = await getUserStory(userStoryId);
+    const id = extractWorkItemIdFromUrl(userStoryUrl);
+    console.log("\nExtracted Work Item ID:", id);
 
-    console.log("Getting Graph token...");
-    const token = await getGraphToken();
+    const userStory = await getUserStoryWithAttachments(id);
 
-    console.log("Searching SharePoint...");
-    const searchText = story["System.Title"];
-    const searchResults = await searchSharePoint(searchText, token);
+    console.log("\n========== USER STORY DETAILS ==========");
+    console.log("ID:", userStory.id);
+    console.log("Title:", userStory.fields["System.Title"]);
+    console.log("Description:", userStory.fields["System.Description"]);
+    console.log(
+      "Acceptance Criteria:",
+      userStory.fields["Microsoft.VSTS.Common.AcceptanceCriteria"]
+    );
+    console.log("=========================================\n");
 
-    const hits =
-      searchResults?.value?.[0]?.hitsContainers?.[0]?.hits || [];
+    if (userStory.relations) {
+      for (const rel of userStory.relations) {
+        if (rel.rel === "AttachedFile") {
+          const fileUrl = rel.url;
+          const fileName = rel.attributes.name;
 
-    let allTestScripts = [];
-
-    for (const hit of hits) {
-      const resource = hit.resource;
-
-      if (!resource.name.endsWith(".xlsx")) continue;
-
-      const driveId = resource.parentReference.driveId;
-      const itemId = resource.id;
-
-      console.log(`Reading Excel: ${resource.name}`);
-
-      const rows = await readExcelFromSharePoint(
-        driveId,
-        itemId,
-        token
-      );
-
-      const scripts = groupTestScripts(rows);
-      allTestScripts.push(...scripts);
+          console.log("Downloading attachment:", fileName);
+          await downloadAttachment(fileUrl, fileName);
+        }
+      }
+    } else {
+      console.log("No attachments found.");
     }
 
     res.json({
-      userStory: story,
-      matchedTestScripts: allTestScripts,
+      message: "User story fetched. Check console logs and attachments folder.",
     });
   } catch (e) {
-    console.error(e);
+    console.error("Error:", e.message);
     res.status(500).send(e.message);
   }
 });
 
-/* ---------------- START SERVER ---------------- */
-
+/* ------------ Start Server ------------ */
 app.listen(3000, () => {
-  console.log("MCP ADO + SharePoint server running on port 3000");
+  console.log("ADO MCP Test Server running on port 3000");
 });
