@@ -1,70 +1,26 @@
-import os
-import uuid
-import pandas as pd
-from dotenv import load_dotenv
-from openai import AzureOpenAI
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
+PS C:\Users\h84609n\Desktop\VectorDb Test> py vectordbcheck.py
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\pandas\core\indexes\base.py", line 3641, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 168, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 197, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7668, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7676, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'TestCaseID'
 
-load_dotenv()
+The above exception was the direct cause of the following exception:
 
-# ========= Read from ENV =========
-OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY")
-EMBED_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBED_DEPLOYMENT")
-
-SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
-SEARCH_KEY = os.getenv("AZURE_SEARCH_KEY")
-INDEX_NAME = os.getenv("AZURE_SEARCH_INDEX")
-
-EXCEL_PATH = "Indiv_US_718521_Test Scripts_v1.0.xlsx"
-
-# ========= Clients =========
-openai_client = AzureOpenAI(
-    api_key=OPENAI_KEY,
-    api_version="2024-02-01",
-    azure_endpoint=OPENAI_ENDPOINT
-)
-
-search_client = SearchClient(
-    endpoint=SEARCH_ENDPOINT,
-    index_name=INDEX_NAME,
-    credential=AzureKeyCredential(SEARCH_KEY)
-)
-
-# ========= Read Excel =========
-df = pd.read_excel(EXCEL_PATH)
-
-COL_USERSTORY = "UserStoryID"
-COL_TESTCASE = "TestCaseID"
-COL_MODULE = "Module"
-COL_CHANNEL = "Channel"
-COL_STEPS = "TestSteps"
-COL_EXPECTED = "ExpectedResult"
-
-for _, row in df.iterrows():
-    content = f"""
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\VectorDb Test\vectordbcheck.py", line 46, in <module>
     Test Case ID: {row[COL_TESTCASE]}
-    User Story: {row[COL_USERSTORY]}
-    Steps: {row[COL_STEPS]}
-    Expected Result: {row[COL_EXPECTED]}
-    """
-
-    emb = openai_client.embeddings.create(
-        model=EMBED_DEPLOYMENT,
-        input=content
-    ).data[0].embedding
-
-    doc = {
-        "id": str(uuid.uuid4()),
-        "userStoryId": str(row[COL_USERSTORY]),
-        "testCaseId": str(row[COL_TESTCASE]),
-        "module": str(row[COL_MODULE]),
-        "channel": str(row[COL_CHANNEL]),
-        "content": content,
-        "embedding": emb
-    }
-
-    search_client.upload_documents([doc])
-
-print("✅ Uploaded Excel to Vector DB using ENV config")
+                   ~~~^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\pandas\core\series.py", line 959, in __getitem__
+    return self._get_value(key)
+           ~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\pandas\core\series.py", line 1046, in _get_value
+    loc = self.index.get_loc(label)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\pandas\core\indexes\base.py", line 3648, in get_loc
+    raise KeyError(key) from err
+KeyError: 'TestCaseID'
+(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> 
