@@ -1,113 +1,66 @@
-import os
-import uuid
-import pandas as pd
-from dotenv import load_dotenv
-from openai import AzureOpenAI
-from azure.search.documents import SearchClient
+# index_manager.py
 from azure.core.credentials import AzureKeyCredential
-
-# ========= Load ENV =========
-load_dotenv()
-
-OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY")
-EMBED_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBED_DEPLOYMENT")
-
-SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
-SEARCH_KEY = os.getenv("AZURE_SEARCH_KEY")
-INDEX_NAME = os.getenv("AZURE_SEARCH_INDEX")
-
-EXCEL_PATH = "Indiv_US_718521_Test Scripts_v1.0.xlsx"
-
-# ========= Clients =========
-openai_client = AzureOpenAI(
-    api_key=OPENAI_KEY,
-    api_version="2024-02-01",
-    azure_endpoint=OPENAI_ENDPOINT
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchIndex, SimpleField, SearchField, SearchFieldDataType,
+    VectorSearch, HnswAlgorithmConfiguration, VectorSearchProfile
 )
 
-search_client = SearchClient(
-    endpoint=SEARCH_ENDPOINT,
-    index_name=INDEX_NAME,
-    credential=AzureKeyCredential(SEARCH_KEY)
-)
+def ensure_index_exists(endpoint, key, index_name):
+    client = SearchIndexClient(endpoint, AzureKeyCredential(key))
 
-# ========= Read Excel =========
-xls = pd.ExcelFile(EXCEL_PATH)
+    existing_indexes = [idx.name for idx in client.list_indexes()]
 
-for sheet in xls.sheet_names:
-    print(f"\n📄 Processing sheet: {sheet}")
+    if index_name in existing_indexes:
+        print(f"✅ Index '{index_name}' already exists — proceeding to upload\n")
+        return
 
-    df = pd.read_excel(xls, sheet_name=sheet)
-    df.columns = df.columns.str.strip()  # clean headers
+    print(f"🛠️ Index '{index_name}' not found — creating now...\n")
 
-    channel = sheet.strip()
+    vector_search = VectorSearch(
+        algorithms=[
+            HnswAlgorithmConfiguration(
+                name="hnsw-config",
+                parameters={
+                    "m": 8,
+                    "efConstruction": 400,
+                    "efSearch": 100,
+                    "metric": "cosine"
+                }
+            )
+        ],
+        profiles=[
+            VectorSearchProfile(
+                name="vector-profile",
+                algorithm_configuration_name="hnsw-config"
+            )
+        ]
+    )
 
-    COL_TESTCASE = "Test Case ID / Test Script ID"
-    COL_SCENARIO_DESC = "Test Scenario Description"
-    COL_SCRIPT_DESC = "Test Script Description"
-    COL_PRECONDITION = "Pre-Condition & Assumptions"
-    COL_STEP_NO = "Test Step No."
-    COL_STEP_DESC = "Test Step Description"
-    COL_SCREEN = "Screen Name"
-    COL_TESTDATA = "Test Data"
-    COL_EXPECTED = "Expected Results"
-    COL_REQ_MAP = "Requirement Mapping"
+    fields = [
+        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
+        SimpleField(name="testCaseId", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="requirementMapping", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="channel", type=SearchFieldDataType.String, filterable=True),
+        SearchField(
+            name="content",
+            type=SearchFieldDataType.String,
+            searchable=True,
+            analyzer_name="standard.lucene"
+        ),
+        SearchField(
+            name="embedding",
+            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+            vector_search_dimensions=3072,
+            vector_search_profile_name="vector-profile"
+        ),
+    ]
 
-    # ========= Group by TestCaseId =========
-    grouped = df.groupby(COL_TESTCASE)
+    index = SearchIndex(
+        name=index_name,
+        fields=fields,
+        vector_search=vector_search
+    )
 
-    for test_case_id, group in grouped:
-        try:
-            steps_text = ""
-
-            for _, row in group.iterrows():
-                steps_text += f"""
-Step {row.get(COL_STEP_NO, '')}:
-{row.get(COL_STEP_DESC, '')}
-Screen: {row.get(COL_SCREEN, '')}
-Test Data: {row.get(COL_TESTDATA, '')}
-Expected: {row.get(COL_EXPECTED, '')}
-"""
-
-            first = group.iloc[0]
-
-            content = f"""
-Test Case: {test_case_id}
-Channel: {channel}
-
-Scenario:
-{first.get(COL_SCENARIO_DESC, '')}
-
-Script:
-{first.get(COL_SCRIPT_DESC, '')}
-
-Precondition:
-{first.get(COL_PRECONDITION, '')}
-
-All Steps:
-{steps_text}
-"""
-
-            # ========= Create Embedding =========
-            emb = openai_client.embeddings.create(
-                model=EMBED_DEPLOYMENT,
-                input=content
-            ).data[0].embedding
-
-            document = {
-                "id": str(uuid.uuid4()),
-                "testCaseId": str(test_case_id),
-                "requirementMapping": str(first.get(COL_REQ_MAP, "")),
-                "channel": channel,
-                "content": content,
-                "embedding": emb
-            }
-
-            search_client.upload_documents([document])
-            print(f"✅ Uploaded TestCase {test_case_id} from {channel}")
-
-        except Exception as e:
-            print(f"❌ Error in {test_case_id}:", e)
-
-print("\n🎉 All testcases uploaded into Azure AI Search vector DB")
+    client.create_index(index)
+    print(f"✅ Index '{index_name}' created successfully\n")
