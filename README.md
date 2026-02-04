@@ -1,26 +1,38 @@
-Now to Set up RAG Pipeline
-Create an Environment Configuration File (So that the RAG pipeline can be re-used across usecases in NewRes)
-Store all pipeline parameters:
-o	DB connection details
-o	Embedding model name & dimension
-o	Chunk size & overlap strategy 
-o	Top‑K retrieval value (K=40)
-o	Re-ranking threshold (50%)
-o	Path locations for exports/imports (if any)
-Environment file format: .env or YAML.
-------------------------------------------
-# config.yaml template for GHCP Reusable RAG Pipeline
-VECTOR_DB: qdrant-library
-QDRANT_PATH: ./qdrant_db  # Local file-based Qdrant DB
-QDRANT_COLLECTION: testcases
-EMBEDDING_MODEL: fastembed
-EMBEDDING_MODEL_NAME: BAAI/bge-small-en-v1.5
-EMBEDDING_DIM: 384
-LLM: copilot-chat
-CHUNK_STRATEGY: row-level  # One embedding per test case (row)
-CHUNK_SIZE: 0  # Not used, row-level only
-CHUNK_OVERLAP: 0  # Not used, row-level only
+# ================== RAG PIPELINE CONFIG ==================
+
+# -------- Azure AI Search (Vector DB) --------
+VECTOR_DB: azure-ai-search
+AZURE_SEARCH_ENDPOINT: ${AZURE_SEARCH_ENDPOINT}
+AZURE_SEARCH_KEY: ${AZURE_SEARCH_KEY}
+AZURE_SEARCH_INDEX: testcase-vectordb
+
+# -------- Azure OpenAI --------
+AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
+AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY}
+AZURE_OPENAI_API_VERSION: 2024-02-15-preview
+
+EMBEDDING_MODEL_DEPLOYMENT: text-embedding-3-large
+EMBEDDING_DIM: 3072
+
+CHAT_MODEL_DEPLOYMENT: gpt-4o
+
+# -------- Chunking Strategy --------
+CHUNK_STRATEGY: testcase-step-aware
+MAX_STEPS_PER_CHUNK: 8
+CHUNK_OVERLAP: 0
+
+# -------- Retrieval --------
 TOP_K: 40
 RERANK_THRESHOLD: 0.5
+
+# -------- Metadata Fields in Index --------
+INDEX_FIELDS:
+  - testCaseId
+  - chunkId
+  - channel
+  - requirementMapping
+
+# -------- Paths --------
+EXCEL_INPUT_DIR: ./excel
 CONTEXT_DIR: ./context
 EXPORT_DIR: ./export
