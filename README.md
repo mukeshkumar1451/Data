@@ -1,25 +1,17 @@
-# config.py
-import os
-from dotenv import load_dotenv
-from openai import AzureOpenAI
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
+# excel_reader.py
+import pandas as pd
 
-load_dotenv()
+def read_testcases_by_sheet(excel_path):
+    xls = pd.ExcelFile(excel_path)
 
-def get_openai_client():
-    return AzureOpenAI(
-        api_key=os.getenv("AZURE_OPENAI_KEY"),
-        api_version="2024-02-01",
-        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
-    )
+    for sheet in xls.sheet_names:
+        df = pd.read_excel(xls, sheet_name=sheet)
+        df.columns = df.columns.str.strip()
 
-def get_search_client():
-    return SearchClient(
-        endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
-        index_name=os.getenv("AZURE_SEARCH_INDEX"),
-        credential=AzureKeyCredential(os.getenv("AZURE_SEARCH_KEY"))
-    )
+        channel = sheet.strip()
 
-def get_embed_deployment():
-    return os.getenv("AZURE_OPENAI_EMBED_DEPLOYMENT")
+        COL_TESTCASE = "Test Case ID / Test Script ID"
+        grouped = df.groupby(COL_TESTCASE)
+
+        for test_case_id, group in grouped:
+            yield channel, test_case_id, group
