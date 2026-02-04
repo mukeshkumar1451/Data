@@ -1,66 +1,50 @@
-# index_manager.py
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents.indexes import SearchIndexClient
-from azure.search.documents.indexes.models import (
-    SearchIndex, SimpleField, SearchField, SearchFieldDataType,
-    VectorSearch, HnswAlgorithmConfiguration, VectorSearchProfile
-)
+# main.py
+import os
+from dotenv import load_dotenv
 
-def ensure_index_exists(endpoint, key, index_name):
-    client = SearchIndexClient(endpoint, AzureKeyCredential(key))
+from config import get_openai_client, get_search_client, get_embed_deployment
+from excel_reader import read_testcases_by_sheet
+from vector_uploader import upload_testcase
+from index_manager import ensure_index_exists
 
-    existing_indexes = [idx.name for idx in client.list_indexes()]
+# ========= Load ENV =========
+load_dotenv()
 
-    if index_name in existing_indexes:
-        print(f"✅ Index '{index_name}' already exists — proceeding to upload\n")
-        return
+EXCEL_PATH = "Indiv_US_718521_Test Scripts_v1.0.xlsx"
 
-    print(f"🛠️ Index '{index_name}' not found — creating now...\n")
+def main():
+    # ---- Step 1: Ensure index exists ----
+    search_endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
+    search_key = os.getenv("AZURE_SEARCH_KEY")
+    index_name = os.getenv("AZURE_SEARCH_INDEX")
 
-    vector_search = VectorSearch(
-        algorithms=[
-            HnswAlgorithmConfiguration(
-                name="hnsw-config",
-                parameters={
-                    "m": 8,
-                    "efConstruction": 400,
-                    "efSearch": 100,
-                    "metric": "cosine"
-                }
+    ensure_index_exists(search_endpoint, search_key, index_name)
+
+    # ---- Step 2: Create clients ----
+    openai_client = get_openai_client()
+    search_client = get_search_client()
+    embed_deployment = get_embed_deployment()
+
+    print("🚀 Starting Excel → Vector DB upload...\n")
+
+    # ---- Step 3: Process Excel ----
+    for channel, test_case_id, group in read_testcases_by_sheet(EXCEL_PATH):
+        try:
+            upload_testcase(
+                openai_client=openai_client,
+                search_client=search_client,
+                embed_deployment=embed_deployment,
+                channel=channel,
+                test_case_id=test_case_id,
+                group=group
             )
-        ],
-        profiles=[
-            VectorSearchProfile(
-                name="vector-profile",
-                algorithm_configuration_name="hnsw-config"
-            )
-        ]
-    )
+            print(f"✅ Uploaded TestCase '{test_case_id}' from sheet '{channel}'")
 
-    fields = [
-        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
-        SimpleField(name="testCaseId", type=SearchFieldDataType.String, filterable=True),
-        SimpleField(name="requirementMapping", type=SearchFieldDataType.String, filterable=True),
-        SimpleField(name="channel", type=SearchFieldDataType.String, filterable=True),
-        SearchField(
-            name="content",
-            type=SearchFieldDataType.String,
-            searchable=True,
-            analyzer_name="standard.lucene"
-        ),
-        SearchField(
-            name="embedding",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
-            vector_search_dimensions=3072,
-            vector_search_profile_name="vector-profile"
-        ),
-    ]
+        except Exception as e:
+            print(f"❌ Error in TestCase '{test_case_id}': {e}")
 
-    index = SearchIndex(
-        name=index_name,
-        fields=fields,
-        vector_search=vector_search
-    )
+    print("\n🎉 All testcases uploaded successfully into Azure AI Search vector index")
 
-    client.create_index(index)
-    print(f"✅ Index '{index_name}' created successfully\n")
+
+if __name__ == "__main__":
+    main()
