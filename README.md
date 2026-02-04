@@ -1,14 +1,7 @@
-AZURE_SEARCH_ENDPOINT=...
-AZURE_SEARCH_KEY=...
-AZURE_SEARCH_INDEX=testcase-vectordb
-
-AZURE_OPENAI_ENDPOINT=...
-AZURE_OPENAI_KEY=...
-AZURE_OPENAI_API_VERSION=2024-02-15-preview
-
-EMBEDDING_MODEL=text-embedding-3-large
-EMBEDDING_DIM=3072
-CHAT_MODEL=gpt-4o
-
-MAX_STEPS_PER_CHUNK=8
-EXCEL_INPUT_DIR=./excel
+. Context Retrieval 
+•	Embed the input User Story using same embedding model.
+•	Run the Input User Story against the Vector DB through query (Semantic Search)
+o	Test Case embeddings
+o	User Story embeddings
+o	Meta Tags used to store the embeddings can also be used to drill down the search for more accuracy
+o	Retrieve top K=40 combined results.
