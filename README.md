@@ -1,183 +1,25 @@
-(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> py vectordbcheck.py
-uploading to index: testcase-vector-index
+# config.py
+import os
+from dotenv import load_dotenv
+from openai import AzureOpenAI
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
 
-📄 Processing sheet: RTL
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-uploading to index: testcase-vector-index
+load_dotenv()
 
-📄 Processing sheet: DTC
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-uploading to index: testcase-vector-index
+def get_openai_client():
+    return AzureOpenAI(
+        api_key=os.getenv("AZURE_OPENAI_KEY"),
+        api_version="2024-02-01",
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+    )
 
-📄 Processing sheet: WHL
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-uploading to index: testcase-vector-index
+def get_search_client():
+    return SearchClient(
+        endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
+        index_name=os.getenv("AZURE_SEARCH_INDEX"),
+        credential=AzureKeyCredential(os.getenv("AZURE_SEARCH_KEY"))
+    )
 
-📄 Processing sheet: CL1
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-❌ Error: () The request is invalid. Details: The property 'channel' does not exis
-t on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-Code:
-Message: The request is invalid. Details: The property 'channel' does not exist on type 'search.documentFields' or is not present in the API version '2025-09-01'. Make sure to only use property names that are defined by the type.
-
-🎉 All sheets uploaded to Azure AI Search vector DB
+def get_embed_deployment():
+    return os.getenv("AZURE_OPENAI_EMBED_DEPLOYMENT")
