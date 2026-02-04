@@ -1,74 +1,48 @@
-import uuid
-from openai import AzureOpenAI
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
+import glob
 from config import get
+from index_manager import ensure_index
+from excel_reader import read_excel
+from vector_uploader import upload
 
-openai_client = AzureOpenAI(
-    api_key=get("AZURE_OPENAI_KEY"),
-    api_version=get("AZURE_OPENAI_API_VERSION"),
-    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
-)
+ensure_index()
 
-search_client = SearchClient(
-    endpoint=get("AZURE_SEARCH_ENDPOINT"),
-    index_name=get("AZURE_SEARCH_INDEX"),
-    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-)
+for file in glob.glob(f"{get('EXCEL_INPUT_DIR')}/*.xlsx"):
+    print(f"\n📘 Processing file: {file}")
 
-MAX_STEPS = get("MAX_STEPS_PER_CHUNK", int)
+    for sheet, tc, group, steps in read_excel(file):
+        upload(sheet, tc, group, steps)
 
+print("🎉 All testcases uploaded into Azure AI Search")
+---------------------------------------------------
+import pandas as pd
 
-def build_chunks(group):
-    chunks, current, count = [], "", 0
+def read_excel(file_path):
+    xls = pd.ExcelFile(file_path)
 
-    for _, row in group.iterrows():
-        step = str(row.get("Test Step No.", "")).strip()
-        if not step.startswith("Step"):
-            continue
+    for sheet in xls.sheet_names:
+        channel = sheet.strip()   # ✅ THIS IS YOUR CHANNEL
 
-        block = f"""{step}
-{row.get('Test Step Description','')}
-Screen: {row.get('Screen Name','')}
-Data: {row.get('Test Data','')}
-Expected: {row.get('Expected Results','')}
+        df = pd.read_excel(xls, sheet_name=sheet)
+        df.columns = df.columns.str.strip()
 
-"""
-        current += block
-        count += 1
+        COL_TC = "Test Case ID / Test Script ID"
+        COL_STEP = "Test Step No."
 
-        if count == MAX_STEPS:
-            chunks.append(current)
-            current, count = "", 0
+        # 🔥 Fix merged TestCaseId cells
+        df[COL_TC] = df[COL_TC].ffill()
 
-    if current:
-        chunks.append(current)
+        grouped = df.groupby(COL_TC)
 
-    return chunks
+        for tc, group in grouped:
+            step_count = (
+                group[COL_STEP]
+                .astype(str)
+                .str.strip()
+                .str.startswith("Step")
+                .sum()
+            )
 
+            print(f" sheet='{channel}' | test_case_id='{tc}' | steps={step_count}")
 
-def upload(sheet, tc, group, step_count):
-    chunks = build_chunks(group)
-
-    print(f"➡️ {tc}: {'Single' if step_count<=MAX_STEPS else 'Multi'} chunk ({len(chunks)})")
-
-    for idx, text in enumerate(chunks, 1):
-        content = f"TestCase: {tc}\nChannel: {sheet}\nChunk:{idx}\n\n{text}"
-
-        emb = openai_client.embeddings.create(
-            model=get("EMBEDDING_MODEL"),
-            input=content
-        ).data[0].embedding
-
-        doc = {
-            "id": str(uuid.uuid4()),
-            "testCaseId": tc,
-            "chunkId": idx,
-            "channel": sheet,
-            "content": content,
-            "embedding": emb
-        }
-
-        search_client.upload_documents([doc])
-
-    print(f"✅ {tc} uploaded\n")
+            # ✅ return channel
+            yield channel, tc, group, step_count
