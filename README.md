@@ -1,83 +1,39 @@
-# vector_uploader.py
-import uuid
+(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> py main.py
+🛠️ Index 'testcase-vectordb-test1' not found — creating now...
 
-STEPS_PER_CHUNK = 8
+retrievable is not a known attribute of class <class 'azure.search.documents.indexes.models._index.SearchField'> and will be ignored
+✅ Index 'testcase-vectordb-test1' created successfully with chunkId support
 
+🚀 Starting Excel → Vector DB upload...
 
-def build_chunks(group):
-    chunks = []
-    current = ""
-    counter = 0
+ sheet='RTL' | test_case_id='718516_RTL_01' | steps=1
+➡️ 718516_RTL_01: Single chunk
+🧩 718516_RTL_01: Total chunks created = 1
+   ⬆️ Uploading chunk 1/1
+✅ 718516_RTL_01 upload completed
 
-    for _, row in group.iterrows():
-        step_no = str(row.get("Test Step No.", "")).strip()
+✅ Uploaded TestCase '718516_RTL_01' from sheet 'RTL'
+ sheet='DTC' | test_case_id='718516_DTC_01' | steps=1
+➡️ 718516_DTC_01: Single chunk
+🧩 718516_DTC_01: Total chunks created = 1
+   ⬆️ Uploading chunk 1/1
+✅ 718516_DTC_01 upload completed
 
-        if not step_no.startswith("Step"):
-            continue
+✅ Uploaded TestCase '718516_DTC_01' from sheet 'DTC'
+ sheet='WHL' | test_case_id='718516_WHL_01' | steps=1
+➡️ 718516_WHL_01: Single chunk
+🧩 718516_WHL_01: Total chunks created = 1
+   ⬆️ Uploading chunk 1/1
+✅ 718516_WHL_01 upload completed
 
-        step_text = f"""
-{step_no}
-{row.get('Test Step Description', '')}
-Screen: {row.get('Screen Name', '')}
-Data: {row.get('Test Data', '')}
-Expected: {row.get('Expected Results', '')}
-"""
-        current += step_text
-        counter += 1
+✅ Uploaded TestCase '718516_WHL_01' from sheet 'WHL'
+ sheet='CL1' | test_case_id='718516_CL1_01' | steps=1
+➡️ 718516_CL1_01: Single chunk
+🧩 718516_CL1_01: Total chunks created = 1
+   ⬆️ Uploading chunk 1/1
+✅ 718516_CL1_01 upload completed
 
-        if counter == STEPS_PER_CHUNK:
-            chunks.append(current)
-            current = ""
-            counter = 0
+✅ Uploaded TestCase '718516_CL1_01' from sheet 'CL1'
 
-    if current:
-        chunks.append(current)
-
-    return chunks
-
-
-def upload_testcase(openai_client, search_client, embed_deployment,
-                    channel, test_case_id, group, step_count):
-
-    first = group.iloc[0]
-
-    # ---- Decide chunking ----
-    if step_count <= STEPS_PER_CHUNK:
-        print(f"➡️ {test_case_id}: Single chunk")
-    else:
-        print(f"➡️ {test_case_id}: Splitting into chunks of {STEPS_PER_CHUNK} steps")
-
-    step_chunks = build_chunks(group)
-
-    print(f"🧩 {test_case_id}: Total chunks created = {len(step_chunks)}")
-
-    # ---- Upload each chunk ----
-    for idx, steps_block in enumerate(step_chunks, start=1):
-        print(f"   ⬆️ Uploading chunk {idx}/{len(step_chunks)}")
-
-        content = f"""
-Test Case: {test_case_id}
-Channel: {channel}
-Chunk: {idx}
-
-Steps:
-{steps_block}
-"""
-
-        emb = openai_client.embeddings.create(
-            model=embed_deployment,
-            input=content
-        ).data[0].embedding
-
-        document = {
-            "id": str(uuid.uuid4()),
-            "testCaseId": str(test_case_id),
-            "chunkId": idx,
-            "channel": channel,
-            "content": content,
-            "embedding": emb
-        }
-
-        search_client.upload_documents([document])
-
-    print(f"✅ {test_case_id} upload completed\n")
+🎉 All testcases uploaded successfully into Azure AI Search vector index
+(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> 
