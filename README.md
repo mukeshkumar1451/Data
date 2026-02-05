@@ -1,9 +1,8 @@
-
 📄 Writing test cases into Excel template...
 
 
 ❌ ERROR OCCURRED
-MultiSheetExcelExporter.export() got an unexpected keyword argument 'channels'
+'scenario'
 
 📌 TRACEBACK:
 
@@ -14,8 +13,11 @@ Traceback (most recent call last):
         testcases=parsed_steps,
         ^^^^^^^^^^^^^^^^^^^^^^^
     ...<2 lines>...
-        channels=channels
-        ^^^^^^^^^^^^^^^^^
+
+
     )
     ^
-TypeError: MultiSheetExcelExporter.export() got an unexpected keyword argument 'channels'
+  File "C:\Users\h84609n\Desktop\VectorDb Test\excel_multi_sheet_exporter.py", line 56, in export
+    scenario = tc["scenario"]
+               ~~^^^^^^^^^^^^
+KeyError: 'scenario'
