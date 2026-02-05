@@ -1,65 +1,74 @@
 import re
 
 
-def parse_llm_steps(llm_text, channels):
+def parse_llm_steps(llm_text: str):
     """
-    Convert LLM raw text into structured testcase objects
+    Parse LLM output and MERGE ALL steps into ONE SINGLE testcase.
+    Step numbers will be re-sequenced continuously.
+
+    Returns:
+    [
+        {
+            "scenario": str,
+            "script": str,
+            "precondition": str,
+            "requirement": str,
+            "steps": [
+                {
+                    "step_no": "Step 01",
+                    "action": "...",
+                    "screen": "...",
+                    "testdata": "...",
+                    "expected": "..."
+                }
+            ]
+        }
+    ]
     """
 
-    testcases = []
-    current_tc = None
+    lines = llm_text.split("\n")
 
-    lines = [l.strip() for l in llm_text.splitlines() if l.strip()]
+    scenario = ""
+    script = ""
+    precondition = ""
+    requirement = ""
 
-    step_pattern = re.compile(r"^Step\s+\d+", re.IGNORECASE)
+    steps = []
+    step_counter = 1
 
-    for line in lines:
+    for raw in lines:
+        line = raw.strip()
 
-        # ---------------------------------------
-        # Start of new testcase
-        # ---------------------------------------
         if line.startswith("Scenario:"):
-            if current_tc:
-                testcases.append(current_tc)
-
-            current_tc = {
-                "scenario": line.split(":", 1)[1].strip(),
-                "script": "",
-                "precondition": "",
-                "requirement": "",
-                "steps": [],
-                "channels": channels
-            }
+            scenario = line.split(":", 1)[1].strip()
 
         elif line.startswith("Script:"):
-            current_tc["script"] = line.split(":", 1)[1].strip()
+            script = line.split(":", 1)[1].strip()
 
         elif line.startswith("Precondition:"):
-            current_tc["precondition"] = line.split(":", 1)[1].strip()
+            precondition = line.split(":", 1)[1].strip()
 
         elif line.startswith("Requirement:"):
-            current_tc["requirement"] = line.split(":", 1)[1].strip()
+            requirement = line.split(":", 1)[1].strip()
 
-        # ---------------------------------------
-        # Step lines
-        # ---------------------------------------
-        elif step_pattern.match(line):
+        elif re.match(r"^Step\s*\d+", line):
             parts = [p.strip() for p in line.split("|")]
 
             if len(parts) >= 5:
-                step = {
-                    "step_no": parts[0],
-                    "desc": parts[1],
+                steps.append({
+                    "step_no": f"Step {step_counter:02d}",
+                    "action": parts[1],
                     "screen": parts[2],
-                    "data": parts[3],
-                    "expected": parts[4]
-                }
-                current_tc["steps"].append(step)
+                    "testdata": parts[3],
+                    "expected": parts[4],
+                })
+                step_counter += 1
 
-    # append last testcase
-    if current_tc:
-        testcases.append(current_tc)
-
-    print(f"✅ Parsed {len(testcases)} testcases from LLM output")
-
-    return testcases
+    # 🔥 Always return ONLY ONE testcase
+    return [{
+        "scenario": scenario,
+        "script": script,
+        "precondition": precondition,
+        "requirement": requirement,
+        "steps": steps
+    }]
