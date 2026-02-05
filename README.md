@@ -1,105 +1,34 @@
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-from openai import AzureOpenAI
-from embeddingtovectordb.config import get
-from channel_detector import detect_channels
-from azure.search.documents.models import VectorizedQuery
+You are a QA Test Case Designer.
 
+You must generate NEW test cases for the given User Story by learning from the Historical Test Cases.
 
-class TestCaseRAGRetriever:
+STRICT RULES (VERY IMPORTANT):
 
-    def __init__(self):
-        # -------- Azure Search --------
-        self.search_client = SearchClient(
-            endpoint=get("AZURE_SEARCH_ENDPOINT"),
-            index_name=get("AZURE_SEARCH_INDEX"),
-            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-        )
+1) Do NOT explain anything.
+2) Do NOT add headings or notes.
+3) Output ONLY test case content in the exact format below.
+4) Every test step must use pipe "|" separator.
+5) This output will be parsed directly into Excel columns.
 
-        # -------- Azure OpenAI --------
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION")
-        )
+Required Output Format:
 
-        self.embed_model = get("EMBEDDING_MODEL")
-        self.top_k = get("TOP_K", int)
+Scenario: <short scenario>
+Script: <script name>
+Precondition: <precondition>
+Requirement: <requirement mapping>
 
-    # ----------------------------------------------------
-    # Create embedding
-    # ----------------------------------------------------
-    def embed_query(self, text):
-        print("🧠 Creating embedding from User Story + Description + AC...")
-        emb = self.openai.embeddings.create(
-            model=self.embed_model,
-            input=text
-        )
-        vec = emb.data[0].embedding
-        print(f"✅ Embedding length: {len(vec)}")
-        return vec
+Step 01 | <step description> | <screen name> | <test data> | <expected result>
+Step 02 | <step description> | <screen name> | <test data> | <expected result>
+Step 03 | <step description> | <screen name> | <test data> | <expected result>
 
-    # ----------------------------------------------------
-    # Retrieve similar chunks from vector DB
-    # ----------------------------------------------------
-    def retrieve(self, user_story, description, ac):
+Repeat the same structure if multiple test cases are needed.
 
-        print("\n🔹 Step 1: Detecting channels from AC")
-        channels = detect_channels(ac)
+Guidelines:
 
-        filter_query = " or ".join([f"channel eq '{c}'" for c in channels])
-        print(f"🔎 Channel Filter: {filter_query}")
+- Follow the style and structure of Historical Test Cases.
+- Cover positive, negative, and edge scenarios.
+- Use realistic screen names and test data.
+- Keep steps detailed and actionable.
+- Do NOT invent unrelated functionality.
 
-        print("\n🔹 Step 2: Preparing semantic query text")
-        query_text = f"""
-        User Story:
-        {user_story}
-
-        Description:
-        {description}
-
-        Acceptance Criteria:
-        {ac}
-        """
-
-        query_vector = self.embed_query(query_text)
-
-        print("\n🔹 Step 3: Sending vector search to Azure AI Search")
-
-        vector_query = VectorizedQuery( 
-            vector=query_vector,
-            k=self.top_k,
-            fields="embedding"
-        )
-
-        results = self.search_client.search(
-            search_text=None,
-            vector_queries=[vector_query],
-            filter=filter_query,
-            select=["testCaseId", "chunkId", "content", "channel"]
-        )
-
-        results_list = list(results)
-        print(f"✅ Retrieved {len(results_list)} chunks from vector DB\n")
-
-        return results_list
-
-    # ----------------------------------------------------
-    # Rebuild full testcase from chunks
-    # ----------------------------------------------------
-    def rebuild_testcase(self, testcase_id):
-
-        print(f"🧩 Rebuilding full testcase for: {testcase_id}")
-
-        results = self.search_client.search(
-            search_text="*",
-            filter=f"testCaseId eq '{testcase_id}'",
-            select=["chunkId", "content"],
-            top=50
-        )
-
-        chunks = sorted(results, key=lambda x: x["chunkId"])
-
-        full_text = "\n".join([c["content"] for c in chunks])
-
-        return full_text
+Your response must be directly usable to create Excel test scripts.
