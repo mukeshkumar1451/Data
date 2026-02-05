@@ -1,68 +1,150 @@
-def build_testcase_prompt(
-    user_story_id,
-    user_story,
-    description,
-    ac,
-    historical_context
-):
-    return f"""
-You are a QA Test Case Designer.
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
+from azure.search.documents.models import VectorizedQuery
 
-You must generate NEW test cases for the given User Story by learning from the Historical Test Cases.
+from openai import AzureOpenAI
 
-STRICT RULES (CRITICAL — DO NOT VIOLATE):
+from embeddingtovectordb.config import get
+from channel_detector import detect_channels
+from prompt_templates import build_testcase_prompt
 
-1) Do NOT explain anything.
-2) Do NOT add headings, notes, markdown, or comments.
-3) Output ONLY test case content in the exact format below.
-4) Every test step MUST use pipe "|" separator.
-5) Steps MUST start from "Step 01" and increment sequentially.
-6) Generate COMPLETE steps. Do NOT stop early.
-7) This output will be parsed directly into Excel columns.
 
-Required Output Format (MANDATORY):
+class TestCaseRAGRetriever:
 
-Scenario: <short scenario>
-Script: <script name>
-Precondition: <precondition>
-Requirement: <requirement mapping>
+    def __init__(self):
+        # -------- Azure AI Search --------
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+        )
 
-Step 01 | <step description> | <screen name> | <test data> | <expected result>
-Step 02 | <step description> | <screen name> | <test data> | <expected result>
-Step 03 | <step description> | <screen name> | <test data> | <expected result>
+        # -------- Azure OpenAI --------
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION")
+        )
 
-Repeat the same structure if multiple test cases are required.
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL_DEPLOYMENT")
+        self.top_k = get("TOP_K", int)
 
-Guidelines for generation:
+    # ----------------------------------------------------
+    # Create embedding for query
+    # ----------------------------------------------------
+    def embed_query(self, text):
+        print("🧠 Creating embedding from User Story + Description + AC...")
+        emb = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text
+        )
+        vec = emb.data[0].embedding
+        print(f"✅ Embedding length: {len(vec)}")
+        return vec
 
-- Learn the writing style from Historical Test Cases.
-- Cover positive, negative, and edge scenarios.
-- Use realistic screen names and test data from history.
-- Keep steps detailed, actionable, and sequential.
-- Do NOT invent unrelated functionality.
-- Do NOT shorten steps.
-- Do NOT skip navigation steps.
+    # ----------------------------------------------------
+    # Step 1 — Vector retrieval from Azure AI Search
+    # ----------------------------------------------------
+    def retrieve(self, user_story, description, ac):
 
-------------------------------------------------------------
+        print("\n🔹 Step 1: Detecting channels from AC")
+        channels = detect_channels(ac)
 
-USER STORY ID:
-{user_story_id}
+        filter_query = " or ".join([f"channel eq '{c}'" for c in channels])
+        print(f"🔎 Channel Filter: {filter_query}")
 
-USER STORY:
-{user_story}
+        print("\n🔹 Step 2: Preparing semantic query text")
+        query_text = f"""
+        User Story:
+        {user_story}
 
-DESCRIPTION:
-{description}
+        Description:
+        {description}
 
-ACCEPTANCE CRITERIA:
-{ac}
+        Acceptance Criteria:
+        {ac}
+        """
 
-------------------------------------------------------------
+        query_vector = self.embed_query(query_text)
 
-HISTORICAL TEST CASES FOR LEARNING STYLE:
-{historical_context}
+        print("\n🔹 Step 3: Sending vector search to Azure AI Search")
 
-------------------------------------------------------------
+        vector_query = VectorizedQuery(
+            kind="vector",
+            vector=query_vector,
+            k_nearest_neighbors=self.top_k,
+            fields="embedding"
+        )
 
-Now generate the new test cases.
-"""
+        results = self.search_client.search(
+            search_text=None,
+            vector_queries=[vector_query],
+            filter=filter_query,
+            select=["testCaseId", "chunkId", "content", "channel"]
+        )
+
+        results_list = list(results)
+        print(f"✅ Retrieved {len(results_list)} chunks from vector DB\n")
+
+        return results_list
+
+    # ----------------------------------------------------
+    # Step 2 — Rebuild full historical testcases
+    # ----------------------------------------------------
+    def _build_historical_context(self, retrieved_chunks):
+
+        print("🧩 Rebuilding historical testcases from chunks...")
+
+        grouped = {}
+        for r in retrieved_chunks:
+            grouped.setdefault(r["testCaseId"], []).append(r)
+
+        historical_context = ""
+
+        for tcid, chunks in grouped.items():
+            print(f"   ↳ Rebuilding TestCase: {tcid}")
+            sorted_chunks = sorted(chunks, key=lambda x: int(x["chunkId"]))
+            full_text = "\n".join([c["content"] for c in sorted_chunks])
+            historical_context += f"\n\n### Historical TestCase: {tcid}\n{full_text}\n"
+
+        print("✅ Context ready for LLM\n")
+        return historical_context
+
+    # ----------------------------------------------------
+    # Step 3 — TRUE RAG: Send context to LLM
+    # ----------------------------------------------------
+    def generate_testcase_with_llm(
+        self,
+        user_story_id,
+        user_story,
+        description,
+        ac,
+        retrieved_chunks
+    ):
+
+        historical_context = self._build_historical_context(retrieved_chunks)
+
+        prompt = build_testcase_prompt(
+            user_story_id,
+            user_story,
+            description,
+            ac,
+            historical_context
+        )
+
+        print("🤖 Sending prompt to Azure OpenAI...\n")
+
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[
+                {"role": "system", "content": "You generate software test cases."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
+
+        output = response.choices[0].message.content
+        print("✅ LLM Response Received\n")
+
+        return output
