@@ -1,40 +1,33 @@
-import re
-from bs4 import BeautifulSoup
-
 ALL_CHANNELS = ["WHL", "RTL", "DTC", "CL1"]
 
 CHANNEL_KEYWORDS = {
-    "RTL": ["RTL", "RETAIL", "RETAIL CHANNEL"],
-    "WHL": ["WHL", "WHOLESALE", "WHOLESALE BROKER", "BROKER CHANNEL"],
+    "RTL": ["RTL", "RETAIL"],
+    "WHL": ["WHL", "WHOLESALE", "BROKER"],
     "DTC": ["DTC", "DIRECT TO CUSTOMER"],
-    "CL1": ["CL1", "CORRESPONDENT", "CORRESPONDENT CHANNEL"]
+    "CL1": ["CL1", "CORRESPONDENT"]
 }
 
-def clean_html(raw_html: str) -> str:
-    if not raw_html:
-        return ""
-    soup = BeautifulSoup(raw_html, "html.parser")
-    text = soup.get_text(separator=" ")
-    return " ".join(text.split()).lower()
 
-def detect_channels( acceptance_criteria: str) -> list:
-    print("\n[DEBUG] Acceptance Criteria received:")
-    print(acceptance_criteria)
-    combined_text = clean_html(acceptance_criteria)
+def detect_channels(acceptance_criteria: str) -> list:
+    print("\n🔍 Detecting channels from Acceptance Criteria...\n")
+
+    text = acceptance_criteria.upper()
 
     negation_words = [
-        "do not", "does not", "did not", "not ", "no ", "without", "should not", "cannot", "can't", "won't", "never", "ignores", "ignore", "except"
+        "DO NOT", "DOES NOT", "NOT ", "NO ",
+        "WITHOUT", "SHOULD NOT", "CANNOT",
+        "NEVER", "EXCEPT"
     ]
 
     found_channels = []
-    lines = combined_text.split(". ")  # Split by sentences (simple)
+    lines = text.split(". ")
 
     for channel, keywords in CHANNEL_KEYWORDS.items():
         for word in keywords:
             for line in lines:
                 if any(neg in line for neg in negation_words):
                     continue
-                if word.lower() in line:
+                if word in line:
                     found_channels.append(channel)
                     break
             else:
@@ -42,10 +35,8 @@ def detect_channels( acceptance_criteria: str) -> list:
             break
 
     if not found_channels:
-        print("\n⚠️  No channel keywords found in Acceptence criteria.")
-        print("➡️  Selecting ALL channels: WHL, RTL, DTC, CL1\n")
+        print("⚠️ No channel mentioned → Using ALL channels")
         return ALL_CHANNELS
 
-    print(f"\n✅ Channels detected from AC/Description: {found_channels}\n")
+    print(f"✅ Channels detected: {found_channels}")
     return found_channels
-
