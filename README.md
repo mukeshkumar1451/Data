@@ -1,4 +1,4 @@
-🔹 Step 3: Sending vector search to Azure AI Search
+ Step 3: Sending vector search to Azure AI Search
 
 ❌ ERROR OCCURRED
 Session.request() got an unexpected keyword argument 'vector'
@@ -9,17 +9,17 @@ Traceback (most recent call last):
     results = retriever.retrieve(user_story, description, ac)
   File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 82, in retrieve
     results_list = list(results)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 54, in __next__
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 58, in __next__
     return next(self._page_iterator)
   File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
     self._response = self._get_next(self.continuation_token)
                      ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 125, in _get_next_cb
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 139, in _get_next_cb
     return self._client.documents.search_post(search_request=self._initial_query.request, **self._kwargs)
            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\tracing\decorator.py", line 119, in wrapper_use_tracer
     return func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 769, in search_post
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 853, in search_post
     pipeline_response: PipelineResponse = self._client._pipeline.run(  # pylint: disable=protected-access
                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         _request, stream=_stream, **kwargs
