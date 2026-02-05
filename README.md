@@ -1,65 +1,34 @@
-from rag_query import TestCaseRAGRetriever
-from excel_multi_sheet_exporter import MultiSheetExcelExporter
-from llm_generator import LLMTestCaseGenerator
-from config import get
-import yaml, os
+You are a QA Test Case Designer.
 
+You must generate NEW test cases for the given User Story by learning from the Historical Test Cases.
 
-def load_userstory(path):
-    with open(path, "r") as f:
-        return yaml.safe_load(f)
+STRICT RULES (VERY IMPORTANT):
 
+1) Do NOT explain anything.
+2) Do NOT add headings or notes.
+3) Output ONLY test case content in the exact format below.
+4) Every test step must use pipe "|" separator.
+5) This output will be parsed directly into Excel columns.
 
-# -------- Load inputs --------
-story = load_userstory("userstory_input.yaml")
+Required Output Format:
 
-user_story_id = story["user_story_id"]
-user_story = story["user_story"]
-description = story["description"]
-ac = story["acceptance_criteria"]
+Scenario: <short scenario>
+Script: <script name>
+Precondition: <precondition>
+Requirement: <requirement mapping>
 
-# -------- Setup --------
-retriever = TestCaseRAGRetriever()
-generator = LLMTestCaseGenerator()
+Step 01 | <step description> | <screen name> | <test data> | <expected result>
+Step 02 | <step description> | <screen name> | <test data> | <expected result>
+Step 03 | <step description> | <screen name> | <test data> | <expected result>
 
-template_path = get("EXCEL_TEMPLATE_PATH")
-output_dir = get("EXCEL_OUTPUT_DIR")
-os.makedirs(output_dir, exist_ok=True)
+Repeat the same structure if multiple test cases are needed.
 
-exporter = MultiSheetExcelExporter(template_path)
+Guidelines:
 
-# -------- Retrieve historical context --------
-results = retriever.retrieve(user_story, description, ac)
+- Follow the style and structure of Historical Test Cases.
+- Cover positive, negative, and edge scenarios.
+- Use realistic screen names and test data.
+- Keep steps detailed and actionable.
+- Do NOT invent unrelated functionality.
 
-context_text = ""
-for r in results[:10]:
-    full = retriever.rebuild_testcase(r["testCaseId"])
-    context_text += full + "\n\n"
-
-# -------- Generate NEW testcases via GPT --------
-generated_text = generator.generate(
-    user_story,
-    description,
-    ac,
-    context_text
-)
-
-# -------- Detect channel from AC --------
-channels = ["RTL", "WHL", "DTC", "CL1"]
-testcases = []
-
-for ch in channels:
-    testcases.append({
-        "channel": ch,
-        "full_text": generated_text
-    })
-
-# -------- Export --------
-output_file = os.path.join(
-    output_dir,
-    f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
-)
-
-exporter.export(testcases, user_story_id, output_file)
-
-print(f"\n✅ Generated NEW testcases → {output_file}")
+Your response must be directly usable to create Excel test scripts.
