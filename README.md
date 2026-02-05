@@ -1,59 +1,60 @@
- Step 3: Sending vector search to Azure AI Search
+(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> py test_rag.py
 
-❌ ERROR OCCURRED
-Session.request() got an unexpected keyword argument 'vector'
+🚀 RAG Test Case Generation Started
 
-📌 TRACEBACK:
-Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\VectorDb Test\test_rag.py", line 39, in <module>
-    results = retriever.retrieve(user_story, description, ac)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 82, in retrieve
-    results_list = list(results)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 58, in __next__
-    return next(self._page_iterator)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
-    self._response = self._get_next(self.continuation_token)
-                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 139, in _get_next_cb
-    return self._client.documents.search_post(search_request=self._initial_query.request, **self._kwargs)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\tracing\decorator.py", line 119, in wrapper_use_tracer
-    return func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 853, in search_post
-    pipeline_response: PipelineResponse = self._client._pipeline.run(  # pylint: disable=protected-access
-                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        _request, stream=_stream, **kwargs
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 242, in run
-    return first_node.send(pipeline_request)
-           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  [Previous line repeated 2 more times]
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\policies\_redirect.py", line 205, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\policies\_retry.py", line 545, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  [Previous line repeated 2 more times]
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 130, in send
-    self._sender.send(request.http_request, **request.context.options),
-    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\transport\_requests_basic.py", line 375, in send
-    response = self.session.request(  # type: ignore
-        request.method,
-    ...<9 lines>...
-        **kwargs
-    )
-TypeError: Session.request() got an unexpected keyword argument 'vector'
+📥 Loading user story YAML...
+✅ YAML loaded
+
+🔧 Initializing RAG Retriever...
+✅ Retriever ready
+
+🔍 Running vector search in Azure AI Search...
+
+🔹 Step 1: Detecting channels from AC
+
+🔍 Detecting channels from Acceptance Criteria...
+
+🧠 Raw detected channels: {'WHL'}
+✅ Final channels after rule mapping: {'CL1', 'WHL'}
+
+🔎 Channel Filter: channel eq 'CL1' or channel eq 'WHL'
+
+🔹 Step 2: Preparing semantic query text
+🧠 Creating embedding from User Story + Description + AC...
+✅ Embedding length: 3072
+
+🔹 Step 3: Sending vector search to Azure AI Search
+✅ Retrieved 40 chunks from vector DB
+
+✅ Retrieved 40 vector chunks
+
+🧩 Rebuilding historical testcases from chunks...
+   ↳ Rebuilding TestCase: 740128_CL1_01
+🧩 Rebuilding full testcase for: 740128_CL1_01
+   ↳ Rebuilding TestCase: 740128_WHL_01
+🧩 Rebuilding full testcase for: 740128_WHL_01
+   ↳ Rebuilding TestCase: 749011_WHL_02
+🧩 Rebuilding full testcase for: 749011_WHL_02
+   ↳ Rebuilding TestCase: 749011_WHL_01
+🧩 Rebuilding full testcase for: 749011_WHL_01
+   ↳ Rebuilding TestCase: 749011_WHL_03
+🧩 Rebuilding full testcase for: 749011_WHL_03
+✅ Context ready for LLM
+
+🤖 Sending context to Azure OpenAI for test case generation...
+
+✅ LLM Response Received
+
+----- GENERATED OUTPUT PREVIEW -----
+
+Scenario: Verify "Is the Property a Condo?" defaults to YES for Detached Condominium       
+Script: FHA_CaseNumber_Default_Yes_DetachedCondo
+Precondition: Loan is a Wholesale loan, FHA Request Case Number screen is available, and Type of Property is set to "Detached Condominium".
+Requirement: AC1
+
+Step 01 | Log into H2OA in UAT environment | Login Page | https://uath2o.newrez.com/ | Login should be successful
+Step 02 | Open the loan created as per preconditions | Loan Summary | nan | Loan Summary screen should be opened
+Step 03 | Navigate to Status > FHA Request Case Number | FHA Request Case Number | nan | FHA Request Case Number screen should be opened
+Step 04 | Verify "Is the Property a Condo?" field in the Type of Case section | FHA Request Case Number | nan | Default value shou
+
+-----------------------------------
