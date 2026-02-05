@@ -1,62 +1,62 @@
-import re
+from openpyxl import load_workbook
 
 
-def parse_llm_steps(llm_text: str, channels: list):
-    """
-    Convert LLM raw text into structured testcases for Excel exporter
-    """
+class MultiSheetExcelExporter:
 
-    testcases = []
+    def __init__(self, template_path):
+        self.template_path = template_path
 
-    blocks = llm_text.split("Scenario:")
-    for block in blocks:
-        block = block.strip()
-        if not block:
-            continue
+    def export(self, testcases, user_story_id, output_path):
 
-        lines = [l.strip() for l in block.split("\n") if l.strip()]
+        wb = load_workbook(self.template_path)
 
-        scenario = ""
-        script = ""
-        precondition = ""
-        requirement = ""
-        steps = []
+        for ch in ["RTL", "WHL", "DTC", "CL1"]:
+            if ch not in wb.sheetnames:
+                wb.create_sheet(ch)
 
-        for line in lines:
+        sheets = {name: wb[name] for name in wb.sheetnames}
+        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
 
-            if line.startswith("Script:"):
-                script = line.split(":", 1)[1].strip()
+        tc_counter = 1
 
-            elif line.startswith("Precondition:"):
-                precondition = line.split(":", 1)[1].strip()
+        for tc in testcases:
+            for channel in tc["channels"]:
 
-            elif line.startswith("Requirement:"):
-                requirement = line.split(":", 1)[1].strip()
+                ws = sheets[channel]
+                row = row_tracker[channel]
 
-            elif line.startswith("Step"):
-                parts = [p.strip() for p in line.split("|")]
+                generated_tc_id = f"US_{user_story_id}_TC_{tc_counter:02d}"
 
-                if len(parts) >= 5:
-                    steps.append({
-                        "step_no": parts[0],
-                        "desc": parts[1],      # ✅ EXACT KEY Excel expects
-                        "screen": parts[2],
-                        "data": parts[3],
-                        "expected": parts[4],
-                    })
+                first_step = True
 
-            else:
-                # first line after Scenario:
-                if not scenario:
-                    scenario = line.strip()
+                for step in tc["steps"]:
 
-        testcases.append({
-            "scenario": scenario,
-            "script": script,
-            "precondition": precondition,
-            "requirement": requirement,
-            "steps": steps,
-            "channels": channels  # attach here directly
-        })
+                    if first_step:
+                        # Fill scenario info only once
+                        ws.cell(row, 1).value = generated_tc_id
+                        ws.cell(row, 2).value = tc["scenario"]
+                        ws.cell(row, 3).value = tc["script"]
+                        ws.cell(row, 4).value = tc["precondition"]
+                        first_step = False
+                    else:
+                        # Leave these blank for next steps
+                        ws.cell(row, 1).value = ""
+                        ws.cell(row, 2).value = ""
+                        ws.cell(row, 3).value = ""
+                        ws.cell(row, 4).value = ""
 
-    return testcases
+                    # Step columns (correct mapping)
+                    ws.cell(row, 5).value = step["step_no"]
+                    ws.cell(row, 6).value = step["desc"]
+                    ws.cell(row, 7).value = step["screen"]
+                    ws.cell(row, 8).value = step["data"]
+                    ws.cell(row, 9).value = step["expected"]
+                    ws.cell(row, 10).value = tc["requirement"]
+
+                    row += 1
+
+                row_tracker[channel] = row
+
+            tc_counter += 1
+
+        wb.save(output_path)
