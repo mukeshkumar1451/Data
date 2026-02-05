@@ -1,96 +1,57 @@
-from azure.search.documents.indexes import SearchIndexClient
-from azure.search.documents.indexes.models import (
-    SearchIndex,
-    SimpleField,
-    SearchableField,
-    SearchField,
-    SearchFieldDataType,
-    VectorSearch,
-    VectorSearchProfile,
-    HnswAlgorithmConfiguration
-)
-from azure.core.credentials import AzureKeyCredential
+user_story_id: "7123445"
 
-from embeddingtovectordb.config import get
+user_story: |
+  Modernized Audit additions - DIS > Generate Disclosures Fields
+
+description: |
+  Business would like to add the following fields to Modernized Audit.
+
+Description	H2O UI Location
+HPML	DIS > Generate Disclosures > Generate Disclosure
+Intent to Proceed	DIS > Generate Disclosures
+Mortgage Broker Fee Agreement 	DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement
+Mortgage Broker License Type	DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement
 
 
-def ensure_index():
+HPML - 
+Image
 
-    index_name = get("AZURE_SEARCH_INDEX")
+Intent to Proceed - 
+undefined
 
-    client = SearchIndexClient(
-        endpoint=get("AZURE_SEARCH_ENDPOINT"),
-        credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-    )
+Mortgage Broker Fee/Compensation Agreement - 
+Image
+*Appears to be privilege restricted
 
-    existing = [idx.name for idx in client.list_indexes()]
 
-    if index_name in existing:
-        print(f"✅ Index '{index_name}' already exists")
-        return
+Mortgage Broker License Type - 
+Image
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic. 
+**Also appears to be privilege restricted
 
-    print(f"🛠️ Creating index '{index_name}' ...")
+acceptance_criteria: |
+  Business would like to add the following fields to Modernized Audit.
 
-    fields = [
+Description	H2O UI Location
+HPML	DIS > Generate Disclosures > Generate Disclosure
+Intent to Proceed	DIS > Generate Disclosures
+Mortgage Broker Fee Agreement 	DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement
+Mortgage Broker License Type	DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement
 
-        SimpleField(
-            name="id",
-            type=SearchFieldDataType.String,
-            key=True
-        ),
 
-        SimpleField(
-            name="testCaseId",
-            type=SearchFieldDataType.String,
-            filterable=True
-        ),
+HPML - 
+Image
 
-        SimpleField(
-            name="chunkId",
-            type=SearchFieldDataType.Int32,
-            filterable=True,
-            sortable=True
-        ),
+Intent to Proceed - 
+undefined
 
-        SimpleField(
-            name="channel",
-            type=SearchFieldDataType.String,
-            filterable=True
-        ),
+Mortgage Broker Fee/Compensation Agreement - 
+Image
+*Appears to be privilege restricted
 
-        SearchableField(
-            name="content",
-            type=SearchFieldDataType.String
-        ),
 
-        SearchField(
-            name="embedding",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
-            vector_search_dimensions=3072,
-            vector_search_profile_name="vector-profile"
-        ),
-    ]
+Mortgage Broker License Type - 
+Image
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic. 
+**Also appears to be privilege restricted
 
-    vector_search = VectorSearch(
-        profiles=[
-            VectorSearchProfile(
-                name="vector-profile",
-                algorithm_configuration_name="hnsw-config"
-            )
-        ],
-        algorithms=[
-            HnswAlgorithmConfiguration(
-                name="hnsw-config"
-            )
-        ]
-    )
-
-    index = SearchIndex(
-        name=index_name,
-        fields=fields,
-        vector_search=vector_search
-    )
-
-    client.create_index(index)
-
-    print(f"✅ Index '{index_name}' created successfully")
