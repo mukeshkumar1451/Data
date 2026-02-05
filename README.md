@@ -12,6 +12,7 @@ from prompt_templates import build_testcase_prompt
 class TestCaseRAGRetriever:
 
     def __init__(self):
+
         # -------- Azure AI Search --------
         self.search_client = SearchClient(
             endpoint=get("AZURE_SEARCH_ENDPOINT"),
@@ -35,10 +36,12 @@ class TestCaseRAGRetriever:
     # ----------------------------------------------------
     def embed_query(self, text):
         print("🧠 Creating embedding from User Story + Description + AC...")
+
         emb = self.openai.embeddings.create(
             model=self.embed_model,
             input=text
         )
+
         vec = emb.data[0].embedding
         print(f"✅ Embedding length: {len(vec)}")
         return vec
@@ -55,6 +58,7 @@ class TestCaseRAGRetriever:
         print(f"🔎 Channel Filter: {filter_query}")
 
         print("\n🔹 Step 2: Preparing semantic query text")
+
         query_text = f"""
         User Story:
         {user_story}
@@ -90,28 +94,42 @@ class TestCaseRAGRetriever:
         return results_list
 
     # ----------------------------------------------------
-    # Step 2 — Rebuild full historical testcases
+    # Step 2 — Group chunks → rebuild testcases WITH channel
     # ----------------------------------------------------
-    def _build_historical_context(self, retrieved_chunks):
+    def build_context_by_testcase(self, results):
 
         print("🧩 Rebuilding historical testcases from chunks...")
 
-        grouped = {}
-        for r in retrieved_chunks:
-            grouped.setdefault(r["testCaseId"], []).append(r)
+        tc_map = {}
 
-        historical_context = ""
+        for r in results:
+            tcid = r["testCaseId"]
+            channel = r["channel"]
 
-        for tcid, chunks in grouped.items():
+            if tcid not in tc_map:
+                tc_map[tcid] = {
+                    "channel": channel,
+                    "chunks": []
+                }
+
+            tc_map[tcid]["chunks"].append((r["chunkId"], r["content"]))
+
+        final_context = []
+
+        for tcid, data in tc_map.items():
             print(f"   ↳ Rebuilding TestCase: {tcid}")
-            sorted_chunks = sorted(chunks, key=lambda x: int(x["chunkId"]))
-            full_text = "\n".join([c["content"] for c in sorted_chunks])
-            historical_context += f"\n\n### Historical TestCase: {tcid}\n{full_text}\n"
 
-        print("✅ Context ready for LLM\n")
-        return historical_context
-    
-    
+            chunks_sorted = sorted(data["chunks"], key=lambda x: int(x[0]))
+            full_text = "\n".join([c[1] for c in chunks_sorted])
+
+            final_context.append({
+                "testCaseId": tcid,
+                "channel": data["channel"],
+                "full_text": full_text
+            })
+
+        print("✅ Historical context built\n")
+        return final_context
 
     # ----------------------------------------------------
     # Step 3 — TRUE RAG: Send context to LLM
@@ -125,14 +143,25 @@ class TestCaseRAGRetriever:
         retrieved_chunks
     ):
 
-        historical_context = self._build_historical_context(retrieved_chunks)
+        historical_testcases = self.build_context_by_testcase(retrieved_chunks)
+
+        historical_context_text = ""
+        channels = set()
+
+        for tc in historical_testcases:
+            channels.add(tc["channel"])
+            historical_context_text += (
+                f"\n\n### Historical TestCase: {tc['testCaseId']} "
+                f"(Channel: {tc['channel']})\n"
+                f"{tc['full_text']}\n"
+            )
 
         prompt = build_testcase_prompt(
             user_story_id,
             user_story,
             description,
             ac,
-            historical_context
+            historical_context_text
         )
 
         print("🤖 Sending prompt to Azure OpenAI...\n")
@@ -149,4 +178,7 @@ class TestCaseRAGRetriever:
         output = response.choices[0].message.content
         print("✅ LLM Response Received\n")
 
-        return output
+        return {
+            "llm_text": output,
+            "channels": list(channels)
+        }
