@@ -4,8 +4,9 @@ import yaml
 
 from rag_query import TestCaseRAGRetriever as RAGRetriever
 from llm_step_parser import parse_llm_steps
-from excel_multi_sheet_exporter import MultiSheetExcelExporter as ExcelMultiSheetExporter
+from excel_multi_sheet_exporter import MultiSheetExcelExporter
 from embeddingtovectordb.config import get
+from channel_detector import detect_channels
 
 
 def load_userstory(path: str):
@@ -18,10 +19,10 @@ def load_userstory(path: str):
 
 if __name__ == "__main__":
     try:
-        print("\n🚀 RAG Test Case Generation Started\n")
+        print("\n🚀 TRUE Channel-Aware RAG Test Case Generation Started\n")
 
         # ---------------------------------------------------
-        # Step 1 — Load User Story Input
+        # Step 1 — Load User Story
         # ---------------------------------------------------
         story = load_userstory("userstory_input.yaml")
 
@@ -31,58 +32,71 @@ if __name__ == "__main__":
         ac = story["acceptance_criteria"]
 
         # ---------------------------------------------------
-        # Step 2 — Initialize Retriever
+        # Step 2 — Detect Channels from AC
         # ---------------------------------------------------
-        print("\n🔧 Initializing RAG Retriever...")
+        print("\n🔎 Detecting channels from Acceptance Criteria...")
+        channels = detect_channels(ac)
+        print(f"✅ Channels to process: {channels}\n")
+
+        # ---------------------------------------------------
+        # Step 3 — Initialize Retriever
+        # ---------------------------------------------------
         retriever = RAGRetriever()
-        print("✅ Retriever ready")
+
+        all_generated_testcases = []
 
         # ---------------------------------------------------
-        # Step 3 — Vector Search
+        # Step 4 — PROCESS EACH CHANNEL SEPARATELY (IMPORTANT)
         # ---------------------------------------------------
-        print("\n🔍 Running vector search in Azure AI Search...\n")
-        results = retriever.retrieve(user_story, description, ac)
-        print(f"✅ Retrieved {len(results)} vector chunks\n")
+        for channel in channels:
+
+            print(f"\n==============================")
+            print(f"🔷 Processing Channel: {channel}")
+            print(f"==============================\n")
+
+            # -----------------------------
+            # Vector search only for this channel
+            # -----------------------------
+            print(f"🔍 Running vector search for channel: {channel}")
+            results = retriever.retrieve_for_channel(
+                user_story,
+                description,
+                ac,
+                channel
+            )
+            print(f"✅ Retrieved {len(results)} chunks for {channel}\n")
+
+            # -----------------------------
+            # Send channel-specific context to LLM
+            # -----------------------------
+            print(f"🤖 Generating testcase using {channel} historical patterns...\n")
+
+            llm_text = retriever.generate_testcase_with_llm(
+                user_story_id=user_story_id,
+                user_story=user_story,
+                description=description,
+                ac=ac,
+                retrieved_chunks=results,
+                channel=channel
+            )
+
+            print("✅ LLM Response received\n")
+
+            # -----------------------------
+            # Parse LLM response into steps
+            # -----------------------------
+            parsed = parse_llm_steps(llm_text, [channel])
+            print(f"🧩 Parsed {len(parsed)} testcases for {channel}\n")
+
+            all_generated_testcases.extend(parsed)
 
         # ---------------------------------------------------
-        # Step 4 — Send context to LLM
+        # Step 5 — Export to Excel
         # ---------------------------------------------------
-        print("🤖 Sending context to Azure OpenAI for test case generation...\n")
-
-        llm_result, llm_result_channels = retriever.generate_testcase_with_llm(
-            user_story_id=user_story_id,
-            user_story=user_story,
-            description=description,
-            ac=ac,
-            retrieved_chunks=results
-        )
-
-        llm_text = llm_result["llm_text"]
-        channels = llm_result["channels"]
-
-        print("✅ LLM Response Received\n")
-        print(f"📌 Channels detected for sheets: {channels}\n")
-
-        # ---------------------------------------------------
-        # Step 5 — Parse LLM Steps
-        # ---------------------------------------------------
-        print("🧩 Parsing LLM steps from response...\n")
-
-        parsed_steps = parse_llm_steps(llm_text,llm_result_channels)
-        print(f"✅ Total steps parsed: {len(parsed_steps)}\n")
-
-        # 🔥 VERY IMPORTANT — attach channels for Excel sheets
-        for tc in parsed_steps:
-            tc["channels"] = channels
-
-        # ---------------------------------------------------
-        # Step 6 — Export to Multi-Sheet Excel
-        # ---------------------------------------------------
-        print("📄 Writing test cases into Excel template...\n")
+        print("\n📄 Writing channel-specific testcases into Excel template...\n")
 
         template_path = get("EXCEL_TEMPLATE_PATH")
         output_dir = get("EXCEL_OUTPUT_DIR")
-
         os.makedirs(output_dir, exist_ok=True)
 
         output_file = os.path.join(
@@ -90,15 +104,14 @@ if __name__ == "__main__":
             f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
         )
 
-        exporter = ExcelMultiSheetExporter(template_path)
+        exporter = MultiSheetExcelExporter(template_path)
         exporter.export(
-            testcases=parsed_steps,
+            testcases=all_generated_testcases,
             user_story_id=user_story_id,
             output_path=output_file
-            
         )
 
-        print(f"\n🎉 Test Case Excel Generated Successfully:\n{output_file}\n")
+        print(f"\n🎉 Excel generated successfully:\n{output_file}\n")
 
     except Exception as e:
         print("\n❌ ERROR OCCURRED")
