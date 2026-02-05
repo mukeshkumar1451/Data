@@ -1,83 +1,62 @@
-import traceback
-import yaml
-
-from rag_query import RAGRetriever
-from llm_step_parser import parse_llm_steps
-from excel_multi_sheet_exporter import ExcelMultiSheetExporter
+from openpyxl import load_workbook
 
 
-def load_userstory(path: str):
-    print("📥 Loading user story YAML...")
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    print("✅ YAML loaded")
-    return data
+class MultiSheetExcelExporter:
 
+    def __init__(self, template_path):
+        self.template_path = template_path
 
-if __name__ == "__main__":
-    try:
-        print("\n🚀 RAG Test Case Generation Started\n")
+    def export(self, testcases, user_story_id, output_path):
+        wb = load_workbook(self.template_path)
 
-        # ---------------------------------------------------
-        # Step 1 — Load User Story Input
-        # ---------------------------------------------------
-        story = load_userstory("userstory_input.yaml")
+        for ch in ["RTL", "WHL", "DTC", "CL1"]:
+            if ch not in wb.sheetnames:
+                wb.create_sheet(ch)
 
-        user_story_id = story["user_story_id"]
-        user_story = story["user_story"]
-        description = story["description"]
-        ac = story["acceptance_criteria"]
+        sheets = {name: wb[name] for name in wb.sheetnames}
+        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
 
-        # ---------------------------------------------------
-        # Step 2 — Initialize Retriever
-        # ---------------------------------------------------
-        print("\n🔧 Initializing RAG Retriever...")
-        retriever = RAGRetriever()
-        print("✅ Retriever ready")
+        tc_counter = 1
 
-        # ---------------------------------------------------
-        # Step 3 — Vector Search
-        # ---------------------------------------------------
-        print("\n🔍 Running vector search in Azure AI Search...\n")
-        results = retriever.retrieve(user_story, description, ac)
-        print(f"✅ Retrieved {len(results)} vector chunks\n")
+        for tc in testcases:
+            channel = tc["channel"]
+            ws = sheets[channel]
+            row = row_tracker[channel]
 
-        # ---------------------------------------------------
-        # Step 4 — Send context to LLM
-        # ---------------------------------------------------
-        print("🤖 Sending context to Azure OpenAI for test case generation...\n")
-        llm_response = retriever.generate_testcase_with_llm(
-            user_story_id=user_story_id,
-            user_story=user_story,
-            description=description,
-            ac=ac,
-            retrieved_chunks=results
-        )
+            generated_tc_id = f"US_{user_story_id}_TC_{tc_counter:02d}"
+            tc_counter += 1
 
-        print("✅ LLM Response Received\n")
+            lines = tc["full_text"].split("\n")
 
-        # ---------------------------------------------------
-        # Step 5 — Parse LLM Steps (VERY IMPORTANT)
-        # ---------------------------------------------------
-        print("🧩 Parsing LLM steps from response...\n")
-        parsed_steps = parse_llm_steps(llm_response)
-        print(f"✅ Total steps parsed: {len(parsed_steps)}\n")
+            scenario = script = pre = req = ""
 
-        # ---------------------------------------------------
-        # Step 6 — Export to Multi-Sheet Excel
-        # ---------------------------------------------------
-        print("📄 Writing test cases into Excel template...\n")
-        exporter = ExcelMultiSheetExporter()
-        exporter.export(
-            user_story_id=user_story_id,
-            parsed_steps=parsed_steps,
-            acceptance_criteria=ac
-        )
+            for line in lines:
+                if line.startswith("Scenario:"):
+                    scenario = line.split(":", 1)[1].strip()
+                elif line.startswith("Script:"):
+                    script = line.split(":", 1)[1].strip()
+                elif line.startswith("Precondition:"):
+                    pre = line.split(":", 1)[1].strip()
+                elif line.startswith("Requirement:"):
+                    req = line.split(":", 1)[1].strip()
 
-        print("\n🎉 Test Case Excel Generated Successfully!\n")
+            for line in lines:
+                if line.startswith("Step"):
+                    parts = [p.strip() for p in line.split("|")]
 
-    except Exception as e:
-        print("\n❌ ERROR OCCURRED")
-        print(e)
-        print("\n📌 TRACEBACK:\n")
-        traceback.print_exc()
+                    ws.cell(row, 1).value = generated_tc_id
+                    ws.cell(row, 2).value = scenario
+                    ws.cell(row, 3).value = script
+                    ws.cell(row, 4).value = pre
+                    ws.cell(row, 5).value = parts[0]
+                    ws.cell(row, 6).value = parts[1] if len(parts) > 1 else ""
+                    ws.cell(row, 7).value = parts[2] if len(parts) > 2 else ""
+                    ws.cell(row, 8).value = parts[3] if len(parts) > 3 else ""
+                    ws.cell(row, 9).value = parts[4] if len(parts) > 4 else ""
+                    ws.cell(row, 10).value = req
+
+                    row += 1
+
+            row_tracker[channel] = row
+
+        wb.save(output_path)
