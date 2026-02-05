@@ -1,62 +1,36 @@
-from openpyxl import load_workbook
+from rag_query import TestCaseRAGRetriever
+from excel_multi_sheet_exporter import MultiSheetExcelExporter
 
+retriever = TestCaseRAGRetriever()
+exporter = MultiSheetExcelExporter("Test_Script_Template_v1.0.xlsx")
 
-class MultiSheetExcelExporter:
+# ------------------ INPUTS ------------------
+user_story_id = "45678"
 
-    def __init__(self, template_path):
-        self.template_path = template_path
+user_story = "User should generate Initial Disclosure"
+description = "Enter borrower and property details"
+ac = "This applies to Retail and DTC channel. Fees must calculate correctly."
+# --------------------------------------------
 
-    def export(self, testcases, user_story_id, output_path):
-        wb = load_workbook(self.template_path)
+results = retriever.retrieve(user_story, description, ac)
 
-        for ch in ["RTL", "WHL", "DTC", "CL1"]:
-            if ch not in wb.sheetnames:
-                wb.create_sheet(ch)
+unique_tc = {}
 
-        sheets = {name: wb[name] for name in wb.sheetnames}
-        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
+for r in results:
+    tc_id = r["testCaseId"]
+    if tc_id not in unique_tc:
+        full = retriever.rebuild_testcase(tc_id)
+        unique_tc[tc_id] = {
+            "channel": r["channel"],
+            "full_text": full
+        }
 
-        tc_counter = 1
+output_file = f"export/Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
 
-        for tc in testcases:
-            channel = tc["channel"]
-            ws = sheets[channel]
-            row = row_tracker[channel]
+exporter.export(
+    list(unique_tc.values()),
+    user_story_id,
+    output_file
+)
 
-            generated_tc_id = f"US_{user_story_id}_TC_{tc_counter:02d}"
-            tc_counter += 1
-
-            lines = tc["full_text"].split("\n")
-
-            scenario = script = pre = req = ""
-
-            for line in lines:
-                if line.startswith("Scenario:"):
-                    scenario = line.split(":", 1)[1].strip()
-                elif line.startswith("Script:"):
-                    script = line.split(":", 1)[1].strip()
-                elif line.startswith("Precondition:"):
-                    pre = line.split(":", 1)[1].strip()
-                elif line.startswith("Requirement:"):
-                    req = line.split(":", 1)[1].strip()
-
-            for line in lines:
-                if line.startswith("Step"):
-                    parts = [p.strip() for p in line.split("|")]
-
-                    ws.cell(row, 1).value = generated_tc_id
-                    ws.cell(row, 2).value = scenario
-                    ws.cell(row, 3).value = script
-                    ws.cell(row, 4).value = pre
-                    ws.cell(row, 5).value = parts[0]
-                    ws.cell(row, 6).value = parts[1] if len(parts) > 1 else ""
-                    ws.cell(row, 7).value = parts[2] if len(parts) > 2 else ""
-                    ws.cell(row, 8).value = parts[3] if len(parts) > 3 else ""
-                    ws.cell(row, 9).value = parts[4] if len(parts) > 4 else ""
-                    ws.cell(row, 10).value = req
-
-                    row += 1
-
-            row_tracker[channel] = row
-
-        wb.save(output_path)
+print(f"✅ Excel created: {output_file}")
