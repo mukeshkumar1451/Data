@@ -1,55 +1,59 @@
-
-🚀 RAG Test Case Generation Started
-
-📥 Loading user story YAML...
-✅ YAML loaded
-
-🔧 Initializing RAG Retriever...
-✅ Retriever ready
-
-🔍 Running vector search in Azure AI Search...
-
-🔹 Step 1: Detecting channels from AC
-
-🔍 Detecting channels from Acceptance Criteria...
-
-🧠 Raw detected channels: {'WHL'}
-✅ Final channels after rule mapping: {'WHL', 'CL1'}
-
-🔎 Channel Filter: channel eq 'WHL' or channel eq 'CL1'
-
-🔹 Step 2: Preparing semantic query text
-🧠 Creating embedding from User Story + Description + AC...
+🔹 Step 3: Sending vector search to Azure AI Search
 
 ❌ ERROR OCCURRED
-Error code: 404 - {'error': {'code': '404', 'message': 'Resource not found'}}
+Session.request() got an unexpected keyword argument 'vector'
 
 📌 TRACEBACK:
 Traceback (most recent call last):
   File "C:\Users\h84609n\Desktop\VectorDb Test\test_rag.py", line 39, in <module>
     results = retriever.retrieve(user_story, description, ac)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 64, in retrieve
-    query_vector = self.embed_query(query_text)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 33, in embed_query      
-    emb = self.openai.embeddings.create(
-        model=self.embed_model,
-        input=text
-    )
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\openai\resources\embeddings.py", line 132, in create
-    return self._post(
-           ~~~~~~~~~~^
-        "/embeddings",
-        ^^^^^^^^^^^^^^
-    ...<8 lines>...
-        cast_to=CreateEmbeddingResponse,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 82, in retrieve
+    results_list = list(results)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 54, in __next__
+    return next(self._page_iterator)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
+    self._response = self._get_next(self.continuation_token)
+                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 125, in _get_next_cb
+    return self._client.documents.search_post(search_request=self._initial_query.request, **self._kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\tracing\decorator.py", line 119, in wrapper_use_tracer
+    return func(*args, **kwargs)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 769, in search_post
+    pipeline_response: PipelineResponse = self._client._pipeline.run(  # pylint: disable=protected-access
+                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        _request, stream=_stream, **kwargs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     )
     ^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\openai\_base_client.py", line 1294, in post
-    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
-                           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\openai\_base_client.py", line 1067, in request
-    raise self._make_status_error_from_response(err.response) from None
-openai.NotFoundError: Error code: 404 - {'error': {'code': '404', 'message': 'Resource not 
-found'}}
-(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> 
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 242, in run
+    return first_node.send(pipeline_request)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  [Previous line repeated 2 more times]
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\policies\_redirect.py", line 205, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\policies\_retry.py", line 545, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  [Previous line repeated 2 more times]
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 130, in send
+    self._sender.send(request.http_request, **request.context.options),
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\transport\_requests_basic.py", line 375, in send
+    response = self.session.request(  # type: ignore
+        request.method,
+    ...<9 lines>...
+        **kwargs
+    )
+TypeError: Session.request() got an unexpected keyword argument 'vector'
