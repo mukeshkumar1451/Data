@@ -1,29 +1,60 @@
-import os
-from openai import AzureOpenAI
-
-endpoint = "https://centralus.api.cognitive.microsoft.com/"
-model_name = "text-embedding-3-large"
-deployment = "text-embedding-3-large"
-
-api_version = "2024-02-01"
-
-client = AzureOpenAI(
-    api_version="2024-12-01-preview",
-    endpoint=endpoint,
-    credential=AzureKeyCredential("<API_KEY>")
-)
-
-response = client.embeddings.create(
-    input=["first phrase","second phrase","third phrase"],
-    model=deployment
-)
-
-for item in response.data:
-    length = len(item.embedding)
-    print(
-        f"data[{item.index}]: length={length}, "
-        f"[{item.embedding[0]}, {item.embedding[1]}, "
-        f"..., {item.embedding[length-2]}, {item.embedding[length-1]}]"
+PS C:\Users\h84609n\Desktop\VectorDb Test> py test_rag.py
+🔎 Channels from AC: ['WHL']
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\VectorDb Test\test_rag.py", line 32, in <module>
+    results = retriever.retrieve(user_story, description, ac)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 90, in retrieve
+    return list(results)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 54, in __next__
+    return next(self._page_iterator)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
+    self._response = self._get_next(self.continuation_token)
+                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 131, in _get_next_cb
+    return self._client.documents.search_post(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        search_request=self._initial_query.request, **self._kwargs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     )
-print(response.usage)
-
+    ^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\tracing\decorator.py", line 119, in wrapper_use_tracer
+    return func(*args, **kwargs)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 935, in search_post
+    self._client._pipeline.run(  # pylint: disable=protected-access
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        _request, stream=_stream, **kwargs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 242, in run
+    return first_node.send(pipeline_request)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  [Previous line repeated 2 more times]
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\policies\_redirect.py", line 205, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\policies\_retry.py", line 545, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  [Previous line repeated 2 more times]
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 130, in send
+    self._sender.send(request.http_request, **request.context.options),
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\transport\_requests_basic.py", line 375, in send
+    response = self.session.request(  # type: ignore
+        request.method,
+    ...<9 lines>...
+        **kwargs
+    )
+TypeError: Session.request() got an unexpected keyword argument 'vector'
+(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> 
