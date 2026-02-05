@@ -1,60 +1,34 @@
-(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> py test_rag.py
+import re
 
-🚀 RAG Test Case Generation Started
+def parse_llm_steps(llm_text: str):
+    """
+    Converts LLM raw testcase text into structured step rows
+    """
 
-📥 Loading user story YAML...
-✅ YAML loaded
+    steps = []
 
-🔧 Initializing RAG Retriever...
-✅ Retriever ready
+    lines = llm_text.split("\n")
 
-🔍 Running vector search in Azure AI Search...
+    step_pattern = re.compile(r"Step\s*\d+", re.IGNORECASE)
 
-🔹 Step 1: Detecting channels from AC
+    for line in lines:
+        line = line.strip()
 
-🔍 Detecting channels from Acceptance Criteria...
+        if not line:
+            continue
 
-🧠 Raw detected channels: {'WHL'}
-✅ Final channels after rule mapping: {'CL1', 'WHL'}
+        if step_pattern.match(line):
+            # Expected format:
+            # Step 01 | Action | Screen | TestData | Expected
+            parts = [p.strip() for p in line.split("|")]
 
-🔎 Channel Filter: channel eq 'CL1' or channel eq 'WHL'
+            if len(parts) >= 5:
+                steps.append({
+                    "step_no": parts[0],
+                    "action": parts[1],
+                    "screen": parts[2],
+                    "testdata": parts[3],
+                    "expected": parts[4]
+                })
 
-🔹 Step 2: Preparing semantic query text
-🧠 Creating embedding from User Story + Description + AC...
-✅ Embedding length: 3072
-
-🔹 Step 3: Sending vector search to Azure AI Search
-✅ Retrieved 40 chunks from vector DB
-
-✅ Retrieved 40 vector chunks
-
-🧩 Rebuilding historical testcases from chunks...
-   ↳ Rebuilding TestCase: 740128_CL1_01
-🧩 Rebuilding full testcase for: 740128_CL1_01
-   ↳ Rebuilding TestCase: 740128_WHL_01
-🧩 Rebuilding full testcase for: 740128_WHL_01
-   ↳ Rebuilding TestCase: 749011_WHL_02
-🧩 Rebuilding full testcase for: 749011_WHL_02
-   ↳ Rebuilding TestCase: 749011_WHL_01
-🧩 Rebuilding full testcase for: 749011_WHL_01
-   ↳ Rebuilding TestCase: 749011_WHL_03
-🧩 Rebuilding full testcase for: 749011_WHL_03
-✅ Context ready for LLM
-
-🤖 Sending context to Azure OpenAI for test case generation...
-
-✅ LLM Response Received
-
------ GENERATED OUTPUT PREVIEW -----
-
-Scenario: Verify "Is the Property a Condo?" defaults to YES for Detached Condominium       
-Script: FHA_CaseNumber_Default_Yes_DetachedCondo
-Precondition: Loan is a Wholesale loan, FHA Request Case Number screen is available, and Type of Property is set to "Detached Condominium".
-Requirement: AC1
-
-Step 01 | Log into H2OA in UAT environment | Login Page | https://uath2o.newrez.com/ | Login should be successful
-Step 02 | Open the loan created as per preconditions | Loan Summary | nan | Loan Summary screen should be opened
-Step 03 | Navigate to Status > FHA Request Case Number | FHA Request Case Number | nan | FHA Request Case Number screen should be opened
-Step 04 | Verify "Is the Property a Condo?" field in the Type of Case section | FHA Request Case Number | nan | Default value shou
-
------------------------------------
+    return steps
