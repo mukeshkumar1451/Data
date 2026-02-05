@@ -1,9 +1,11 @@
+import os
 import traceback
 import yaml
 
 from rag_query import TestCaseRAGRetriever as RAGRetriever
 from llm_step_parser import parse_llm_steps
-from excel_multi_sheet_exporter import MultiSheetExcelExporter  as ExcelMultiSheetExporter
+from excel_multi_sheet_exporter import MultiSheetExcelExporter as ExcelMultiSheetExporter
+from embeddingtovectordb.config import get
 
 
 def load_userstory(path: str):
@@ -53,11 +55,10 @@ if __name__ == "__main__":
             ac=ac,
             retrieved_chunks=results
         )
-
         print("✅ LLM Response Received\n")
 
         # ---------------------------------------------------
-        # Step 5 — Parse LLM Steps (VERY IMPORTANT)
+        # Step 5 — Parse LLM Steps
         # ---------------------------------------------------
         print("🧩 Parsing LLM steps from response...\n")
         parsed_steps = parse_llm_steps(llm_response)
@@ -67,14 +68,21 @@ if __name__ == "__main__":
         # Step 6 — Export to Multi-Sheet Excel
         # ---------------------------------------------------
         print("📄 Writing test cases into Excel template...\n")
-        exporter = ExcelMultiSheetExporter()
-        exporter.export(
-            user_story_id=user_story_id,
-            parsed_steps=parsed_steps,
-            acceptance_criteria=ac
+
+        template_path = get("TESTCASE_TEMPLATE_PATH")
+        output_dir = get("OUTPUT_DIR")
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_file = os.path.join(
+            output_dir,
+            f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
         )
 
-        print("\n🎉 Test Case Excel Generated Successfully!\n")
+        exporter = ExcelMultiSheetExporter(template_path)
+        exporter.export(parsed_steps, user_story_id, output_file)
+
+        print(f"\n🎉 Test Case Excel Generated Successfully: {output_file}\n")
 
     except Exception as e:
         print("\n❌ ERROR OCCURRED")
