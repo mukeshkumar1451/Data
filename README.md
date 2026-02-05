@@ -1,107 +1,64 @@
-import os
-import traceback
-import yaml
-
-from rag_query import TestCaseRAGRetriever as RAGRetriever
-from llm_step_parser import parse_llm_steps
-from excel_multi_sheet_exporter import MultiSheetExcelExporter as ExcelMultiSheetExporter
-from embeddingtovectordb.config import get
+from openpyxl import load_workbook
 
 
-def load_userstory(path: str):
-    print("📥 Loading user story YAML...")
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    print("✅ YAML loaded")
-    return data
+class MultiSheetExcelExporter:
 
+    def __init__(self, template_path):
+        self.template_path = template_path
 
-if __name__ == "__main__":
-    try:
-        print("\n🚀 RAG Test Case Generation Started\n")
+    def export(self, testcases, user_story_id, output_path):
+        """
+        testcases format expected:
+        [
+            {
+                "channel": "WHL",
+                "scenario": "...",
+                "script": "...",
+                "precondition": "...",
+                "requirement": "...",
+                "steps": [ {step_no, action, screen, testdata, expected} ]
+            }
+        ]
+        """
 
-        # ---------------------------------------------------
-        # Step 1 — Load User Story Input
-        # ---------------------------------------------------
-        story = load_userstory("userstory_input.yaml")
+        wb = load_workbook(self.template_path)
 
-        user_story_id = story["user_story_id"]
-        user_story = story["user_story"]
-        description = story["description"]
-        ac = story["acceptance_criteria"]
+        for ch in ["RTL", "WHL", "DTC", "CL1"]:
+            if ch not in wb.sheetnames:
+                wb.create_sheet(ch)
 
-        # ---------------------------------------------------
-        # Step 2 — Initialize Retriever
-        # ---------------------------------------------------
-        print("\n🔧 Initializing RAG Retriever...")
-        retriever = RAGRetriever()
-        print("✅ Retriever ready")
+        sheets = {name: wb[name] for name in wb.sheetnames}
+        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
 
-        # ---------------------------------------------------
-        # Step 3 — Vector Search
-        # ---------------------------------------------------
-        print("\n🔍 Running vector search in Azure AI Search...\n")
-        results = retriever.retrieve(user_story, description, ac)
-        print(f"✅ Retrieved {len(results)} vector chunks\n")
+        tc_counter = 1
 
-        # ---------------------------------------------------
-        # Step 4 — Send context to LLM
-        # ---------------------------------------------------
-        print("🤖 Sending context to Azure OpenAI for test case generation...\n")
+        for tc in testcases:
+            channel = tc["channel"]
+            ws = sheets[channel]
+            row = row_tracker[channel]
 
-        llm_result = retriever.generate_testcase_with_llm(
-            user_story_id=user_story_id,
-            user_story=user_story,
-            description=description,
-            ac=ac,
-            retrieved_chunks=results
-        )
+            generated_tc_id = f"US_{user_story_id}_TC_{tc_counter:02d}"
+            tc_counter += 1
 
-        llm_text = llm_result["llm_text"]
-        channels = llm_result["channels"]
+            scenario = tc["scenario"]
+            script = tc["script"]
+            pre = tc["precondition"]
+            req = tc["requirement"]
 
-        print("✅ LLM Response Received\n")
-        print(f"📌 Channels detected for sheets: {channels}\n")
+            for step in tc["steps"]:
+                ws.cell(row, 1).value = generated_tc_id
+                ws.cell(row, 2).value = scenario
+                ws.cell(row, 3).value = script
+                ws.cell(row, 4).value = pre
+                ws.cell(row, 5).value = step["step_no"]
+                ws.cell(row, 6).value = step["action"]
+                ws.cell(row, 7).value = step["screen"]
+                ws.cell(row, 8).value = step["testdata"]
+                ws.cell(row, 9).value = step["expected"]
+                ws.cell(row, 10).value = req
+                row += 1
 
-        # ---------------------------------------------------
-        # Step 5 — Parse LLM Steps
-        # ---------------------------------------------------
-        print("🧩 Parsing LLM steps from response...\n")
+            row_tracker[channel] = row
 
-        parsed_steps = parse_llm_steps(llm_text)
-        print(f"✅ Total steps parsed: {len(parsed_steps)}\n")
+        wb.save(output_path)
 
-        # 🔥 VERY IMPORTANT — attach channels for Excel sheets
-        for tc in parsed_steps:
-            tc["channels"] = channels
-
-        # ---------------------------------------------------
-        # Step 6 — Export to Multi-Sheet Excel
-        # ---------------------------------------------------
-        print("📄 Writing test cases into Excel template...\n")
-
-        template_path = get("EXCEL_TEMPLATE_PATH")
-        output_dir = get("EXCEL_OUTPUT_DIR")
-
-        os.makedirs(output_dir, exist_ok=True)
-
-        output_file = os.path.join(
-            output_dir,
-            f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
-        )
-
-        exporter = ExcelMultiSheetExporter(template_path)
-        exporter.export(
-            testcases=parsed_steps,
-            user_story_id=user_story_id,
-            output_path=output_file,
-            channels=channels
-        )
-
-        print(f"\n🎉 Test Case Excel Generated Successfully:\n{output_file}\n")
-
-    except Exception as e:
-        print("\n❌ ERROR OCCURRED")
-        print(e)
-        print("\n📌 TRACEBACK:\n")
-        traceback.print_exc()
