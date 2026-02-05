@@ -48,6 +48,7 @@ if __name__ == "__main__":
         # Step 4 — Send context to LLM
         # ---------------------------------------------------
         print("🤖 Sending context to Azure OpenAI for test case generation...\n")
+
         llm_result = retriever.generate_testcase_with_llm(
             user_story_id=user_story_id,
             user_story=user_story,
@@ -55,14 +56,24 @@ if __name__ == "__main__":
             ac=ac,
             retrieved_chunks=results
         )
+
+        llm_text = llm_result["llm_text"]
+        channels = llm_result["channels"]
+
         print("✅ LLM Response Received\n")
+        print(f"📌 Channels detected for sheets: {channels}\n")
 
         # ---------------------------------------------------
         # Step 5 — Parse LLM Steps
         # ---------------------------------------------------
         print("🧩 Parsing LLM steps from response...\n")
-        parsed_steps = parse_llm_steps(llm_response)
+
+        parsed_steps = parse_llm_steps(llm_text)
         print(f"✅ Total steps parsed: {len(parsed_steps)}\n")
+
+        # 🔥 VERY IMPORTANT — attach channels for Excel sheets
+        for tc in parsed_steps:
+            tc["channels"] = channels
 
         # ---------------------------------------------------
         # Step 6 — Export to Multi-Sheet Excel
@@ -80,9 +91,14 @@ if __name__ == "__main__":
         )
 
         exporter = ExcelMultiSheetExporter(template_path)
-        exporter.export(parsed_steps, user_story_id, output_file)
+        exporter.export(
+            testcases=parsed_steps,
+            user_story_id=user_story_id,
+            output_path=output_file,
+            channels=channels
+        )
 
-        print(f"\n🎉 Test Case Excel Generated Successfully: {output_file}\n")
+        print(f"\n🎉 Test Case Excel Generated Successfully:\n{output_file}\n")
 
     except Exception as e:
         print("\n❌ ERROR OCCURRED")
