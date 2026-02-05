@@ -1,60 +1,70 @@
-PS C:\Users\h84609n\Desktop\VectorDb Test> py test_rag.py
-🔎 Channels from AC: ['WHL']
-Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\VectorDb Test\test_rag.py", line 32, in <module>
+# test_rag.py
+
+import yaml
+import traceback
+from rag_query import TestCaseRAGRetriever
+from llm_generator import LLMTestCaseGenerator
+
+
+def load_userstory(path):
+    print("📥 Loading user story YAML...")
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+try:
+    print("\n🚀 RAG Test Case Generation Started\n")
+
+    # --------------------------------------------------
+    # Step 1: Load YAML
+    # --------------------------------------------------
+    story = load_userstory("userstory_input.yaml")
+    print("✅ YAML loaded")
+
+    user_story = story["user_story"]
+    description = story["description"]
+    ac = story["acceptance_criteria"]
+
+    # --------------------------------------------------
+    # Step 2: Initialize Retriever
+    # --------------------------------------------------
+    print("\n🔧 Initializing RAG Retriever...")
+    retriever = TestCaseRAGRetriever()
+    print("✅ Retriever ready")
+
+    # --------------------------------------------------
+    # Step 3: Vector Retrieval
+    # --------------------------------------------------
+    print("\n🔍 Running vector search in Azure AI Search...")
     results = retriever.retrieve(user_story, description, ac)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 90, in retrieve
-    return list(results)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 54, in __next__
-    return next(self._page_iterator)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
-    self._response = self._get_next(self.continuation_token)
-                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 131, in _get_next_cb
-    return self._client.documents.search_post(
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-        search_request=self._initial_query.request, **self._kwargs
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\tracing\decorator.py", line 119, in wrapper_use_tracer
-    return func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 935, in search_post
-    self._client._pipeline.run(  # pylint: disable=protected-access
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        _request, stream=_stream, **kwargs
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 242, in run
-    return first_node.send(pipeline_request)
-           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  [Previous line repeated 2 more times]
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\policies\_redirect.py", line 205, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\policies\_retry.py", line 545, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
-    response = self.next.send(request)
-  [Previous line repeated 2 more times]
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 130, in send
-    self._sender.send(request.http_request, **request.context.options),
-    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\pipeline\transport\_requests_basic.py", line 375, in send
-    response = self.session.request(  # type: ignore
-        request.method,
-    ...<9 lines>...
-        **kwargs
-    )
-TypeError: Session.request() got an unexpected keyword argument 'vector'
-(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> 
+    print(f"✅ Retrieved {len(results)} vector chunks")
+
+    # --------------------------------------------------
+    # Step 4: Rebuild historical testcases
+    # --------------------------------------------------
+    print("\n🧩 Rebuilding historical testcases from chunks...")
+    context_text = ""
+    for r in results[:5]:
+        print(f"   ↳ Rebuilding TestCase: {r['testCaseId']}")
+        full = retriever.rebuild_testcase(r["testCaseId"])
+        context_text += full + "\n\n"
+
+    print("✅ Context ready for LLM")
+
+    # --------------------------------------------------
+    # Step 5: LLM Generation
+    # --------------------------------------------------
+    print("\n🤖 Sending context to Azure OpenAI for test case generation...")
+    generator = LLMTestCaseGenerator()
+    generated = generator.generate(user_story, description, ac, context_text)
+
+    print("\n✅ LLM Response Received\n")
+    print("----- GENERATED OUTPUT PREVIEW -----\n")
+    print(generated[:800])
+    print("\n-----------------------------------")
+
+except Exception as e:
+    print("\n❌ ERROR OCCURRED")
+    print(str(e))
+    print("\n📌 TRACEBACK:")
+    traceback.print_exc()
