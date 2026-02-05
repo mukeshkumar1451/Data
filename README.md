@@ -1,10 +1,10 @@
 (.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> py test_rag.py
 🔎 Channels from AC: ['WHL']
-Discriminator kind is absent or null, use base class VectorQuery.
+value is not a known attribute of class <class 'azure.search.documents._generated.models._models_py3.VectorQuery'> and will be ignored
 Traceback (most recent call last):
   File "C:\Users\h84609n\Desktop\VectorDb Test\test_rag.py", line 32, in <module>
     results = retriever.retrieve(user_story, description, ac)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 95, in retrieve
+  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 98, in retrieve
     for r in results:
              ^^^^^^^
   File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 54, in __next__
