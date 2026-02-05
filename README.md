@@ -1,74 +1,67 @@
-import re
+def build_testcase_prompt(
+    user_story_id,
+    user_story,
+    description,
+    ac,
+    historical_context
+):
+    return f"""
+You are a QA Test Case Designer.
 
+You must generate NEW test cases for the given User Story by learning from the Historical Test Cases.
 
-def parse_llm_steps(llm_text: str):
-    """
-    Parse LLM output and MERGE ALL steps into ONE SINGLE testcase.
-    Step numbers will be re-sequenced continuously.
+STRICT RULES (CRITICAL — DO NOT VIOLATE):
 
-    Returns:
-    [
-        {
-            "scenario": str,
-            "script": str,
-            "precondition": str,
-            "requirement": str,
-            "steps": [
-                {
-                    "step_no": "Step 01",
-                    "action": "...",
-                    "screen": "...",
-                    "testdata": "...",
-                    "expected": "..."
-                }
-            ]
-        }
-    ]
-    """
+1) Do NOT explain anything.
+2) Do NOT add headings, notes, markdown, or comments.
+3) Output ONLY test case content in the exact format below.
+4) Every test step MUST use pipe "|" separator.
+5) Steps MUST start from "Step 01" and increment sequentially.
+6) Generate COMPLETE steps. Do NOT stop early.
+7) This output will be parsed directly into Excel columns.
 
-    lines = llm_text.split("\n")
+Required Output Format (MANDATORY):
 
-    scenario = ""
-    script = ""
-    precondition = ""
-    requirement = ""
+Scenario: <short scenario>
+Script: <script name>
+Precondition: <precondition>
+Requirement: <requirement mapping>
 
-    steps = []
-    step_counter = 1
+Step 01 | <step description> | <screen name> | <test data> | <expected result>
+Step 02 | <step description> | <screen name> | <test data> | <expected result>
+Step 03 | <step description> | <screen name> | <test data> | <expected result>
 
-    for raw in lines:
-        line = raw.strip()
+Repeat the same structure if multiple test cases are required.
 
-        if line.startswith("Scenario:"):
-            scenario = line.split(":", 1)[1].strip()
+Guidelines for generation:
 
-        elif line.startswith("Script:"):
-            script = line.split(":", 1)[1].strip()
+- Learn the writing style from Historical Test Cases.
+- Use realistic screen names and test data from history.
+- Keep steps detailed, actionable, and sequential.
+- Do NOT invent unrelated functionality.
+- Do NOT shorten steps.
+- Do NOT skip navigation steps.
 
-        elif line.startswith("Precondition:"):
-            precondition = line.split(":", 1)[1].strip()
+------------------------------------------------------------
 
-        elif line.startswith("Requirement:"):
-            requirement = line.split(":", 1)[1].strip()
+USER STORY ID:
+{user_story_id}
 
-        elif re.match(r"^Step\s*\d+", line):
-            parts = [p.strip() for p in line.split("|")]
+USER STORY:
+{user_story}
 
-            if len(parts) >= 5:
-                steps.append({
-                    "step_no": f"Step {step_counter:02d}",
-                    "action": parts[1],
-                    "screen": parts[2],
-                    "testdata": parts[3],
-                    "expected": parts[4],
-                })
-                step_counter += 1
+DESCRIPTION:
+{description}
 
-    # 🔥 Always return ONLY ONE testcase
-    return [{
-        "scenario": scenario,
-        "script": script,
-        "precondition": precondition,
-        "requirement": requirement,
-        "steps": steps
-    }]
+ACCEPTANCE CRITERIA:
+{ac}
+
+------------------------------------------------------------
+
+HISTORICAL TEST CASES FOR LEARNING STYLE:
+{historical_context}
+
+------------------------------------------------------------
+
+Now generate the new test cases.
+"""
