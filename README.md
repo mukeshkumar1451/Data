@@ -1,116 +1,62 @@
-from openai import AzureOpenAI
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-from config import get
+from openpyxl import load_workbook
 
 
-CHANNEL_KEYWORDS = {
-    "RTL": ["RTL", "RETAIL", "RETAIL CHANNEL"],
-    "WHL": ["WHL", "WHOLESALE", "WHOLESALE BROKER", "BROKER CHANNEL"],
-    "DTC": ["DTC", "DIRECT TO CUSTOMER"],
-    "CL1": ["CL1", "CORRESPONDENT", "CORRESPONDENT CHANNEL"]
-}
+class MultiSheetExcelExporter:
 
+    def __init__(self, template_path):
+        self.template_path = template_path
 
-def detect_channels_from_ac(ac_text: str):
-    ac_upper = ac_text.upper()
-    matched = []
+    def export(self, testcases, user_story_id, output_path):
+        wb = load_workbook(self.template_path)
 
-    for channel, words in CHANNEL_KEYWORDS.items():
-        for w in words:
-            if w in ac_upper:
-                matched.append(channel)
-                break
+        for ch in ["RTL", "WHL", "DTC", "CL1"]:
+            if ch not in wb.sheetnames:
+                wb.create_sheet(ch)
 
-    return matched
+        sheets = {name: wb[name] for name in wb.sheetnames}
+        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
 
+        tc_counter = 1
 
-class TestCaseRAGRetriever:
+        for tc in testcases:
+            channel = tc["channel"]
+            ws = sheets[channel]
+            row = row_tracker[channel]
 
-    def __init__(self):
-        self.openai_client = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
-        )
+            generated_tc_id = f"US_{user_story_id}_TC_{tc_counter:02d}"
+            tc_counter += 1
 
-        self.search_client = SearchClient(
-            endpoint=get("AZURE_SEARCH_ENDPOINT"),
-            index_name=get("AZURE_SEARCH_INDEX"),
-            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-        )
+            lines = tc["full_text"].split("\n")
 
-        self.embedding_model = get("EMBEDDING_MODEL")
-        self.top_k = get("TOP_K", int)
+            scenario = script = pre = req = ""
 
-    def _build_query(self, user_story, description, ac):
-        return f"""
-User Story:
-{user_story}
+            for line in lines:
+                if line.startswith("Scenario:"):
+                    scenario = line.split(":", 1)[1].strip()
+                elif line.startswith("Script:"):
+                    script = line.split(":", 1)[1].strip()
+                elif line.startswith("Precondition:"):
+                    pre = line.split(":", 1)[1].strip()
+                elif line.startswith("Requirement:"):
+                    req = line.split(":", 1)[1].strip()
 
-Description:
-{description}
+            for line in lines:
+                if line.startswith("Step"):
+                    parts = [p.strip() for p in line.split("|")]
 
-Acceptance Criteria:
-{ac}
+                    ws.cell(row, 1).value = generated_tc_id
+                    ws.cell(row, 2).value = scenario
+                    ws.cell(row, 3).value = script
+                    ws.cell(row, 4).value = pre
+                    ws.cell(row, 5).value = parts[0]
+                    ws.cell(row, 6).value = parts[1] if len(parts) > 1 else ""
+                    ws.cell(row, 7).value = parts[2] if len(parts) > 2 else ""
+                    ws.cell(row, 8).value = parts[3] if len(parts) > 3 else ""
+                    ws.cell(row, 9).value = parts[4] if len(parts) > 4 else ""
+                    ws.cell(row, 10).value = req
 
-Find relevant test cases.
-"""
+                    row += 1
 
-    def _embed_query(self, text):
-        emb = self.openai_client.embeddings.create(
-            model=self.embedding_model,
-            input=text
-        )
-        return emb.data[0].embedding
+            row_tracker[channel] = row
 
-    def retrieve(self, user_story, description, ac):
-        query_vector = self._embed_query(
-            self._build_query(user_story, description, ac)
-        )
-
-        channels = detect_channels_from_ac(ac)
-
-        if channels:
-            filters = [f"channel eq '{c}'" for c in channels]
-            filter_expr = " or ".join(filters)
-            print(f"🔎 Channels from AC: {channels}")
-        else:
-            filter_expr = None
-            print("🔎 No channel → searching all")
-
-        vector_query = {
-            "vector": query_vector,
-            "k": self.top_k,
-            "fields": "embedding"
-        }
-
-        results = self.search_client.search(
-            search_text=None,
-            vector_queries=[vector_query],
-            filter=filter_expr
-        )
-
-        matches = []
-        for r in results:
-            matches.append({
-                "testCaseId": r["testCaseId"],
-                "chunkId": r["chunkId"],
-                "channel": r["channel"],
-                "content": r["content"]
-            })
-
-        return matches
-
-    def rebuild_testcase(self, test_case_id):
-        results = self.search_client.search(
-            search_text="*",
-            filter=f"testCaseId eq '{test_case_id}'",
-            order_by="chunkId asc"
-        )
-
-        full_text = ""
-        for r in results:
-            full_text += r["content"] + "\n"
-
-        return full_text
+        wb.save(output_path)
