@@ -1,70 +1,51 @@
-# test_rag.py
+import re
+from bs4 import BeautifulSoup
 
-import yaml
-import traceback
-from rag_query import TestCaseRAGRetriever
-from llm_generator import LLMTestCaseGenerator
+ALL_CHANNELS = ["WHL", "RTL", "DTC", "CL1"]
 
+CHANNEL_KEYWORDS = {
+    "RTL": ["RTL", "RETAIL", "RETAIL CHANNEL"],
+    "WHL": ["WHL", "WHOLESALE", "WHOLESALE BROKER", "BROKER CHANNEL"],
+    "DTC": ["DTC", "DIRECT TO CUSTOMER"],
+    "CL1": ["CL1", "CORRESPONDENT", "CORRESPONDENT CHANNEL"]
+}
 
-def load_userstory(path):
-    print("📥 Loading user story YAML...")
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+def clean_html(raw_html: str) -> str:
+    if not raw_html:
+        return ""
+    soup = BeautifulSoup(raw_html, "html.parser")
+    text = soup.get_text(separator=" ")
+    return " ".join(text.split()).lower()
 
+def detect_channels( acceptance_criteria: str) -> list:
+    print("\n[DEBUG] Acceptance Criteria received:")
+    print(acceptance_criteria)
+    combined_text = clean_html(acceptance_criteria)
 
-try:
-    print("\n🚀 RAG Test Case Generation Started\n")
+    negation_words = [
+        "do not", "does not", "did not", "not ", "no ", "without", "should not", "cannot", "can't", "won't", "never", "ignores", "ignore", "except"
+    ]
 
-    # --------------------------------------------------
-    # Step 1: Load YAML
-    # --------------------------------------------------
-    story = load_userstory("userstory_input.yaml")
-    print("✅ YAML loaded")
+    found_channels = []
+    lines = combined_text.split(". ")  # Split by sentences (simple)
 
-    user_story = story["user_story"]
-    description = story["description"]
-    ac = story["acceptance_criteria"]
+    for channel, keywords in CHANNEL_KEYWORDS.items():
+        for word in keywords:
+            for line in lines:
+                if any(neg in line for neg in negation_words):
+                    continue
+                if word.lower() in line:
+                    found_channels.append(channel)
+                    break
+            else:
+                continue
+            break
 
-    # --------------------------------------------------
-    # Step 2: Initialize Retriever
-    # --------------------------------------------------
-    print("\n🔧 Initializing RAG Retriever...")
-    retriever = TestCaseRAGRetriever()
-    print("✅ Retriever ready")
+    if not found_channels:
+        print("\n⚠️  No channel keywords found in Acceptence criteria.")
+        print("➡️  Selecting ALL channels: WHL, RTL, DTC, CL1\n")
+        return ALL_CHANNELS
 
-    # --------------------------------------------------
-    # Step 3: Vector Retrieval
-    # --------------------------------------------------
-    print("\n🔍 Running vector search in Azure AI Search...")
-    results = retriever.retrieve(user_story, description, ac)
-    print(f"✅ Retrieved {len(results)} vector chunks")
+    print(f"\n✅ Channels detected from AC/Description: {found_channels}\n")
+    return found_channels
 
-    # --------------------------------------------------
-    # Step 4: Rebuild historical testcases
-    # --------------------------------------------------
-    print("\n🧩 Rebuilding historical testcases from chunks...")
-    context_text = ""
-    for r in results[:5]:
-        print(f"   ↳ Rebuilding TestCase: {r['testCaseId']}")
-        full = retriever.rebuild_testcase(r["testCaseId"])
-        context_text += full + "\n\n"
-
-    print("✅ Context ready for LLM")
-
-    # --------------------------------------------------
-    # Step 5: LLM Generation
-    # --------------------------------------------------
-    print("\n🤖 Sending context to Azure OpenAI for test case generation...")
-    generator = LLMTestCaseGenerator()
-    generated = generator.generate(user_story, description, ac, context_text)
-
-    print("\n✅ LLM Response Received\n")
-    print("----- GENERATED OUTPUT PREVIEW -----\n")
-    print(generated[:800])
-    print("\n-----------------------------------")
-
-except Exception as e:
-    print("\n❌ ERROR OCCURRED")
-    print(str(e))
-    print("\n📌 TRACEBACK:")
-    traceback.print_exc()
