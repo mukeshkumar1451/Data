@@ -1,105 +1,55 @@
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-from openai import AzureOpenAI
-from config import get
-from channel_detector import detect_channels
 
+🚀 RAG Test Case Generation Started
 
-class TestCaseRAGRetriever:
+📥 Loading user story YAML...
+✅ YAML loaded
 
-    def __init__(self):
-        # -------- Azure Search --------
-        self.search_client = SearchClient(
-            endpoint=get("AZURE_SEARCH_ENDPOINT"),
-            index_name=get("AZURE_SEARCH_INDEX"),
-            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-        )
+🔧 Initializing RAG Retriever...
+✅ Retriever ready
 
-        # -------- Azure OpenAI --------
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION")
-        )
+🔍 Running vector search in Azure AI Search...
 
-        self.embed_model = get("EMBEDDING_MODEL_DEPLOYMENT")
-        self.top_k = get("TOP_K", int)
+🔹 Step 1: Detecting channels from AC
 
-    # ----------------------------------------------------
-    # Create embedding
-    # ----------------------------------------------------
-    def embed_query(self, text):
-        print("🧠 Creating embedding from User Story + Description + AC...")
-        emb = self.openai.embeddings.create(
-            model=self.embed_model,
-            input=text
-        )
-        vec = emb.data[0].embedding
-        print(f"✅ Embedding length: {len(vec)}")
-        return vec
+🔍 Detecting channels from Acceptance Criteria...
 
-    # ----------------------------------------------------
-    # Retrieve similar chunks from vector DB
-    # ----------------------------------------------------
-    def retrieve(self, user_story, description, ac):
+🧠 Raw detected channels: {'WHL'}
+✅ Final channels after rule mapping: {'WHL', 'CL1'}
 
-        print("\n🔹 Step 1: Detecting channels from AC")
-        channels = detect_channels(ac)
+🔎 Channel Filter: channel eq 'WHL' or channel eq 'CL1'
 
-        filter_query = " or ".join([f"channel eq '{c}'" for c in channels])
-        print(f"🔎 Channel Filter: {filter_query}")
+🔹 Step 2: Preparing semantic query text
+🧠 Creating embedding from User Story + Description + AC...
 
-        print("\n🔹 Step 2: Preparing semantic query text")
-        query_text = f"""
-        User Story:
-        {user_story}
+❌ ERROR OCCURRED
+Error code: 404 - {'error': {'code': '404', 'message': 'Resource not found'}}
 
-        Description:
-        {description}
-
-        Acceptance Criteria:
-        {ac}
-        """
-
-        query_vector = self.embed_query(query_text)
-
-        print("\n🔹 Step 3: Sending vector search to Azure AI Search")
-
-        vector_query = {
-            "kind": "vector",
-            "vector": query_vector,
-            "fields": "embedding",
-            "k": self.top_k
-        }
-
-        results = self.search_client.search(
-            search_text=None,
-            vector=vector_query,
-            filter=filter_query,
-            select=["testCaseId", "chunkId", "content", "channel"]
-        )
-
-        results_list = list(results)
-        print(f"✅ Retrieved {len(results_list)} chunks from vector DB\n")
-
-        return results_list
-
-    # ----------------------------------------------------
-    # Rebuild full testcase from chunks
-    # ----------------------------------------------------
-    def rebuild_testcase(self, testcase_id):
-
-        print(f"🧩 Rebuilding full testcase for: {testcase_id}")
-
-        results = self.search_client.search(
-            search_text="*",
-            filter=f"testCaseId eq '{testcase_id}'",
-            select=["chunkId", "content"],
-            top=50
-        )
-
-        chunks = sorted(results, key=lambda x: x["chunkId"])
-
-        full_text = "\n".join([c["content"] for c in chunks])
-
-        return full_text
+📌 TRACEBACK:
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\VectorDb Test\test_rag.py", line 39, in <module>
+    results = retriever.retrieve(user_story, description, ac)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 64, in retrieve
+    query_vector = self.embed_query(query_text)
+  File "C:\Users\h84609n\Desktop\VectorDb Test\rag_query.py", line 33, in embed_query      
+    emb = self.openai.embeddings.create(
+        model=self.embed_model,
+        input=text
+    )
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\openai\resources\embeddings.py", line 132, in create
+    return self._post(
+           ~~~~~~~~~~^
+        "/embeddings",
+        ^^^^^^^^^^^^^^
+    ...<8 lines>...
+        cast_to=CreateEmbeddingResponse,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\openai\_base_client.py", line 1294, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\openai\_base_client.py", line 1067, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.NotFoundError: Error code: 404 - {'error': {'code': '404', 'message': 'Resource not 
+found'}}
+(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> 
