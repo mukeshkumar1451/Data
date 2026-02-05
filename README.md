@@ -1,36 +1,47 @@
-from rag_query import TestCaseRAGRetriever
-from excel_multi_sheet_exporter import MultiSheetExcelExporter
+from openai import AzureOpenAI
+from config import get
 
-retriever = TestCaseRAGRetriever()
-exporter = MultiSheetExcelExporter("Test_Script_Template_v1.0.xlsx")
 
-# ------------------ INPUTS ------------------
-user_story_id = "45678"
+class LLMTestCaseGenerator:
 
-user_story = "User should generate Initial Disclosure"
-description = "Enter borrower and property details"
-ac = "This applies to Retail and DTC channel. Fees must calculate correctly."
-# --------------------------------------------
+    def __init__(self):
+        self.client = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
+        )
+        self.model = get("CHAT_MODEL")
+        self.prompt_path = get("PROMPT_PATH")
 
-results = retriever.retrieve(user_story, description, ac)
+    def _load_prompt(self):
+        with open(self.prompt_path, "r") as f:
+            return f.read()
 
-unique_tc = {}
+    def generate(self, user_story, description, ac, historical_context):
+        base_prompt = self._load_prompt()
 
-for r in results:
-    tc_id = r["testCaseId"]
-    if tc_id not in unique_tc:
-        full = retriever.rebuild_testcase(tc_id)
-        unique_tc[tc_id] = {
-            "channel": r["channel"],
-            "full_text": full
-        }
+        final_prompt = f"""
+{base_prompt}
 
-output_file = f"export/Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
+----------------------------
+User Story:
+{user_story}
 
-exporter.export(
-    list(unique_tc.values()),
-    user_story_id,
-    output_file
-)
+Description:
+{description}
 
-print(f"✅ Excel created: {output_file}")
+Acceptance Criteria:
+{ac}
+
+----------------------------
+Historical Test Cases:
+{historical_context}
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": final_prompt}],
+            temperature=0.2
+        )
+
+        return response.choices[0].message.content
