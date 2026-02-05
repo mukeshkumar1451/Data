@@ -8,19 +8,20 @@ def build_testcase_prompt(
     return f"""
 You are a QA Test Case Designer.
 
-You must generate NEW test cases for the given User Story by learning from the Historical Test Cases.
+You must generate EXACTLY ONE test case for this User Story.
 
-STRICT RULES (CRITICAL — DO NOT VIOLATE):
+CRITICAL RULES (DO NOT VIOLATE):
 
-1) Do NOT explain anything.
-2) Do NOT add headings, notes, markdown, or comments.
-3) Output ONLY test case content in the exact format below.
-4) Every test step MUST use pipe "|" separator.
-5) Steps MUST start from "Step 01" and increment sequentially.
-6) Generate COMPLETE steps. Do NOT stop early.
-7) This output will be parsed directly into Excel columns.
+1) Generate ONLY ONE test case.
+2) Do NOT create multiple test cases.
+3) Do NOT restart step numbering.
+4) Steps MUST start from Step 01 and continue sequentially until the end.
+5) Do NOT stop early — include ALL required steps.
+6) Do NOT explain anything.
+7) Output must strictly follow the format below.
+8) Every step MUST use "|" separator.
 
-Required Output Format (MANDATORY):
+MANDATORY OUTPUT FORMAT:
 
 Scenario: <short scenario>
 Script: <script name>
@@ -31,16 +32,7 @@ Step 01 | <step description> | <screen name> | <test data> | <expected result>
 Step 02 | <step description> | <screen name> | <test data> | <expected result>
 Step 03 | <step description> | <screen name> | <test data> | <expected result>
 
-Repeat the same structure if multiple test cases are required.
-
-Guidelines for generation:
-
-- Learn the writing style from Historical Test Cases.
-- Use realistic screen names and test data from history.
-- Keep steps detailed, actionable, and sequential.
-- Do NOT invent unrelated functionality.
-- Do NOT shorten steps.
-- Do NOT skip navigation steps.
+Continue steps sequentially. Do NOT start a new Scenario.
 
 ------------------------------------------------------------
 
@@ -63,5 +55,5 @@ HISTORICAL TEST CASES FOR LEARNING STYLE:
 
 ------------------------------------------------------------
 
-Now generate the new test cases.
+Generate the single consolidated test case now.
 """
