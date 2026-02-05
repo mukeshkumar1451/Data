@@ -1,64 +1,105 @@
-from openpyxl import load_workbook
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
+from openai import AzureOpenAI
+from embeddingtovectordb.config import get
+from channel_detector import detect_channels
+from azure.search.documents.models import VectorizedQuery
 
 
-class MultiSheetExcelExporter:
+class TestCaseRAGRetriever:
 
-    def __init__(self, template_path):
-        self.template_path = template_path
+    def __init__(self):
+        # -------- Azure Search --------
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+        )
 
-    def export(self, testcases, user_story_id, output_path):
+        # -------- Azure OpenAI --------
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION")
+        )
+
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.top_k = get("TOP_K", int)
+
+    # ----------------------------------------------------
+    # Create embedding
+    # ----------------------------------------------------
+    def embed_query(self, text):
+        print("🧠 Creating embedding from User Story + Description + AC...")
+        emb = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text
+        )
+        vec = emb.data[0].embedding
+        print(f"✅ Embedding length: {len(vec)}")
+        return vec
+
+    # ----------------------------------------------------
+    # Retrieve similar chunks from vector DB
+    # ----------------------------------------------------
+    def retrieve(self, user_story, description, ac):
+
+        print("\n🔹 Step 1: Detecting channels from AC")
+        channels = detect_channels(ac)
+
+        filter_query = " or ".join([f"channel eq '{c}'" for c in channels])
+        print(f"🔎 Channel Filter: {filter_query}")
+
+        print("\n🔹 Step 2: Preparing semantic query text")
+        query_text = f"""
+        User Story:
+        {user_story}
+
+        Description:
+        {description}
+
+        Acceptance Criteria:
+        {ac}
         """
-        testcases format expected:
-        [
-            {
-                "channel": "WHL",
-                "scenario": "...",
-                "script": "...",
-                "precondition": "...",
-                "requirement": "...",
-                "steps": [ {step_no, action, screen, testdata, expected} ]
-            }
-        ]
-        """
 
-        wb = load_workbook(self.template_path)
+        query_vector = self.embed_query(query_text)
 
-        for ch in ["RTL", "WHL", "DTC", "CL1"]:
-            if ch not in wb.sheetnames:
-                wb.create_sheet(ch)
+        print("\n🔹 Step 3: Sending vector search to Azure AI Search")
 
-        sheets = {name: wb[name] for name in wb.sheetnames}
-        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
+        vector_query = VectorizedQuery( 
+            vector=query_vector,
+            k=self.top_k,
+            fields="embedding"
+        )
 
-        tc_counter = 1
+        results = self.search_client.search(
+            search_text=None,
+            vector_queries=[vector_query],
+            filter=filter_query,
+            select=["testCaseId", "chunkId", "content", "channel"]
+        )
 
-        for tc in testcases:
-            channel = tc["channel"]
-            ws = sheets[channel]
-            row = row_tracker[channel]
+        results_list = list(results)
+        print(f"✅ Retrieved {len(results_list)} chunks from vector DB\n")
 
-            generated_tc_id = f"US_{user_story_id}_TC_{tc_counter:02d}"
-            tc_counter += 1
+        return results_list
 
-            scenario = tc["scenario"]
-            script = tc["script"]
-            pre = tc["precondition"]
-            req = tc["requirement"]
+    # ----------------------------------------------------
+    # Rebuild full testcase from chunks
+    # ----------------------------------------------------
+    def rebuild_testcase(self, testcase_id):
 
-            for step in tc["steps"]:
-                ws.cell(row, 1).value = generated_tc_id
-                ws.cell(row, 2).value = scenario
-                ws.cell(row, 3).value = script
-                ws.cell(row, 4).value = pre
-                ws.cell(row, 5).value = step["step_no"]
-                ws.cell(row, 6).value = step["action"]
-                ws.cell(row, 7).value = step["screen"]
-                ws.cell(row, 8).value = step["testdata"]
-                ws.cell(row, 9).value = step["expected"]
-                ws.cell(row, 10).value = req
-                row += 1
+        print(f"🧩 Rebuilding full testcase for: {testcase_id}")
 
-            row_tracker[channel] = row
+        results = self.search_client.search(
+            search_text="*",
+            filter=f"testCaseId eq '{testcase_id}'",
+            select=["chunkId", "content"],
+            top=50
+        )
 
-        wb.save(output_path)
+        chunks = sorted(results, key=lambda x: x["chunkId"])
 
+        full_text = "\n".join([c["content"] for c in chunks])
+
+        return full_text
