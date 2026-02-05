@@ -1,87 +1,65 @@
-from openpyxl import load_workbook
+import re
 
 
-class MultiSheetExcelExporter:
+def parse_llm_steps(llm_text, channels):
+    """
+    Convert LLM raw text into structured testcase objects
+    """
 
-    def __init__(self, template_path):
-        self.template_path = template_path
+    testcases = []
+    current_tc = None
 
-    def export(self, testcases, user_story_id, output_path):
-        """
-        testcases format expected:
-        [
-            {
-                "channels": ["WHL", "CL1"],
-                "scenario": "...",
-                "script": "...",
-                "precondition": "...",
-                "requirement": "...",
-                "steps": [
-                    {
-                        "step_no": "Step 01",
-                        "desc": "...",
-                        "screen": "...",
-                        "data": "...",
-                        "expected": "..."
-                    }
-                ]
+    lines = [l.strip() for l in llm_text.splitlines() if l.strip()]
+
+    step_pattern = re.compile(r"^Step\s+\d+", re.IGNORECASE)
+
+    for line in lines:
+
+        # ---------------------------------------
+        # Start of new testcase
+        # ---------------------------------------
+        if line.startswith("Scenario:"):
+            if current_tc:
+                testcases.append(current_tc)
+
+            current_tc = {
+                "scenario": line.split(":", 1)[1].strip(),
+                "script": "",
+                "precondition": "",
+                "requirement": "",
+                "steps": [],
+                "channels": channels
             }
-        ]
-        """
 
-        wb = load_workbook(self.template_path)
+        elif line.startswith("Script:"):
+            current_tc["script"] = line.split(":", 1)[1].strip()
 
-        # Ensure all channel sheets exist
-        for ch in ["RTL", "WHL", "DTC", "CL1"]:
-            if ch not in wb.sheetnames:
-                wb.create_sheet(ch)
+        elif line.startswith("Precondition:"):
+            current_tc["precondition"] = line.split(":", 1)[1].strip()
 
-        sheets = {name: wb[name] for name in wb.sheetnames}
-        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
+        elif line.startswith("Requirement:"):
+            current_tc["requirement"] = line.split(":", 1)[1].strip()
 
-        tc_counter = 1
+        # ---------------------------------------
+        # Step lines
+        # ---------------------------------------
+        elif step_pattern.match(line):
+            parts = [p.strip() for p in line.split("|")]
 
-        # ---------------------------------------------------
-        # Each testcase block
-        # ---------------------------------------------------
-        for tc in testcases:
+            if len(parts) >= 5:
+                step = {
+                    "step_no": parts[0],
+                    "desc": parts[1],
+                    "screen": parts[2],
+                    "data": parts[3],
+                    "expected": parts[4]
+                }
+                current_tc["steps"].append(step)
 
-            generated_tc_id = f"US_{user_story_id}_TC_{tc_counter:02d}"
-            tc_counter += 1
+    # append last testcase
+    if current_tc:
+        testcases.append(current_tc)
 
-            scenario = tc["scenario"]
-            script = tc["script"]
-            pre = tc["precondition"]
-            req = tc["requirement"]
-            steps = tc["steps"]
-            channels = tc["channels"]  # write to multiple sheets
+    print(f"✅ Parsed {len(testcases)} testcases from LLM output")
 
-            # ---------------------------------------------------
-            # Write SAME testcase to multiple channel sheets
-            # ---------------------------------------------------
-            for channel in channels:
-
-                ws = sheets[channel]
-                row = row_tracker[channel]
-
-                for idx, step in enumerate(steps):
-
-                    # Write header columns ONLY for first step
-                    ws.cell(row, 1).value = generated_tc_id if idx == 0 else ""
-                    ws.cell(row, 2).value = scenario if idx == 0 else ""
-                    ws.cell(row, 3).value = script if idx == 0 else ""
-                    ws.cell(row, 4).value = pre if idx == 0 else ""
-
-                    ws.cell(row, 5).value = step["step_no"]
-                    ws.cell(row, 6).value = step["desc"]
-                    ws.cell(row, 7).value = step["screen"]
-                    ws.cell(row, 8).value = step["data"]
-                    ws.cell(row, 9).value = step["expected"]
-
-                    ws.cell(row, 10).value = req if idx == 0 else ""
-
-                    row += 1
-
-                row_tracker[channel] = row
-
-        wb.save(output_path)
+    return testcases
