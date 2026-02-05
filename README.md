@@ -13,30 +13,41 @@ def detect_channels(acceptance_criteria: str) -> list:
 
     text = acceptance_criteria.upper()
 
-    negation_words = [
-        "DO NOT", "DOES NOT", "NOT ", "NO ",
-        "WITHOUT", "SHOULD NOT", "CANNOT",
-        "NEVER", "EXCEPT"
-    ]
+    detected = set()
 
-    found_channels = []
-    lines = text.split(". ")
+    # -------------------------------------------
+    # Step 1: Basic keyword detection
+    # -------------------------------------------
+    for channel, words in CHANNEL_KEYWORDS.items():
+        for w in words:
+            if w in text:
+                detected.add(channel)
 
-    for channel, keywords in CHANNEL_KEYWORDS.items():
-        for word in keywords:
-            for line in lines:
-                if any(neg in line for neg in negation_words):
-                    continue
-                if word in line:
-                    found_channels.append(channel)
-                    break
-            else:
-                continue
-            break
+    print(f"🧠 Raw detected channels: {detected}")
 
-    if not found_channels:
+    # -------------------------------------------
+    # Step 2: Business rules mapping
+    # -------------------------------------------
+    final_channels = set()
+
+    if not detected:
         print("⚠️ No channel mentioned → Using ALL channels")
         return ALL_CHANNELS
 
-    print(f"✅ Channels detected: {found_channels}")
-    return found_channels
+    # Rule 1
+    if "RTL" in detected:
+        final_channels.update(["RTL", "DTC"])
+
+    if "WHL" in detected:
+        final_channels.update(["WHL", "CL1"])
+
+    # Rule 2 (if explicitly mentioned)
+    if "DTC" in detected:
+        final_channels.add("DTC")
+
+    if "CL1" in detected:
+        final_channels.add("CL1")
+
+    print(f"✅ Final channels after rule mapping: {final_channels}\n")
+
+    return list(final_channels)
