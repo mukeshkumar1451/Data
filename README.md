@@ -1,46 +1,27 @@
-class LLMReranker:
+import os
+import requests
+from dotenv import load_dotenv
 
-    def __init__(self, openai, model):
-        self.openai = openai
-        self.model = model
+load_dotenv()
 
-    def rerank(self, query_text, results):
+ORG = os.getenv("ADO_ORG")
+PROJECT = os.getenv("ADO_PROJECT")
+PAT = os.getenv("ADO_PAT")
 
-        scored = []
+def get_user_story(work_item_id: str):
+    url = f"https://dev.azure.com/{ORG}/{PROJECT}/_apis/wit/workitems/{work_item_id}?api-version=7.1"
 
-        for r in results:
-            chunk_text = r["content"]
+    response = requests.get(
+        url,
+        auth=("", PAT)
+    )
+    response.raise_for_status()
 
-            prompt = f"""
-Rate how relevant this historical test step is for the given user story.
+    data = response.json()["fields"]
 
-User Story:
-{query_text}
-
-Historical Chunk:
-{chunk_text}
-
-Give ONLY a number between 0 and 1.
-"""
-
-            resp = self.openai.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0
-            )
-
-            try:
-                score = float(resp.choices[0].message.content.strip())
-            except:
-                score = 0.0
-
-            r["rerank_score"] = score
-            scored.append(r)
-
-        # filter below 0.5
-        filtered = [x for x in scored if x["rerank_score"] >= 0.5]
-
-        # sort best first
-        filtered.sort(key=lambda x: x["rerank_score"], reverse=True)
-
-        return filtered[:12]
+    return {
+        "id": work_item_id,
+        "title": data.get("System.Title", ""),
+        "description": data.get("System.Description", ""),
+        "acceptance_criteria": data.get("Microsoft.VSTS.Common.AcceptanceCriteria", "")
+    }
