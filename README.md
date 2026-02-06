@@ -1,34 +1,41 @@
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents.models import VectorizedQuery
-from openai import AzureOpenAI
+ TRUE Channel-Aware RAG Test Case Generation Started
 
-from embeddingtovectordb.config import get
-from prompts.prompt_templates import build_testcase_prompt
-from rerankerbase.llm_reranker import LLMReranker
+📥 Loading user story YAML...
+✅ YAML loaded
+
+🔍 Detecting channels from Acceptance Criteria...
+
+🧠 Raw detected channels: set()
+⚠️ No channel mentioned → Using ALL channels
+
+🔎 Channels detected: ['WHL', 'RTL', 'DTC', 'CL1']
 
 
-class TestCaseRAGRetriever:
+==============================
+🔷 Processing Channel: WHL
+==============================
 
-    def __init__(self):
+🔎 Vector search for channel: WHL
+k_nearest_neighbors is not a known attribute of class <class 'azure.search.documents._generated.models._models_py3.VectorizedQuery'> and will be ignored
+✅ Retrieved 50 chunks before re-ranking
+✅ 0 chunks after re-ranking
+✅ Retrieved 0 chunks for WHL
 
-        # -------- Azure OpenAI FIRST --------
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION")
-        )
 
-        self.chat_model = get("CHAT_MODEL")
-        self.embed_model = get("EMBEDDING_MODEL")
-        self.top_k = get("TOP_K", int)
+❌ ERROR OCCURRED
+list index out of range
 
-        # -------- LLM Reranker (needs openai) --------
-        self.reranker = LLMReranker(self.openai, self.chat_model)
+📌 TRACEBACK:
 
-        # -------- Azure AI Search --------
-        self.search_client = SearchClient(
-            endpoint=get("AZURE_SEARCH_ENDPOINT"),
-            index_name=get("AZURE_SEARCH_INDEX"),
-            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-        )
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\VectorDb Test\test_rag.py", line 67, in <module>
+    llm_outputs = retriever.generate_testcase_with_llm(
+        user_story_id=user_story_id,
+    ...<3 lines>...
+        retrieved_chunks=results
+    )
+  File "C:\Users\h84609n\Desktop\VectorDb Test\ragquery\rag_query.py", line 131, in generate_testcase_with_llm
+    channel = retrieved_chunks[0]["channel"]
+              ~~~~~~~~~~~~~~~~^^^
+IndexError: list index out of range
+(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> 
