@@ -1,63 +1,46 @@
-def retrieve_for_channel(self, user_story, description, ac, channel):
+class LLMReranker:
 
-    print(f"\n🔎 Hybrid search for channel: {channel}")
+    def __init__(self, openai, model):
+        self.openai = openai
+        self.model = model
 
-    query_text = f"""
+    def rerank(self, query_text, results):
+
+        scored = []
+
+        for r in results:
+            chunk_text = r["content"]
+
+            prompt = f"""
+Rate how relevant this historical test step is for the given user story.
+
 User Story:
-{user_story}
+{query_text}
 
-Description:
-{description}
+Historical Chunk:
+{chunk_text}
 
-Acceptance Criteria:
-{ac}
+Give ONLY a number between 0 and 1.
 """
 
-    query_vector = self.embed_query(query_text)
+            resp = self.openai.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
 
-    vector_query = VectorizedQuery(
-        kind="vector",
-        vector=query_vector,
-        k=self.top_k,
-        fields="embedding"
-    )
+            try:
+                score = float(resp.choices[0].message.content.strip())
+            except:
+                score = 0.0
 
-    # 🔥 HYBRID SEARCH (text + vector)
-    results = self.search_client.search(
-        search_text=query_text,   # <-- TEXT SEARCH ADDED
-        vector_queries=[vector_query],
-        filter=f"channel eq '{channel}'",
-        select=[
-            "testCaseId",
-            "chunkId",
-            "content",
-            "channel",
-            "@search.score"       # <-- VECTOR/TEXT SCORE
-        ],
-        top=self.top_k
-    )
+            r["rerank_score"] = score
+            scored.append(r)
 
-    results_list = list(results)
+        # filter below 0.5
+        filtered = [x for x in scored if x["rerank_score"] >= 0.5]
 
-    print(f"✅ Retrieved {len(results_list)} chunks before re-ranking")
+        # sort best first
+        filtered.sort(key=lambda x: x["rerank_score"], reverse=True)
 
-    # Show raw scores
-    for r in results_list[:5]:
-        print(f"   📊 Raw Score: {r.get('@search.score'):.4f} | TC: {r['testCaseId']} | Chunk: {r['chunkId']}")
-
-    # ---------------- Re-ranking ----------------
-    reranked = self.reranker.rerank(
-        query_text,
-        results_list
-    )
-
-    print("\n🔁 After LLM Re-ranking:\n")
-
-    for r in reranked:
-        print(
-            f"   🧠 Rerank Score: {r['rerank_score']:.3f} | "
-            f"Vector Score: {r.get('@search.score'):.4f} | "
-            f"TC: {r['testCaseId']} | Chunk: {r['chunkId']}"
-        )
-
-    return reranked
+        return filtered[:12]
