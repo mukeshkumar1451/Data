@@ -4,29 +4,8 @@ import re
 def parse_llm_steps(llm_text: str):
     """
     Parse LLM output and MERGE ALL steps into ONE SINGLE testcase.
-    Step numbers will be re-sequenced continuously.
-
-    Returns:
-    [
-        {
-            "scenario": str,
-            "script": str,
-            "precondition": str,
-            "requirement": str,
-            "steps": [
-                {
-                    "step_no": "Step 01",
-                    "action": "...",
-                    "screen": "...",
-                    "testdata": "...",
-                    "expected": "..."
-                }
-            ]
-        }
-    ]
+    Handles messy LLM formatting safely.
     """
-
-    lines = llm_text.split("\n")
 
     scenario = ""
     script = ""
@@ -36,23 +15,26 @@ def parse_llm_steps(llm_text: str):
     steps = []
     step_counter = 1
 
-    for raw in lines:
+    for raw in llm_text.splitlines():
         line = raw.strip()
 
-        if line.startswith("Scenario:"):
+        # ---------------- Header fields ----------------
+        if line.lower().startswith("scenario:") and not scenario:
             scenario = line.split(":", 1)[1].strip()
 
-        elif line.startswith("Script:"):
+        elif line.lower().startswith("script:") and not script:
             script = line.split(":", 1)[1].strip()
 
-        elif line.startswith("Precondition:"):
+        elif line.lower().startswith("precondition:") and not precondition:
             precondition = line.split(":", 1)[1].strip()
 
-        elif line.startswith("Requirement:"):
+        elif line.lower().startswith("requirement:") and not requirement:
             requirement = line.split(":", 1)[1].strip()
 
-        elif re.match(r"^Step\s*\d+", line):
-            parts = [p.strip() for p in line.split("|")]
+        # ---------------- Step lines ----------------
+        elif re.match(r"^step\s*\d+", line.lower()):
+            # Normalize weird spacing
+            parts = [p.strip() for p in re.split(r"\s*\|\s*", line)]
 
             if len(parts) >= 5:
                 steps.append({
@@ -64,7 +46,12 @@ def parse_llm_steps(llm_text: str):
                 })
                 step_counter += 1
 
-    # 🔥 Always return ONLY ONE testcase
+    # Safety: if headers missing, prevent crash
+    scenario = scenario or "Generated Test Scenario"
+    script = script or "Generated_Test_Script"
+    precondition = precondition or ""
+    requirement = requirement or ""
+
     return [{
         "scenario": scenario,
         "script": script,
