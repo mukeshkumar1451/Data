@@ -1,25 +1,9 @@
-import requests
+2026-02-07 00:13:34.210 [info] Stopping server ado
+2026-02-07 00:13:34.253 [info] Starting server ado
+2026-02-07 00:13:34.254 [info] Connection state: Starting
+2026-02-07 00:13:34.280 [info] Starting server from LocalProcess extension host
+2026-02-07 00:13:34.282 [info] Connection state: Starting
+2026-02-07 00:13:34.282 [info] Connection state: Running
+2026-02-07 00:13:34.440 [warning] [server stderr] C:\Users\h84609n\Desktop\VectorDb Test\.venv\Scripts\python.exe: can't open file 'c:\\Users\\h84609n\\Desktop\\VectorDb Test\\ado-mcp-server\\server.py': [Errno 2] No such file or directory
+2026-02-07 00:13:34.456 [info] Connection state: Error Process exited with code 2
 
-
-class MCPClient:
-
-    def __init__(self, base_url="http://localhost:8000"):
-        self.base_url = base_url
-
-    def get_enriched_user_story(self, story_id: str):
-        print(f"🌐 Fetching enriched story from MCP: {story_id}")
-
-        url = f"{self.base_url}/userstory/{story_id}/enriched"
-        res = requests.get(url)
-
-        if res.status_code != 200:
-            raise Exception(f"MCP error: {res.text}")
-
-        data = res.json()
-
-        return {
-            "user_story_id": story_id,
-            "user_story": data["title"],
-            "description": data["description"],
-            "acceptance_criteria": data["acceptance_criteria_enriched"]
-        }
