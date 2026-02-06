@@ -1,25 +1,56 @@
-results_list = list(results)
-print(f"✅ Retrieved {len(results_list)} chunks from vector DB")
+# ----------------------------------------------------
+# Split reranked chunks by channel
+# ----------------------------------------------------
+def group_by_channel(self, reranked_chunks):
+    channel_map = {}
 
-# ---------------------------------------------
-# 🆕 HYBRID STEP — Cross Encoder Re-Ranking
-# ---------------------------------------------
-query_text = f"""
-User Story:
-{user_story}
+    for r in reranked_chunks:
+        ch = r["channel"]
+        channel_map.setdefault(ch, []).append(r)
 
-Description:
-{description}
+    return channel_map
 
-Acceptance Criteria:
-{ac}
-"""
+    ---------------------------------------
+def generate_testcase_with_llm(
+    self,
+    user_story_id,
+    user_story,
+    description,
+    ac,
+    retrieved_chunks
+):
 
-reranked = self.reranker.rerank(
-    query_text=query_text,
-    search_results=results_list,
-    threshold=0.5,
-    top_n=12
-)
+    channel_groups = self.group_by_channel(retrieved_chunks)
 
-return reranked
+    final_outputs = {}
+
+    for channel, chunks in channel_groups.items():
+
+        print(f"\n🧠 Generating testcase using ONLY {channel} history")
+
+        historical_context = self._build_historical_context(chunks)
+
+        prompt = build_testcase_prompt(
+            user_story_id,
+            user_story,
+            description,
+            ac,
+            historical_context
+        )
+
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[
+                {"role": "system", "content": "You generate software test cases."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
+
+        llm_text = response.choices[0].message.content
+
+        final_outputs[channel] = llm_text
+
+    return final_outputs
+    
+    
