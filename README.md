@@ -1,34 +1,25 @@
-from sentence_transformers import CrossEncoder
+results_list = list(results)
+print(f"✅ Retrieved {len(results_list)} chunks from vector DB")
 
-class CrossEncoderReranker:
+# ---------------------------------------------
+# 🆕 HYBRID STEP — Cross Encoder Re-Ranking
+# ---------------------------------------------
+query_text = f"""
+User Story:
+{user_story}
 
-    def __init__(self):
-        self.model = CrossEncoder("BAAI/bge-reranker-base")
+Description:
+{description}
 
-    def rerank(self, query_text, search_results, threshold=0.5, top_n=12):
-        """
-        query_text : user story + desc + ac
-        search_results : chunks from Azure Search
-        """
+Acceptance Criteria:
+{ac}
+"""
 
-        pairs = [
-            (query_text, r["content"])
-            for r in search_results
-        ]
+reranked = self.reranker.rerank(
+    query_text=query_text,
+    search_results=results_list,
+    threshold=0.5,
+    top_n=12
+)
 
-        scores = self.model.predict(pairs)
-
-        scored = list(zip(search_results, scores))
-
-        # Filter by threshold
-        filtered = [s for s in scored if s[1] >= threshold]
-
-        # Sort best first
-        filtered.sort(key=lambda x: x[1], reverse=True)
-
-        # Take top N
-        best = [item[0] for item in filtered[:top_n]]
-
-        print(f"✅ Re-ranking reduced {len(search_results)} → {len(best)} best chunks")
-
-        return best
+return reranked
