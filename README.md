@@ -1,160 +1,74 @@
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents.models import VectorizedQuery
-
-from openai import AzureOpenAI
-
-from embeddingtovectordb.config import get
-from prompts.prompt_templates import build_testcase_prompt
-from rerankerbase.reranker import CrossEncoderReranker
+import re
 
 
-class TestCaseRAGRetriever:
+def parse_llm_steps(llm_text: str):
+    """
+    Parse LLM output and MERGE ALL steps into ONE SINGLE testcase.
+    Step numbers will be re-sequenced continuously.
 
-    def __init__(self):
+    Returns:
+    [
+        {
+            "scenario": str,
+            "script": str,
+            "precondition": str,
+            "requirement": str,
+            "steps": [
+                {
+                    "step_no": "Step 01",
+                    "action": "...",
+                    "screen": "...",
+                    "testdata": "...",
+                    "expected": "..."
+                }
+            ]
+        }
+    ]
+    """
 
-        # -------- Re-ranker --------
-        self.reranker = CrossEncoderReranker()
+    lines = llm_text.split("\n")
 
-        # -------- Azure AI Search --------
-        self.search_client = SearchClient(
-            endpoint=get("AZURE_SEARCH_ENDPOINT"),
-            index_name=get("AZURE_SEARCH_INDEX"),
-            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-        )
+    scenario = ""
+    script = ""
+    precondition = ""
+    requirement = ""
 
-        # -------- Azure OpenAI --------
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION")
-        )
+    steps = []
+    step_counter = 1
 
-        self.embed_model = get("EMBEDDING_MODEL")
-        self.chat_model = get("CHAT_MODEL")
-        self.top_k = get("TOP_K", int)
+    for raw in lines:
+        line = raw.strip()
 
-    # ----------------------------------------------------
-    # Create embedding
-    # ----------------------------------------------------
-    def embed_query(self, text):
-        emb = self.openai.embeddings.create(
-            model=self.embed_model,
-            input=text
-        )
-        return emb.data[0].embedding
+        if line.startswith("Scenario:"):
+            scenario = line.split(":", 1)[1].strip()
 
-    # ----------------------------------------------------
-    # Vector search for ONE channel only
-    # ----------------------------------------------------
-    def retrieve_for_channel(self, user_story, description, ac, channel):
+        elif line.startswith("Script:"):
+            script = line.split(":", 1)[1].strip()
 
-        print(f"🔎 Vector search for channel: {channel}")
+        elif line.startswith("Precondition:"):
+            precondition = line.split(":", 1)[1].strip()
 
-        query_text = f"""
-User Story:
-{user_story}
+        elif line.startswith("Requirement:"):
+            requirement = line.split(":", 1)[1].strip()
 
-Description:
-{description}
+        elif re.match(r"^Step\s*\d+", line):
+            parts = [p.strip() for p in line.split("|")]
 
-Acceptance Criteria:
-{ac}
-"""
+            if len(parts) >= 5:
+                steps.append({
+                    "step_no": f"Step {step_counter:02d}",
+                    "desc": parts[1],
+                    "screen": parts[2],
+                    "data": parts[3],
+                    "expected": parts[4],
+                })
+                step_counter += 1
 
-        query_vector = self.embed_query(query_text)
-
-        vector_query = VectorizedQuery(
-            kind="vector",
-            vector=query_vector,
-            k_nearest_neighbors=self.top_k,
-            fields="embedding"
-        )
-
-        results = self.search_client.search(
-            search_text=None,
-            vector_queries=[vector_query],
-            filter=f"channel eq '{channel}'",
-            select=["testCaseId", "chunkId", "content", "channel"]
-        )
-
-        results_list = list(results)
-        print(f"✅ Retrieved {len(results_list)} chunks before re-ranking")
-
-        # ---------------- Re-ranking ----------------
-        reranked = self.reranker.rerank(
-            query_text=query_text,
-            search_results=results_list,
-            threshold=0.5,
-            top_n=12
-        )
-
-        print(f"✅ {len(reranked)} chunks after re-ranking")
-        return reranked
-
-    # ----------------------------------------------------
-    # Build historical context from chunks
-    # ----------------------------------------------------
-    def _build_historical_context(self, chunks):
-
-        tc_map = {}
-
-        for r in chunks:
-            tcid = r["testCaseId"]
-            chunk_id = int(r["chunkId"])
-            content = r["content"]
-
-            tc_map.setdefault(tcid, []).append((chunk_id, content))
-
-        historical_context = ""
-
-        for tcid, parts in tc_map.items():
-            parts_sorted = sorted(parts, key=lambda x: x[0])
-            full_text = "\n".join([p[1] for p in parts_sorted])
-
-            historical_context += f"\n\n### Historical TestCase: {tcid}\n{full_text}\n"
-
-        return historical_context
-
-    # ----------------------------------------------------
-    # Generate testcase using LLM for this channel
-    # ----------------------------------------------------
-    def generate_testcase_with_llm(
-        self,
-        user_story_id,
-        user_story,
-        description,
-        ac,
-        retrieved_chunks,
-    ):
-
-        # Channel is same for all chunks here
-        channel = retrieved_chunks[0]["channel"]
-
-        historical_context = self._build_historical_context(retrieved_chunks)
-
-        prompt = build_testcase_prompt(
-            user_story_id=user_story_id,
-            user_story=user_story,
-            description=description,
-            ac=ac,
-            historical_context=historical_context
-        )
-
-        print(f"🤖 Sending {channel} context to Azure OpenAI...\n")
-
-        response = self.openai.chat.completions.create(
-            model=self.chat_model,
-            messages=[
-                {"role": "system", "content": "You are a QA Test Case Designer."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2
-        )
-
-        output = response.choices[0].message.content
-
-        print(f"✅ LLM response received for {channel}\n")
-
-        # IMPORTANT: return as dict for test_rag
-        return {channel: output}
+    # 🔥 Always return ONLY ONE testcase
+    return [{
+        "scenario": scenario,
+        "script": script,
+        "precondition": precondition,
+        "requirement": requirement,
+        "steps": steps
+    }]
