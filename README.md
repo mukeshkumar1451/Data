@@ -1,9 +1,11 @@
-from fastapi import FastAPI
-from ado_client import get_user_story
+{
+  "servers": {
+    "ado": {
+      "command": "python",
+      "args": ["server.py"],
+      "env": {}
+    }
+  }
+}
 
-app = FastAPI()
-
-@app.get("/userstory/{story_id}")
-def fetch_user_story(story_id: str):
-    story = get_user_story(story_id)
-    return story
+“Use MCP ado and get user story 7123445”
