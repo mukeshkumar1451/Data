@@ -6,7 +6,6 @@ from ragquery.rag_query import TestCaseRAGRetriever as RAGRetriever
 from llm.llm_step_parser import parse_llm_steps
 from excelexport.excel_multi_sheet_exporter import MultiSheetExcelExporter
 from embeddingtovectordb.config import get
-from channel_detect.channel_detector import detect_channels
 
 
 def load_userstory(path: str):
@@ -32,68 +31,53 @@ if __name__ == "__main__":
         ac = story["acceptance_criteria"]
 
         # ---------------------------------------------------
-        # Step 2 — Detect Channels from AC
-        # ---------------------------------------------------
-        print("\n🔎 Detecting channels from Acceptance Criteria...")
-        channels = detect_channels(ac)
-        print(f"✅ Channels to process: {channels}\n")
-
-        # ---------------------------------------------------
-        # Step 3 — Initialize Retriever
+        # Step 2 — Initialize Retriever
         # ---------------------------------------------------
         retriever = RAGRetriever()
 
+        # ---------------------------------------------------
+        # Step 3 — Vector Search (all channels)
+        # ---------------------------------------------------
+        print("\n🔍 Running vector search in Azure AI Search...\n")
+        results = retriever.retrieve(
+            user_story,
+            description,
+            ac
+        )
+        print(f"✅ Retrieved {len(results)} vector chunks\n")
+
+        # ---------------------------------------------------
+        # Step 4 — Channel-wise LLM generation (inside rag_query)
+        # ---------------------------------------------------
+        print("🤖 Generating testcases per channel using historical patterns...\n")
+
+        channel_llm_outputs = retriever.generate_testcase_with_llm(
+            user_story_id=user_story_id,
+            user_story=user_story,
+            description=description,
+            ac=ac,
+            retrieved_chunks=results
+        )
+
+        print("✅ LLM responses received for channels\n")
+
+        # ---------------------------------------------------
+        # Step 5 — Parse LLM output
+        # ---------------------------------------------------
         all_generated_testcases = []
 
-        # ---------------------------------------------------
-        # Step 4 — PROCESS EACH CHANNEL SEPARATELY (IMPORTANT)
-        # ---------------------------------------------------
-        for channel in channels:
+        for channel, llm_text in channel_llm_outputs.items():
+            print(f"🧩 Parsing testcase for channel: {channel}")
 
-            print(f"\n==============================")
-            print(f"🔷 Processing Channel: {channel}")
-            print(f"==============================\n")
-
-            # -----------------------------
-            # Vector search only for this channel
-            # -----------------------------
-            print(f"🔍 Running vector search for channel: {channel}")
-            results = retriever.retrieve_for_channel(
-                user_story,
-                description,
-                ac,
-                channel
-            )
-            print(f"✅ Retrieved {len(results)} chunks for {channel}\n")
-
-            # -----------------------------
-            # Send channel-specific context to LLM
-            # -----------------------------
-            print(f"🤖 Generating testcase using {channel} historical patterns...\n")
-
-            llm_text = retriever.generate_testcase_with_llm(
-                user_story_id=user_story_id,
-                user_story=user_story,
-                description=description,
-                ac=ac,
-                retrieved_chunks=results,
-                
-            )
-
-            print("✅ LLM Response received\n")
-
-            # -----------------------------
-            # Parse LLM response into steps
-            # -----------------------------
             parsed = parse_llm_steps(llm_text)
+
             for tc in parsed:
                 tc["channels"] = [channel]
-            print(f"🧩 Parsed {len(parsed)} testcases for {channel}\n")
 
             all_generated_testcases.extend(parsed)
 
         # ---------------------------------------------------
-        # Step 5 — Export to Excel
+        # Step 6 — Export to Excel
         # ---------------------------------------------------
         print("\n📄 Writing channel-specific testcases into Excel template...\n")
 
