@@ -1,112 +1,160 @@
-import os
-import traceback
-import yaml
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
+from azure.search.documents.models import VectorizedQuery
 
-from ragquery.rag_query import TestCaseRAGRetriever as RAGRetriever
-from llm.llm_step_parser import parse_llm_steps
-from excelexport.excel_multi_sheet_exporter import MultiSheetExcelExporter
+from openai import AzureOpenAI
+
 from embeddingtovectordb.config import get
-from channel_detect.channel_detector import detect_channels
+from prompts.prompt_templates import build_testcase_prompt
+from rerankerbase.reranker import CrossEncoderReranker
 
 
-def load_userstory(path: str):
-    print("📥 Loading user story YAML...")
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    print("✅ YAML loaded")
-    return data
+class TestCaseRAGRetriever:
 
+    def __init__(self):
 
-if __name__ == "__main__":
-    try:
-        print("\n🚀 TRUE Channel-Aware RAG Test Case Generation Started\n")
+        # -------- Re-ranker --------
+        self.reranker = CrossEncoderReranker()
 
-        # ---------------------------------------------------
-        # Step 1 — Load User Story
-        # ---------------------------------------------------
-        story = load_userstory("userstory_input.yaml")
-
-        user_story_id = story["user_story_id"]
-        user_story = story["user_story"]
-        description = story["description"]
-        ac = story["acceptance_criteria"]
-
-        # ---------------------------------------------------
-        # Step 2 — Detect Channels from AC
-        # ---------------------------------------------------
-        channels = detect_channels(ac)
-        print(f"\n🔎 Channels detected: {channels}\n")
-
-        # ---------------------------------------------------
-        # Step 3 — Initialize Retriever
-        # ---------------------------------------------------
-        retriever = RAGRetriever()
-
-        all_generated_testcases = []
-
-        # ---------------------------------------------------
-        # Step 4 — PROCESS EACH CHANNEL SEPARATELY (CORE FIX)
-        # ---------------------------------------------------
-        for channel in channels:
-
-            print(f"\n==============================")
-            print(f"🔷 Processing Channel: {channel}")
-            print(f"==============================\n")
-
-            # 🔍 Vector search only for this channel
-            results = retriever.retrieve_for_channel(
-                user_story,
-                description,
-                ac,
-                channel
-            )
-
-            print(f"✅ Retrieved {len(results)} chunks for {channel}\n")
-
-            # 🤖 Generate testcase using this channel history
-            llm_outputs = retriever.generate_testcase_with_llm(
-                user_story_id=user_story_id,
-                user_story=user_story,
-                description=description,
-                ac=ac,
-                retrieved_chunks=results
-            )
-
-            llm_text = llm_outputs[channel]
-
-            print("🧩 Parsing LLM response...\n")
-            parsed = parse_llm_steps(llm_text)
-
-            for tc in parsed:
-                tc["channels"] = [channel]
-
-            all_generated_testcases.extend(parsed)
-
-        # ---------------------------------------------------
-        # Step 5 — Export to Excel
-        # ---------------------------------------------------
-        print("\n📄 Writing channel-specific testcases into Excel template...\n")
-
-        template_path = get("EXCEL_TEMPLATE_PATH")
-        output_dir = get("EXCEL_OUTPUT_DIR")
-        os.makedirs(output_dir, exist_ok=True)
-
-        output_file = os.path.join(
-            output_dir,
-            f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
+        # -------- Azure AI Search --------
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
         )
 
-        exporter = MultiSheetExcelExporter(template_path)
-        exporter.export(
-            testcases=all_generated_testcases,
+        # -------- Azure OpenAI --------
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION")
+        )
+
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
+        self.top_k = get("TOP_K", int)
+
+    # ----------------------------------------------------
+    # Create embedding
+    # ----------------------------------------------------
+    def embed_query(self, text):
+        emb = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text
+        )
+        return emb.data[0].embedding
+
+    # ----------------------------------------------------
+    # Vector search for ONE channel only
+    # ----------------------------------------------------
+    def retrieve_for_channel(self, user_story, description, ac, channel):
+
+        print(f"🔎 Vector search for channel: {channel}")
+
+        query_text = f"""
+User Story:
+{user_story}
+
+Description:
+{description}
+
+Acceptance Criteria:
+{ac}
+"""
+
+        query_vector = self.embed_query(query_text)
+
+        vector_query = VectorizedQuery(
+            kind="vector",
+            vector=query_vector,
+            k_nearest_neighbors=self.top_k,
+            fields="embedding"
+        )
+
+        results = self.search_client.search(
+            search_text=None,
+            vector_queries=[vector_query],
+            filter=f"channel eq '{channel}'",
+            select=["testCaseId", "chunkId", "content", "channel"]
+        )
+
+        results_list = list(results)
+        print(f"✅ Retrieved {len(results_list)} chunks before re-ranking")
+
+        # ---------------- Re-ranking ----------------
+        reranked = self.reranker.rerank(
+            query_text=query_text,
+            search_results=results_list,
+            threshold=0.5,
+            top_n=12
+        )
+
+        print(f"✅ {len(reranked)} chunks after re-ranking")
+        return reranked
+
+    # ----------------------------------------------------
+    # Build historical context from chunks
+    # ----------------------------------------------------
+    def _build_historical_context(self, chunks):
+
+        tc_map = {}
+
+        for r in chunks:
+            tcid = r["testCaseId"]
+            chunk_id = int(r["chunkId"])
+            content = r["content"]
+
+            tc_map.setdefault(tcid, []).append((chunk_id, content))
+
+        historical_context = ""
+
+        for tcid, parts in tc_map.items():
+            parts_sorted = sorted(parts, key=lambda x: x[0])
+            full_text = "\n".join([p[1] for p in parts_sorted])
+
+            historical_context += f"\n\n### Historical TestCase: {tcid}\n{full_text}\n"
+
+        return historical_context
+
+    # ----------------------------------------------------
+    # Generate testcase using LLM for this channel
+    # ----------------------------------------------------
+    def generate_testcase_with_llm(
+        self,
+        user_story_id,
+        user_story,
+        description,
+        ac,
+        retrieved_chunks,
+    ):
+
+        # Channel is same for all chunks here
+        channel = retrieved_chunks[0]["channel"]
+
+        historical_context = self._build_historical_context(retrieved_chunks)
+
+        prompt = build_testcase_prompt(
             user_story_id=user_story_id,
-            output_path=output_file
+            user_story=user_story,
+            description=description,
+            ac=ac,
+            historical_context=historical_context
         )
 
-        print(f"\n🎉 Excel generated successfully:\n{output_file}\n")
+        print(f"🤖 Sending {channel} context to Azure OpenAI...\n")
 
-    except Exception as e:
-        print("\n❌ ERROR OCCURRED")
-        print(e)
-        print("\n📌 TRACEBACK:\n")
-        traceback.print_exc()
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[
+                {"role": "system", "content": "You are a QA Test Case Designer."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
+
+        output = response.choices[0].message.content
+
+        print(f"✅ LLM response received for {channel}\n")
+
+        # IMPORTANT: return as dict for test_rag
+        return {channel: output}
