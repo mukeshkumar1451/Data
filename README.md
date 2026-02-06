@@ -13,7 +13,7 @@ class TestCaseRAGRetriever:
 
     def __init__(self):
 
-        # -------- Azure OpenAI FIRST --------
+        # -------- Azure OpenAI --------
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
@@ -24,7 +24,7 @@ class TestCaseRAGRetriever:
         self.embed_model = get("EMBEDDING_MODEL")
         self.top_k = get("TOP_K", int)
 
-        # -------- LLM Reranker (needs openai) --------
+        # -------- Reranker --------
         self.reranker = LLMReranker(self.openai, self.chat_model)
 
         # -------- Azure AI Search --------
@@ -35,8 +35,6 @@ class TestCaseRAGRetriever:
         )
 
     # ----------------------------------------------------
-    # Create embedding
-    # ----------------------------------------------------
     def embed_query(self, text):
         emb = self.openai.embeddings.create(
             model=self.embed_model,
@@ -45,11 +43,9 @@ class TestCaseRAGRetriever:
         return emb.data[0].embedding
 
     # ----------------------------------------------------
-    # Vector search for ONE channel only
-    # ----------------------------------------------------
     def retrieve_for_channel(self, user_story, description, ac, channel):
 
-        print(f"🔎 Vector search for channel: {channel}")
+        print(f"\n🔎 Vector search for channel: {channel}")
 
         query_text = f"""
 User Story:
@@ -64,11 +60,11 @@ Acceptance Criteria:
 
         query_vector = self.embed_query(query_text)
 
+        # ✅ CORRECT for SDK
         vector_query = VectorizedQuery(
-            kind="vector",
             vector=query_vector,
-            k=self.top_k,
-            fields="embedding"
+            fields="embedding",
+            k_nearest_neighbors=self.top_k
         )
 
         results = self.search_client.search(
@@ -81,6 +77,9 @@ Acceptance Criteria:
         results_list = list(results)
         print(f"✅ Retrieved {len(results_list)} chunks before re-ranking")
 
+        if not results_list:
+            return []
+
         # ---------------- Re-ranking ----------------
         reranked = self.reranker.rerank(
             query_text=query_text,
@@ -88,15 +87,14 @@ Acceptance Criteria:
             threshold=0.5,
             top_n=12
         )
+
         if not reranked:
-            print("⚠️ No chunks passed the re-ranking threshold!")
-            reranked= results_list[:12]
-            
+            print("⚠️ No chunks passed re-ranking → using top vector results")
+            reranked = results_list[:12]
+
         print(f"✅ {len(reranked)} chunks after re-ranking")
         return reranked
 
-    # ----------------------------------------------------
-    # Build historical context from chunks
     # ----------------------------------------------------
     def _build_historical_context(self, chunks):
 
@@ -106,7 +104,6 @@ Acceptance Criteria:
             tcid = r["testCaseId"]
             chunk_id = int(r["chunkId"])
             content = r["content"]
-
             tc_map.setdefault(tcid, []).append((chunk_id, content))
 
         historical_context = ""
@@ -114,13 +111,10 @@ Acceptance Criteria:
         for tcid, parts in tc_map.items():
             parts_sorted = sorted(parts, key=lambda x: x[0])
             full_text = "\n".join([p[1] for p in parts_sorted])
-
             historical_context += f"\n\n### Historical TestCase: {tcid}\n{full_text}\n"
 
         return historical_context
 
-    # ----------------------------------------------------
-    # Generate testcase using LLM for this channel
     # ----------------------------------------------------
     def generate_testcase_with_llm(
         self,
@@ -130,12 +124,11 @@ Acceptance Criteria:
         ac,
         retrieved_chunks,
     ):
-        
-        if not retrieved_chunks:
-            print("⚠️ No chunks retrieved for this channel. cannot generate testcase.") 
-              
 
-        # Channel is same for all chunks here
+        if not retrieved_chunks:
+            print("⚠️ No chunks → Skipping LLM generation for this channel")
+            return {}
+
         channel = retrieved_chunks[0]["channel"]
 
         historical_context = self._build_historical_context(retrieved_chunks)
@@ -160,8 +153,6 @@ Acceptance Criteria:
         )
 
         output = response.choices[0].message.content
-
         print(f"✅ LLM response received for {channel}\n")
 
-        # IMPORTANT: return as dict for test_rag
         return {channel: output}
