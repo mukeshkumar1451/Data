@@ -1,4 +1,6 @@
- TRUE Channel-Aware RAG Test Case Generation Started
+(.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> py test_rag.py
+
+🚀 TRUE Channel-Aware RAG Test Case Generation Started
 
 📥 Loading user story YAML...
 ✅ YAML loaded
@@ -16,26 +18,25 @@
 ==============================
 
 🔎 Vector search for channel: WHL
-k_nearest_neighbors is not a known attribute of class <class 'azure.search.documents._generated.models._models_py3.VectorizedQuery'> and will be ignored
-✅ Retrieved 50 chunks before re-ranking
-✅ 0 chunks after re-ranking
-✅ Retrieved 0 chunks for WHL
-
+✅ Retrieved 40 chunks before re-ranking
 
 ❌ ERROR OCCURRED
-list index out of range
+LLMReranker.rerank() got an unexpected keyword argument 'search_results'   
 
 📌 TRACEBACK:
 
 Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\VectorDb Test\test_rag.py", line 67, in <module>
-    llm_outputs = retriever.generate_testcase_with_llm(
-        user_story_id=user_story_id,
-    ...<3 lines>...
-        retrieved_chunks=results
+  File "C:\Users\h84609n\Desktop\VectorDb Test\test_rag.py", line 57, in <module>
+    results = retriever.retrieve_for_channel(
+        user_story,
+    ...<2 lines>...
+        channel
     )
-  File "C:\Users\h84609n\Desktop\VectorDb Test\ragquery\rag_query.py", line 131, in generate_testcase_with_llm
-    channel = retrieved_chunks[0]["channel"]
-              ~~~~~~~~~~~~~~~~^^^
-IndexError: list index out of range
+  File "C:\Users\h84609n\Desktop\VectorDb Test\ragquery\rag_query.py", line 85, in retrieve_for_channel
+    reranked = self.reranker.rerank(
+        query_text=query_text,
+    ...<2 lines>...
+        top_n=12
+    )
+TypeError: LLMReranker.rerank() got an unexpected keyword argument 'search_results'
 (.venv) PS C:\Users\h84609n\Desktop\VectorDb Test> 
