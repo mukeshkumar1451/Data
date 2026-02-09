@@ -1,160 +1,18 @@
-import uuid
-from collections import OrderedDict
-from openai import AzureOpenAI
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-from embeddingtovectordb.config import get
-
-
-# ---------------- Azure Clients ----------------
-
-openai_client = AzureOpenAI(
-    api_key=get("AZURE_OPENAI_KEY"),
-    api_version=get("AZURE_OPENAI_API_VERSION"),
-    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
-)
-
-search_client = SearchClient(
-    endpoint=get("AZURE_SEARCH_ENDPOINT"),
-    index_name=get("AZURE_SEARCH_INDEX"),
-    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-)
-
-
-# ---------------- Precondition Builder ----------------
-
-def build_preconditions(channel_groups):
-    """
-    Build channel specific precondition block.
-    This is where real channel intelligence lives.
-    """
-    pre = "\n=========== PRE-CONDITIONS ===========\n"
-
-    for channel, group in channel_groups:
-
-        # Read precondition columns safely
-        def val(col):
-            return group[col].iloc[0] if col in group.columns else ""
-
-        loan_purpose = val("Loan Purpose")
-        loan_type = val("Loan Type")
-        product_code = val("Product Code")
-        loan_stage = val("Loan Stage")
-
-        # Portal mapping
-        if channel == "RTL":
-            portal = "Customer Portal"
-        elif channel in ["WHL", "CL1"]:
-            portal = "Broker Portal"
-        elif channel == "DTC":
-            portal = "Ignite Portal"
-        else:
-            portal = ""
-
-        pre += f"""
-{channel}:
-Create a loan from {portal} as per pre-conditions below:
-Channel: {channel}
-Loan Purpose: {loan_purpose}
-Loan Type: {loan_type}
-Product Code: {product_code}
-Loan Stage: {loan_stage}
-
-----------------------------------------
-"""
-
-    # Add loan type / product knowledge for LLM reasoning
-    pre += """
-=========== LOAN TYPE & PRODUCT KNOWLEDGE ===========
-
-Loan Types:
-Conventional, FHA, VA, USDA, Heloc
-
-Products Mapping:
-Conventional → CF30, CF10, CF15
-Conventional Jumbo → JCPF30, JEG10A, JF30B
-VA → VF30, VF15
-FHA → FF30
-Heloc → NRZHeloc
-Non QM → NRSEF30, NRSVF30
-
-======================================================
-"""
-    return pre
-
-
-# ---------------- Upload Function ----------------
-
-def upload(tc, channel_groups):
-    """
-    Create ONE high-quality document per TestCase.
-    """
-
-    channels = [c for c, _ in channel_groups]
-
-    # --------------------------------------------
-    # Step Map (avoid duplicate step text)
-    # --------------------------------------------
-    step_map = OrderedDict()
-
-    for _, group in channel_groups:
-        for _, row in group.iterrows():
-            step_no = str(row.get("Test Step No.", "")).strip()
-
-            if not step_no.startswith("Step"):
-                continue
-
-            if step_no not in step_map:
-                step_map[step_no] = {
-                    "description": row.get("Test Step Description", ""),
-                    "screen": row.get("Screen Name", ""),
-                    "data": row.get("Test Data", ""),
-                    "expected": row.get("Expected Results", "")
-                }
-
-    # --------------------------------------------
-    # Build Content for Embedding
-    # --------------------------------------------
-    content = f"\nTestCase: {tc}\n"
-    content += build_preconditions(channel_groups)
-    content += "\n=========== TEST STEPS ===========\n"
-
-    for step_no, d in step_map.items():
-        content += f"""
-{step_no}
-
-Description:
-{d['description']}
-
-Screen:
-{d['screen']}
-
-Test Data:
-{d['data']}
-
-Expected Result:
-{d['expected']}
-
-----------------------------------------
-"""
-
-    # --------------------------------------------
-    # Create Embedding
-    # --------------------------------------------
-    emb = openai_client.embeddings.create(
-        model=get("EMBEDDING_MODEL"),
-        input=content
-    ).data[0].embedding
-
-    # --------------------------------------------
-    # Upload Document
-    # --------------------------------------------
-    doc = {
-        "id": str(uuid.uuid4()),
-        "testCaseId": tc,
-        "channels": channels,
-        "content": content,
-        "embedding": emb
-    }
-
-    search_client.upload_documents([doc])
+026-02-09 23:36:10,055 - test_rag_runner - ERROR - ERROR OCCURRED IN RAG PIPELINE
+Traceback (most recent call last):
+  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 48, in run_rag_pipeline
+    parsed = parse_llm_steps(llm_outputs[channel])
+                             ~~~~~~~~~~~^^^^^^^^^
+KeyError: 'CL1'
+2026-02-09 23:36:10,056 - __main__ - ERROR - Error during test case generation
+Traceback (most recent call last):
+  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\server.py", line 103, in us_TestcaseGenerator
+    output_excel = run_rag_pipeline(
+        user_story_id=user_story_id,
+    ...<2 lines>...
+        ac=clean_ac,
+    )
+  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 48, in run_rag_pipeline
+    parsed = parse_llm_steps(llm_outputs[channel])
+                             ~~~~~~~~~~~^^^^^^^^^
+KeyError: 'CL1'
