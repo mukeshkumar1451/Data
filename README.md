@@ -1,84 +1,55 @@
-import pandas as pd
-from collections import defaultdict
-
-def read_excel(file_path):
-    xls = pd.ExcelFile(file_path)
-
-    COL_TC = "Test Case ID / Test Script ID"
-    tc_map = defaultdict(list)
-
-    for sheet in xls.sheet_names:
-        channel = sheet.strip()
-
-        df = pd.read_excel(xls, sheet_name=sheet)
-        df.columns = df.columns.str.strip()
-        df[COL_TC] = df[COL_TC].ffill()
-
-        grouped = df.groupby(COL_TC)
-
-        for tc, group in grouped:
-            tc_map[tc].append((channel, group))
-
-    for tc, channel_groups in tc_map.items():
-        yield tc, channel_groups
------------------------------------------------------------
-from azure.search.documents.indexes import SearchIndexClient
-from azure.search.documents.indexes.models import (
-    SearchIndex,
-    SimpleField,
-    SearchableField,
-    SearchField,
-    SearchFieldDataType,
-    VectorSearch,
-    VectorSearchProfile,
-    HnswAlgorithmConfiguration
-)
+import uuid
+from openai import AzureOpenAI
+from azure.search.documents import SearchClient
 from azure.core.credentials import AzureKeyCredential
 from config import get
 
-def ensure_index():
-    client = SearchIndexClient(
-        endpoint=get("AZURE_SEARCH_ENDPOINT"),
-        credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-    )
+openai_client = AzureOpenAI(
+    api_key=get("AZURE_OPENAI_KEY"),
+    api_version=get("AZURE_OPENAI_API_VERSION"),
+    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
+)
 
-    index_name = get("AZURE_SEARCH_INDEX")
-    existing = [i.name for i in client.list_indexes()]
-    if index_name in existing:
-        return
+search_client = SearchClient(
+    endpoint=get("AZURE_SEARCH_ENDPOINT"),
+    index_name=get("AZURE_SEARCH_INDEX"),
+    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+)
 
-    fields = [
-        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
-        SimpleField(name="testCaseId", type=SearchFieldDataType.String, filterable=True),
+def upload(tc, channel_groups):
+    content = f"TestCase: {tc}\n\n"
+    channels = []
 
-        SimpleField(
-            name="channels",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.String),
-            filterable=True
-        ),
+    for channel, group in channel_groups:
+        channels.append(channel)
 
-        SearchableField(name="content", type=SearchFieldDataType.String),
+        content += f"\n=========== CHANNEL: {channel} ===========\n"
 
-        SearchField(
-            name="embedding",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
-            vector_search_dimensions=int(get("EMBEDDING_DIMENSIONS")),
-            vector_search_profile_name="vector-profile"
-        ),
-    ]
+        for _, row in group.iterrows():
+            step = str(row.get("Test Step No.", "")).strip()
+            if not step.startswith("Step"):
+                continue
 
-    vector_search = VectorSearch(
-        profiles=[VectorSearchProfile(
-            name="vector-profile",
-            algorithm_configuration_name="hnsw-config"
-        )],
-        algorithms=[HnswAlgorithmConfiguration(name="hnsw-config")]
-    )
+            content += f"""
+Step: {step}
+Description: {row.get('Test Step Description','')}
+Screen: {row.get('Screen Name','')}
+Test Data: {row.get('Test Data','')}
+Expected Result: {row.get('Expected Results','')}
+----------------------------------------
+"""
 
-    index = SearchIndex(
-        name=index_name,
-        fields=fields,
-        vector_search=vector_search
-    )
+    emb = openai_client.embeddings.create(
+        model=get("EMBEDDING_MODEL"),
+        input=content
+    ).data[0].embedding
 
-    client.create_index(index)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "testCaseId": tc,
+        "channels": channels,
+        "content": content,
+        "embedding": emb
+    }
+
+    search_client.upload_documents([doc])
