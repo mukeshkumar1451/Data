@@ -1,13 +1,17 @@
-import glob
-from config import get
-from index_manager import ensure_index
-from excel_reader import read_excel
-from vector_uploader import upload
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
+from embeddingtovectordb.config import get
 
-ensure_index()
+search_client = SearchClient(
+    endpoint=get("AZURE_SEARCH_ENDPOINT"),
+    index_name=get("AZURE_SEARCH_INDEX"),
+    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+)
 
-for file in glob.glob(f"{get('EXCEL_INPUT_DIR')}/*.xlsx"):
-    for tc, channel_groups in read_excel(file):
-        upload(tc, channel_groups)
+result = search_client.search(
+    search_text="*",
+    include_total_count=True,
+    top=1
+)
 
-print("All testcases uploaded into Azure AI Search")
+print("Total documents in index:", result.get_count())
