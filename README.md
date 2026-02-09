@@ -1,76 +1,61 @@
-# test_rag_runner.py
-# -*- coding: utf-8 -*-
-import os
-import sys
-import traceback
-import logging
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-logger = logging.getLogger(__name__)
-
-from ContextRetrieval_ReRanking.ragquery.rag_query import TestCaseRAGRetriever as RAGRetriever
-from ContextRetrieval_ReRanking.llm.llm_step_parser import parse_llm_steps
-from ContextRetrieval_ReRanking.excelexport.excel_multi_sheet_exporter import MultiSheetExcelExporter
-from embeddingtovectordb.config import get
-from ContextRetrieval_ReRanking.channel_detect.channel_detector import detect_channels
+import re
 
 
-def run_rag_pipeline(user_story_id, user_story, description, ac) -> str:
-    try:
-        logger.info("🚀 Channel-Aware RAG Test Case Generation Started")
+def parse_llm_steps(llm_text: str):
+    """
+    Parse LLM output and MERGE ALL steps into ONE SINGLE testcase.
+    Handles messy LLM formatting safely.
+    """
 
-        channels = detect_channels(ac)
-        logger.info(f"Channels detected: {channels}")
+    scenario = ""
+    script = ""
+    precondition = ""
+    requirement = ""
 
-        retriever = RAGRetriever()
+    steps = []
+    step_counter = 1
 
-        all_generated_testcases = []
+    for raw in llm_text.splitlines():
+        line = raw.strip()
 
-        for channel in channels:
-            logger.info(f"Processing Channel: {channel}")
+        # ---------------- Header fields ----------------
+        if line.lower().startswith("scenario:") and not scenario:
+            scenario = line.split(":", 1)[1].strip()
 
-            results = retriever.retrieve_for_channel(
-                user_story,
-                description,
-                ac,
-                channel
-            )
+        elif line.lower().startswith("script:") and not script:
+            script = line.split(":", 1)[1].strip()
 
-            llm_outputs = retriever.generate_testcase_with_llm(
-                user_story_id=user_story_id,
-                user_story=user_story,
-                description=description,
-                ac=ac,
-                retrieved_chunks=results
-            )
+        elif line.lower().startswith("precondition:") and not precondition:
+            precondition = line.split(":", 1)[1].strip()
 
-            parsed = parse_llm_steps(llm_outputs["COMMON"])
+        elif line.lower().startswith("requirement:") and not requirement:
+            requirement = line.split(":", 1)[1].strip()
 
-            for tc in parsed:
-                tc["channels"] = [channel]
+        # ---------------- Step lines ----------------
+        elif re.match(r"^step\s*\d+", line.lower()):
+            # Normalize weird spacing
+            parts = [p.strip() for p in re.split(r"\s*\|\s*", line)]
 
-            all_generated_testcases.extend(parsed)
+            if len(parts) >= 5:
+                steps.append({
+                    "step_no": f"Step {step_counter:02d}",
+                    "desc": parts[1],
+                    "screen": parts[2],
+                    "data": parts[3],
+                    "expected": parts[4],
+                })
+                step_counter += 1
 
-        template_path = get("EXCEL_TEMPLATE_PATH")
-        output_dir = get("EXCEL_OUTPUT_DIR")
-        os.makedirs(output_dir, exist_ok=True)
+    # Safety: if headers missing, prevent crash
+    scenario = scenario or "Generated Test Scenario"
+    script = script or "Generated_Test_Script"
+    precondition = precondition or ""
+    requirement = requirement or ""
 
-        output_file = os.path.join(
-            output_dir,
-            f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
-        )
-
-        exporter = MultiSheetExcelExporter(template_path)
-        exporter.export(
-            testcases=all_generated_testcases,
-            user_story_id=user_story_id,
-            output_path=output_file
-        )
-
-        logger.info(f"Excel generated: {output_file}")
-        return output_file
-
-    except Exception:
-        logger.exception("ERROR OCCURRED IN RAG PIPELINE")
-        raise
+    return [{
+        "scenario": scenario,
+        "script": script,
+        "precondition": precondition,
+        "requirement": requirement,
+        "steps": steps
+    }]
