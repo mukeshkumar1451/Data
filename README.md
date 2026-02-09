@@ -1,38 +1,57 @@
-def extract_preconditions(ac_text: str):
-    text = ac_text.lower()
+# precondition_extractor.py
+import re
 
-    # Loan Purpose
-    if "refinance" in text:
-        loan_purpose = "Refinance"
-    elif "purchase" in text:
-        loan_purpose = "Purchase"
-    else:
-        loan_purpose = ""
 
-    # Loan Type
-    for t in ["fha", "va", "usda", "heloc", "conventional"]:
-        if t in text:
-            loan_type = t.upper()
-            break
-    else:
-        loan_type = ""
+class PreconditionExtractor:
+    """
+    Extract Loan Purpose, Loan Type, Product Code and Loan Stage
+    from Acceptance Criteria text.
+    """
 
-    # Product mapping
-    product_map = {
+    PRODUCT_MAP = {
+        "CONVENTIONAL": "CF30",
         "FHA": "FF30",
         "VA": "VF30",
         "USDA": "",
         "HELOC": "NRZHeloc",
-        "CONVENTIONAL": "CF30",
+        "NON QM": "NRSEF30",
     }
-    product_code = product_map.get(loan_type, "")
 
-    # Loan Stage
-    if "approval" in text:
-        loan_stage = "Approval"
-    elif "submission" in text:
-        loan_stage = "Submission"
-    else:
-        loan_stage = ""
+    @staticmethod
+    def extract(ac_text: str):
+        text = ac_text.lower()
 
-    return loan_purpose, loan_type, product_code, loan_stage
+        # ---------------- Loan Purpose ----------------
+        if "refinance" in text:
+            loan_purpose = "Refinance"
+        elif "purchase" in text:
+            loan_purpose = "Purchase"
+        else:
+            loan_purpose = ""
+
+        # ---------------- Loan Type ----------------
+        loan_type = ""
+        for lt in ["fha", "va", "usda", "heloc", "conventional", "non qm"]:
+            if lt in text:
+                loan_type = lt.upper()
+                break
+
+        # ---------------- Product Code ----------------
+        product_code = PreconditionExtractor.PRODUCT_MAP.get(loan_type, "")
+
+        # ---------------- Loan Stage ----------------
+        if re.search(r"\bapproval\b", text):
+            loan_stage = "Approval"
+        elif re.search(r"\bsubmission\b", text):
+            loan_stage = "Submission"
+        elif re.search(r"\bdisclosure\b", text):
+            loan_stage = "Disclosure"
+        else:
+            loan_stage = ""
+
+        return {
+            "loan_purpose": loan_purpose,
+            "loan_type": loan_type,
+            "product_code": product_code,
+            "loan_stage": loan_stage
+        }
