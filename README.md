@@ -4,7 +4,6 @@ from azure.search.documents.models import VectorizedQuery
 
 import logging
 from openai import AzureOpenAI
-
 from embeddingtovectordb.config import get
 from ContextRetrieval_ReRanking.prompts.prompt_templates import build_testcase_prompt
 from ContextRetrieval_ReRanking.rerankerbase.reranker import LLMReranker
@@ -27,7 +26,7 @@ class TestCaseRAGRetriever:
         self.embed_model = get("EMBEDDING_MODEL")
         self.top_k = get("TOP_K", int)
 
-        # -------- Reranker --------
+        # -------- LLM Reranker --------
         self.reranker = LLMReranker(self.openai, self.chat_model)
 
         # -------- Azure AI Search --------
@@ -38,6 +37,8 @@ class TestCaseRAGRetriever:
         )
 
     # ----------------------------------------------------
+    # Create embedding
+    # ----------------------------------------------------
     def embed_query(self, text):
         emb = self.openai.embeddings.create(
             model=self.embed_model,
@@ -45,6 +46,8 @@ class TestCaseRAGRetriever:
         )
         return emb.data[0].embedding
 
+    # ----------------------------------------------------
+    # Hybrid Search + Re-ranking for ONE channel
     # ----------------------------------------------------
     def retrieve_for_channel(self, user_story, description, ac, channel):
         logger.info(f"\n🔎 Hybrid search for channel: {channel}")
@@ -69,61 +72,55 @@ Acceptance Criteria:
             fields="embedding"
         )
 
-        # 🔥 HYBRID SEARCH (text + vector)
+        # ✅ HYBRID SEARCH (text + vector)
         results = self.search_client.search(
-            search_text=query_text,   # <-- TEXT SEARCH ADDED
+            search_text=query_text,
             vector_queries=[vector_query],
             filter=f"channel eq '{channel}'",
-            select=[
-                "testCaseId",
-                "content",
-                "channel"
-            ],  # Removed "chunkId" from the select clause
+            select=["testCaseId", "content", "channel"],
             top=self.top_k
         )
 
         results_list = list(results)
 
-        logger.info(f"✅ Retrieved {len(results_list)} chunks before re-ranking")
+        logger.info(f"✅ Retrieved {len(results_list)} testcases before re-ranking")
 
-        # Show raw scores
         for r in results_list[:5]:
-            logger.info(f"   📊 Raw Score: {r.get('@search.score'):.4f} | TC: {r['testCaseId']}")  # Removed Chunk ID logging
+            score = r.get('@search.score', 0)
+            logger.info(f"   📊 Vector Score: {score:.4f} | TC: {r['testCaseId']}")
 
         # ---------------- Re-ranking ----------------
-        reranked = self.reranker.rerank(
-            query_text,
-            results_list
-        )
+        reranked = self.reranker.rerank(query_text, results_list)
 
         logger.info("\n🔁 After LLM Re-ranking:\n")
-
-        for r in reranked:
+        for r in reranked[:10]:
             logger.info(
-                f"   🦬 Rerank Score: {r['rerank_score']:.3f} | "
-                f"Vector Score: {r.get('@search.score'):.4f} | "
+                f"   🦬 Rerank: {r['rerank_score']:.3f} | "
+                f"Vector: {r.get('@search.score', 0):.4f} | "
                 f"TC: {r['testCaseId']}"
-            )  # Removed Chunk ID logging
+            )
 
         return reranked
 
     # ----------------------------------------------------
-    def _build_historical_context(self, chunks):
-        tc_map = {}
-
-        for r in chunks:
-            tcid = r["testCaseId"]
-            content = r["content"]  # Removed chunkId reference
-            tc_map.setdefault(tcid, []).append(content)
+    # Build historical context (no chunkId anymore)
+    # ----------------------------------------------------
+    def _build_historical_context(self, results):
 
         historical_context = ""
 
-        for tcid, parts in tc_map.items():
-            full_text = "\n".join(parts)
-            historical_context += f"\n\n### Historical TestCase: {tcid}\n{full_text}\n"
+        for r in results:
+            tcid = r["testCaseId"]
+            content = r["content"]
+
+            historical_context += (
+                f"\n\n### Historical TestCase: {tcid}\n{content}\n"
+            )
 
         return historical_context
 
+    # ----------------------------------------------------
+    # Generate testcase using LLM for this channel
     # ----------------------------------------------------
     def generate_testcase_with_llm(
         self,
@@ -135,7 +132,7 @@ Acceptance Criteria:
     ):
 
         if not retrieved_chunks:
-            logger.info("⚠️ No chunks → Skipping LLM generation")
+            logger.warning("⚠️ No historical testcases → skipping LLM")
             return {}
 
         channel = retrieved_chunks[0]["channel"]
@@ -162,6 +159,7 @@ Acceptance Criteria:
         )
 
         output = response.choices[0].message.content
+
         logger.info(f"✅ LLM response received for {channel}\n")
 
         return {channel: output}
