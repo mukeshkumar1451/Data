@@ -1,51 +1,160 @@
-Retail Channel Pre-condition Template:
-Create a loan from Customer Portal as per pre-conditions below:
-1. Channel: RTL 
-2. Loan Purpose: 
-3. Loan Type: 
-4. Product Code: 
-5. Loan Stage: 
-
-Wholesale Channel Pre-condition Template:
-Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: Wholesale 
-2. Loan Purpose: 
-3. Loan Type: 
-4. Product Code: 
-5. Loan Stage: 
-
-DTC Channel Pre-condition Template:
-Create a loan from Ignite Portal as per pre-conditions below:
-1. Channel: DTC 
-2. Loan Purpose: Refinance
-3. Loan Type: 
-4. Product Code: 
-5. Loan Stage: 
+import uuid
+from collections import OrderedDict
+from openai import AzureOpenAI
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
+from embeddingtovectordb.config import get
 
 
+# ---------------- Azure Clients ----------------
 
-CL1 Channel Pre-condition Template:
-Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: CL1 
-2. Loan Purpose: 
-3. Loan Type: 
-4. Product Code: 
-5. Loan Stage: 
+openai_client = AzureOpenAI(
+    api_key=get("AZURE_OPENAI_KEY"),
+    api_version=get("AZURE_OPENAI_API_VERSION"),
+    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
+)
 
+search_client = SearchClient(
+    endpoint=get("AZURE_SEARCH_ENDPOINT"),
+    index_name=get("AZURE_SEARCH_INDEX"),
+    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+)
+
+
+# ---------------- Precondition Builder ----------------
+
+def build_preconditions(channel_groups):
+    """
+    Build channel specific precondition block.
+    This is where real channel intelligence lives.
+    """
+    pre = "\n=========== PRE-CONDITIONS ===========\n"
+
+    for channel, group in channel_groups:
+
+        # Read precondition columns safely
+        def val(col):
+            return group[col].iloc[0] if col in group.columns else ""
+
+        loan_purpose = val("Loan Purpose")
+        loan_type = val("Loan Type")
+        product_code = val("Product Code")
+        loan_stage = val("Loan Stage")
+
+        # Portal mapping
+        if channel == "RTL":
+            portal = "Customer Portal"
+        elif channel in ["WHL", "CL1"]:
+            portal = "Broker Portal"
+        elif channel == "DTC":
+            portal = "Ignite Portal"
+        else:
+            portal = ""
+
+        pre += f"""
+{channel}:
+Create a loan from {portal} as per pre-conditions below:
+Channel: {channel}
+Loan Purpose: {loan_purpose}
+Loan Type: {loan_type}
+Product Code: {product_code}
+Loan Stage: {loan_stage}
+
+----------------------------------------
+"""
+
+    # Add loan type / product knowledge for LLM reasoning
+    pre += """
+=========== LOAN TYPE & PRODUCT KNOWLEDGE ===========
 
 Loan Types:
-Conventional
-FHA
-VA
-USDA
-Heloc
+Conventional, FHA, VA, USDA, Heloc
 
-Products:
-Conventional: CF30, CF10, CF15
-Conventional Jumbo: JCPF30, JEG10A, JF30B
-VA: VF30, VF15
-FHA: FF30
-Heloc: NRZHeloc
-Non QM: NRSEF30, NRSVF30
+Products Mapping:
+Conventional → CF30, CF10, CF15
+Conventional Jumbo → JCPF30, JEG10A, JF30B
+VA → VF30, VF15
+FHA → FF30
+Heloc → NRZHeloc
+Non QM → NRSEF30, NRSVF30
+
+======================================================
+"""
+    return pre
 
 
+# ---------------- Upload Function ----------------
+
+def upload(tc, channel_groups):
+    """
+    Create ONE high-quality document per TestCase.
+    """
+
+    channels = [c for c, _ in channel_groups]
+
+    # --------------------------------------------
+    # Step Map (avoid duplicate step text)
+    # --------------------------------------------
+    step_map = OrderedDict()
+
+    for _, group in channel_groups:
+        for _, row in group.iterrows():
+            step_no = str(row.get("Test Step No.", "")).strip()
+
+            if not step_no.startswith("Step"):
+                continue
+
+            if step_no not in step_map:
+                step_map[step_no] = {
+                    "description": row.get("Test Step Description", ""),
+                    "screen": row.get("Screen Name", ""),
+                    "data": row.get("Test Data", ""),
+                    "expected": row.get("Expected Results", "")
+                }
+
+    # --------------------------------------------
+    # Build Content for Embedding
+    # --------------------------------------------
+    content = f"\nTestCase: {tc}\n"
+    content += build_preconditions(channel_groups)
+    content += "\n=========== TEST STEPS ===========\n"
+
+    for step_no, d in step_map.items():
+        content += f"""
+{step_no}
+
+Description:
+{d['description']}
+
+Screen:
+{d['screen']}
+
+Test Data:
+{d['data']}
+
+Expected Result:
+{d['expected']}
+
+----------------------------------------
+"""
+
+    # --------------------------------------------
+    # Create Embedding
+    # --------------------------------------------
+    emb = openai_client.embeddings.create(
+        model=get("EMBEDDING_MODEL"),
+        input=content
+    ).data[0].embedding
+
+    # --------------------------------------------
+    # Upload Document
+    # --------------------------------------------
+    doc = {
+        "id": str(uuid.uuid4()),
+        "testCaseId": tc,
+        "channels": channels,
+        "content": content,
+        "embedding": emb
+    }
+
+    search_client.upload_documents([doc])
