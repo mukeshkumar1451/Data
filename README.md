@@ -1,4 +1,4 @@
-from azure.search.documents import SearchClient
+\from azure.search.documents import SearchClient
 from azure.core.credentials import AzureKeyCredential
 from embeddingtovectordb.config import get
 
@@ -8,34 +8,41 @@ search_client = SearchClient(
     credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
 )
 
-OUTPUT_FILE = "all_testcases_dump.txt"
+OUTPUT_FILE = "all_testcases_full_dump.txt"
 
 results = search_client.search(
     search_text="*",
-    top=1000,                 # enough to fetch all docs
     include_total_count=True
 )
 
-print(f"\nTotal documents in index: {results.get_count()}\n")
+total = results.get_count()
+print(f"\n🔢 Total documents in index: {total}\n")
 
 with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-    for i, doc in enumerate(results, start=1):
+    for idx, doc in enumerate(results, start=1):
+
         header = f"""
-====================================================
-Document #{i}
-TestCaseId : {doc.get('testCaseId')}
-Channels   : {doc.get('channels')}
-====================================================
+============================================================
+Document #{idx}
+ID          : {doc.get('id')}
+TestCaseId  : {doc.get('testCaseId')}
+Channels    : {doc.get('channels')}
+============================================================
 """
-        content = doc.get("content", "")
 
-        # Print to console
+        # Print header
         print(header)
-        print(content)
-
-        # Write to file
         f.write(header)
-        f.write(content)
-        f.write("\n\n")
 
-print(f"\n✅ All testcases saved to file: {OUTPUT_FILE}")
+        # Print ALL fields dynamically
+        for key, value in doc.items():
+            if key == "embedding":
+                continue  # skip huge vector
+            line = f"{key}:\n{value}\n\n"
+            print(line)
+            f.write(line)
+
+        print("\n")
+        f.write("\n")
+
+print(f"\n✅ Full dump saved to: {OUTPUT_FILE}")
