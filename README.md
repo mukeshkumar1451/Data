@@ -1,185 +1,158 @@
-🔎 Hybrid search for channel: WHL
-2026-02-09 18:09:33,059 - httpx - INFO - HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-2026-02-09 18:09:33,103 - azure.core.pipeline.policies.http_logging_policy - INFO - Request URL: 'https://uat-c01-ai-productivity-transformation-aisearch.search.windows.net/indexes('testcase-vectordb-test5')/docs/search.post.search?api-version=REDACTED'
-Request method: 'POST'
-Request headers:
-    'Content-Type': 'application/json'
-    'Content-Length': '75501'
-    'api-key': 'REDACTED'
-    'Accept': 'application/json;odata.metadata=none'
-    'x-ms-client-request-id': '628fbca8-05b4-11f1-ae7a-7ced8dc28672'
-    'User-Agent': 'azsdk-python-search-documents/11.7.0b2 Python/3.14.2 (Windows-10-10.0.19045-SP0)'
-A body is sent with the request
-2026-02-09 18:09:33,885 - azure.core.pipeline.policies.http_logging_policy - INFO - Response status: 400
-Response headers:
-    'Cache-Control': 'no-cache,no-store'
-    'Pragma': 'no-cache'
-    'Content-Length': '149'
-    'Content-Type': 'application/json; charset=utf-8'
-    'Content-Language': 'REDACTED'
-    'Expires': '-1'
-    'request-id': '628fbca8-05b4-11f1-ae7a-7ced8dc28672'
-    'elapsed-time': 'REDACTED'
-    'Strict-Transport-Security': 'REDACTED'
-    'Date': 'Mon, 09 Feb 2026 12:39:33 GMT'
-2026-02-09 18:09:33,886 - test_rag_runner - ERROR - ERROR OCCURRED IN RAG PIPELINE
-Traceback (most recent call last):
-  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 33, in run_rag_pipeline
-    results = retriever.retrieve_for_channel(
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
+from azure.search.documents.models import VectorizedQuery
+
+import logging
+from openai import AzureOpenAI
+from embeddingtovectordb.config import get
+from ContextRetrieval_ReRanking.prompts.prompt_templates import build_testcase_prompt
+from ContextRetrieval_ReRanking.rerankerbase.reranker import LLMReranker
+
+logger = logging.getLogger(__name__)
+
+
+class TestCaseRAGRetriever:
+
+    def __init__(self):
+
+        # -------- Azure OpenAI --------
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION")
+        )
+
+        self.chat_model = get("CHAT_MODEL")
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.top_k = get("TOP_K", int)
+
+        # -------- LLM Reranker --------
+        self.reranker = LLMReranker(self.openai, self.chat_model)
+
+        # -------- Azure AI Search --------
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+        )
+
+    # ----------------------------------------------------
+    # Create embedding
+    # ----------------------------------------------------
+    def embed_query(self, text):
+        emb = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text
+        )
+        return emb.data[0].embedding
+
+    # ----------------------------------------------------
+    # Hybrid Search + Re-ranking for ONE channel
+    # ----------------------------------------------------
+    def retrieve_for_channel(self, user_story, description, ac, channel):
+        logger.info(f"\n🔎 Hybrid search for channel: {channel}")
+
+        query_text = f"""
+User Story:
+{user_story}
+
+Description:
+{description}
+
+Acceptance Criteria:
+{ac}
+"""
+
+        query_vector = self.embed_query(query_text)
+
+        vector_query = VectorizedQuery(
+            kind="vector",
+            vector=query_vector,
+            k=self.top_k,
+            fields="embedding"
+        )
+
+        # ✅ ONLY VALID FILTER FOR YOUR INDEX
+        results = self.search_client.search(
+            search_text=query_text,
+            vector_queries=[vector_query],
+            filter=f"channels/any(c: c eq '{channel}')",
+            select=["id", "testCaseId", "channels", "content"],
+            top=self.top_k
+        )
+
+        results_list = list(results)
+        logger.info(f"✅ Retrieved {len(results_list)} testcases before re-ranking")
+
+        # ---------------- Re-ranking ----------------
+        reranked = self.reranker.rerank(query_text, results_list)
+
+        logger.info("\n🔁 After LLM Re-ranking:\n")
+        for r in reranked[:10]:
+            logger.info(
+                f"   🦬 Rerank: {r['rerank_score']:.3f} | "
+                f"TC: {r['testCaseId']}"
+            )
+
+        return reranked
+
+    # ----------------------------------------------------
+    # Build historical context
+    # ----------------------------------------------------
+    def _build_historical_context(self, results):
+        historical_context = ""
+
+        for r in results:
+            tcid = r["testCaseId"]
+            content = r["content"]
+
+            historical_context += (
+                f"\n\n### Historical TestCase: {tcid}\n{content}\n"
+            )
+
+        return historical_context
+
+    # ----------------------------------------------------
+    # Generate testcase using LLM
+    # ----------------------------------------------------
+    def generate_testcase_with_llm(
+        self,
+        user_story_id,
         user_story,
-    ...<2 lines>...
-        channel
-    )
-  File "c:\Users\h84609n\Desktop\VectorDb Test\ContextRetrieval_ReRanking\ragquery\rag_query.py", line 85, in retrieve_for_channel
-    results_list = list(results)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 58, in __next__
-    return next(self._page_iterator)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
-    self._response = self._get_next(self.continuation_token)
-                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 139, in _get_next_cb
-    return self._client.documents.search_post(search_request=self._initial_query.request, **self._kwargs)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\tracing\decorator.py", line 119, in wrapper_use_tracer
-    return func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 865, in search_post
-    raise HttpResponseError(response=response, model=error)
-azure.core.exceptions.HttpResponseError: () Invalid expression: Could not find a property named 'channel' on type 'search.document'.
+        description,
+        ac,
+        retrieved_chunks,
+    ):
 
-Parameter name: $filter
-Code: 
-Message: Invalid expression: Could not find a property named 'channel' on type 'search.document'.
+        if not retrieved_chunks:
+            logger.warning("⚠️ No historical testcases → skipping LLM")
+            return {}
 
-Parameter name: $filter
-2026-02-09 18:09:33,893 - __main__ - ERROR - Error during test case generation
-Traceback (most recent call last):
-  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\server.py", line 103, in us_TestcaseGenerator
-    output_excel = run_rag_pipeline(
-        user_story_id=user_story_id,
-    ...<2 lines>...
-        ac=clean_ac,
-    )
-  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 33, in run_rag_pipeline
-    results = retriever.retrieve_for_channel(
-        user_story,
-    ...<2 lines>...
-        channel
-    )
-  File "c:\Users\h84609n\Desktop\VectorDb Test\ContextRetrieval_ReRanking\ragquery\rag_query.py", line 85, in retrieve_for_channel
-    results_list = list(results)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 58, in __next__
-    return next(self._page_iterator)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
-    self._response = self._get_next(self.continuation_token)
-                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 139, in _get_next_cb
-    return self._client.documents.search_post(search_request=self._initial_query.request, **self._kwargs)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\tracing\decorator.py", line 119, in wrapper_use_tracer
-    return func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 865, in search_post
-    raise HttpResponseError(response=response, model=error)
-azure.core.exceptions.HttpResponseError: () Invalid expression: Could not find a property named 'channel' on type 'search.document'.
+        # channels is a LIST
+        channel = retrieved_chunks[0]["channels"][0]
 
-Parameter name: $filter
-Code: 
-Message: Invalid expression: Could not find a property named 'channel' on type 'search.document'.
+        historical_context = self._build_historical_context(retrieved_chunks)
 
-Parameter name: $filter
-2026-02-09 18:23:12,703 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
-2026-02-09 18:23:12,703 - __main__ - INFO - TEST CASE GENERATION STARTED FOR: 718521
-2026-02-09 18:23:13,406 - utils.html_image_processor - INFO - 🧹 Cleaning Acceptance Criteria HTML...
-2026-02-09 18:23:13,409 - utils.html_image_processor - INFO - 🗼️ Extracting images from AC...
-2026-02-09 18:23:13,409 - test_rag_runner - INFO - 🚀 Channel-Aware RAG Test Case Generation Started
-2026-02-09 18:23:13,409 - ContextRetrieval_ReRanking.channel_detect.channel_detector - INFO - 
-🔎 Detecting channels from Acceptance Criteria...
+        prompt = build_testcase_prompt(
+            user_story_id=user_story_id,
+            user_story=user_story,
+            description=description,
+            ac=ac,
+            historical_context=historical_context
+        )
 
-2026-02-09 18:23:13,410 - ContextRetrieval_ReRanking.channel_detect.channel_detector - INFO - 🦬 Raw detected channels: set()
-2026-02-09 18:23:13,410 - ContextRetrieval_ReRanking.channel_detect.channel_detector - INFO - ⚠️ No channel mentioned → Using ALL channels
-2026-02-09 18:23:13,410 - test_rag_runner - INFO - Channels detected: ['WHL', 'RTL', 'DTC', 'CL1']
-2026-02-09 18:23:14,046 - test_rag_runner - INFO - Processing Channel: WHL
-2026-02-09 18:23:14,046 - ContextRetrieval_ReRanking.ragquery.rag_query - INFO - 
-🔎 Hybrid search for channel: WHL
-2026-02-09 18:23:14,363 - httpx - INFO - HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-2026-02-09 18:23:14,405 - azure.core.pipeline.policies.http_logging_policy - INFO - Request URL: 'https://uat-c01-ai-productivity-transformation-aisearch.search.windows.net/indexes('testcase-vectordb-test5')/docs/search.post.search?api-version=REDACTED'
-Request method: 'POST'
-Request headers:
-    'Content-Type': 'application/json'
-    'Content-Length': '75501'
-    'api-key': 'REDACTED'
-    'Accept': 'application/json;odata.metadata=none'
-    'x-ms-client-request-id': '4c186844-05b6-11f1-9a64-7ced8dc28672'
-    'User-Agent': 'azsdk-python-search-documents/11.7.0b2 Python/3.14.2 (Windows-10-10.0.19045-SP0)'
-A body is sent with the request
-2026-02-09 18:23:15,316 - azure.core.pipeline.policies.http_logging_policy - INFO - Response status: 400
-Response headers:
-    'Cache-Control': 'no-cache,no-store'
-    'Pragma': 'no-cache'
-    'Content-Length': '149'
-    'Content-Type': 'application/json; charset=utf-8'
-    'Content-Language': 'REDACTED'
-    'Expires': '-1'
-    'request-id': '4c186844-05b6-11f1-9a64-7ced8dc28672'
-    'elapsed-time': 'REDACTED'
-    'Strict-Transport-Security': 'REDACTED'
-    'Date': 'Mon, 09 Feb 2026 12:53:15 GMT'
-2026-02-09 18:23:15,317 - test_rag_runner - ERROR - ERROR OCCURRED IN RAG PIPELINE
-Traceback (most recent call last):
-  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 33, in run_rag_pipeline
-    results = retriever.retrieve_for_channel(
-        user_story,
-    ...<2 lines>...
-        channel
-    )
-  File "c:\Users\h84609n\Desktop\VectorDb Test\ContextRetrieval_ReRanking\ragquery\rag_query.py", line 85, in retrieve_for_channel
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 58, in __next__
-    return next(self._page_iterator)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
-    self._response = self._get_next(self.continuation_token)
-                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 139, in _get_next_cb
-    return self._client.documents.search_post(search_request=self._initial_query.request, **self._kwargs)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\tracing\decorator.py", line 119, in wrapper_use_tracer
-    return func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 865, in search_post
-    raise HttpResponseError(response=response, model=error)
-azure.core.exceptions.HttpResponseError: () Invalid expression: Could not find a property named 'channel' on type 'search.document'.
+        logger.info(f"🤖 Sending {channel} context to Azure OpenAI...\n")
 
-Parameter name: $filter
-Code: 
-Message: Invalid expression: Could not find a property named 'channel' on type 'search.document'.
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[
+                {"role": "system", "content": "You are a QA Test Case Designer."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
 
-Parameter name: $filter
-2026-02-09 18:23:15,345 - __main__ - ERROR - Error during test case generation
-Traceback (most recent call last):
-  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\server.py", line 103, in us_TestcaseGenerator
-    output_excel = run_rag_pipeline(
-        user_story_id=user_story_id,
-    ...<2 lines>...
-        ac=clean_ac,
-    )
-  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 33, in run_rag_pipeline
-    results = retriever.retrieve_for_channel(
-        user_story,
-    ...<2 lines>...
-        channel
-    )
-  File "c:\Users\h84609n\Desktop\VectorDb Test\ContextRetrieval_ReRanking\ragquery\rag_query.py", line 85, in retrieve_for_channel
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 58, in __next__
-    return next(self._page_iterator)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
-    self._response = self._get_next(self.continuation_token)
-                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_paging.py", line 139, in _get_next_cb
-    return self._client.documents.search_post(search_request=self._initial_query.request, **self._kwargs)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\core\tracing\decorator.py", line 119, in wrapper_use_tracer
-    return func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\VectorDb Test\.venv\Lib\site-packages\azure\search\documents\_generated\operations\_documents_operations.py", line 865, in search_post
-    raise HttpResponseError(response=response, model=error)
-azure.core.exceptions.HttpResponseError: () Invalid expression: Could not find a property named 'channel' on type 'search.document'.
+        output = response.choices[0].message.content
+        logger.info(f"✅ LLM response received for {channel}\n")
 
-Parameter name: $filter
-Code: 
-Message: Invalid expression: Could not find a property named 'channel' on type 'search.document'.
+        return {channel: output}
