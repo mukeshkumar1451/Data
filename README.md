@@ -1,36 +1,89 @@
-But RAG logic is still wrong because:
 
-You are generating ONE testcase and copying to 4 sheets.
-
-Instead of:
-
-Generating 4 different testcases using 4 different channel histories.
+from openpyxl import load_workbook
 
 
---------------------------------------------
-I have a Python project where my folder names are not meaningful to others.
+class MultiSheetExcelExporter:
 
-I will provide you:
-1) The current folder structure
-2) The Python file names inside each folder
-3) The class names inside each file
+    def __init__(self, template_path):
+        self.template_path = template_path
 
-Your task is to:
+    def export(self, testcases, user_story_id, output_path):
+        """
+        testcases format expected:
+        [
+            {
+                "channels": ["WHL", "CL1"],
+                "scenario": "...",
+                "script": "...",
+                "precondition": "...",
+                "requirement": "...",
+                "steps": [
+                    {
+                        "step_no": "Step 01",
+                        "desc": "...",
+                        "screen": "...",
+                        "data": "...",
+                        "expected": "..."
+                    }
+                ]
+            }
+        ]
+        """
 
-- Analyze the responsibility of each file from its class name
-- Group related files into meaningful, professional folders
-- Rename folders to industry-standard names
-- Suggest a clean, scalable Python project structure
-- Follow best practices used in production Python projects
-- Keep separation of concerns (controllers, services, models, utils, config, etc.)
-- Do NOT change file names unless absolutely necessary
-- Only restructure folders and show the new hierarchy
+        wb = load_workbook(self.template_path)
 
-Output format:
-1) New recommended folder structure (tree format)
-2) Mapping from old path → new path
-3) Short reason for each folder name
-4) If any file is misplaced, explain why
+        # Ensure all channel sheets exist
+        for ch in ["RTL", "WHL", "DTC", "CL1"]:
+            if ch not in wb.sheetnames:
+                wb.create_sheet(ch)
 
-Here is my current structure:
-<PASTE YOUR FOLDERS AND FILES HERE>
+        sheets = {name: wb[name] for name in wb.sheetnames}
+        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
+
+        tc_counter = 1
+
+        # ---------------------------------------------------
+        # Each testcase block
+        # ---------------------------------------------------
+        for tc in testcases:
+
+            generated_tc_id = f"US_{user_story_id}_TC_{tc_counter:02d}"
+            tc_counter += 1
+
+            scenario = tc["scenario"]
+            script = tc["script"]
+            pre = tc["precondition"]
+            req = tc["requirement"]
+            steps = tc["steps"]
+            channels = tc["channels"]  # write to multiple sheets
+
+            # ---------------------------------------------------
+            # Write SAME testcase to multiple channel sheets
+            # ---------------------------------------------------
+            for channel in channels:
+
+                ws = sheets[channel]
+                row = row_tracker[channel]
+
+                for idx, step in enumerate(steps):
+
+                    # Write header columns ONLY for first step
+                    ws.cell(row, 1).value = generated_tc_id if idx == 0 else ""
+                    ws.cell(row, 2).value = script if idx == 0 else ""
+                    ws.cell(row, 3).value = "NA" if idx == 0 else ""
+                    ws.cell(row, 4).value = scenario if idx == 0 else ""
+                    ws.cell(row, 5).value = pre if idx == 0 else ""
+
+                    ws.cell(row, 6).value = step["step_no"]
+                    ws.cell(row, 7).value = step["desc"]
+                    ws.cell(row, 8).value = step["screen"]
+                    ws.cell(row, 9).value = step["data"]
+                    ws.cell(row, 10).value = step["expected"]
+
+                    ws.cell(row, 11).value = req if idx == 0 else ""
+
+                    row += 1
+
+                row_tracker[channel] = row
+
+        wb.save(output_path)
