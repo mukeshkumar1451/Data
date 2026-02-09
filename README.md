@@ -1,30 +1,18 @@
-import pandas as pd
+import glob
 import logging
-from collections import defaultdict
+from embeddingtovectordb.config import get
+from embeddingtovectordb.index_manager import ensure_index
 
 logger = logging.getLogger(__name__)
+from embeddingtovectordb.excel_reader import read_excel
+from embeddingtovectordb.vector_uploader import upload
 
-def read_excel(file_path):
-    xls = pd.ExcelFile(file_path)
+ensure_index()
 
-    COL_TC = "Test Case ID / Test Script ID"
+for file in glob.glob(f"{get('EXCEL_INPUT_DIR')}/*.xlsx"):
+    logger.info(f"\n📘 Processing file: {file}")
 
-    # tc -> list of (channel, group)
-    tc_map = defaultdict(list)
+    for sheet, tc, group, steps in read_excel(file):
+        upload(sheet, tc, group, steps)
 
-    for sheet in xls.sheet_names:
-        channel = sheet.strip()
-        df = pd.read_excel(xls, sheet_name=sheet)
-        df.columns = df.columns.str.strip()
-
-        # Fix merged cells
-        df[COL_TC] = df[COL_TC].ffill()
-
-        grouped = df.groupby(COL_TC)
-
-        for tc, group in grouped:
-            tc_map[tc].append((channel, group))
-
-    # Yield ONE TC with ALL its channels
-    for tc, channel_groups in tc_map.items():
-        yield tc, channel_groups
+logger.info("🎉 All testcases uploaded into Azure AI Search")
