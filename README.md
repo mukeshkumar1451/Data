@@ -1,21 +1,30 @@
-import glob
+import pandas as pd
 import logging
+from collections import defaultdict
 
-from embeddingtovectordb.config import get
-from embeddingtovectordb.index_manager import ensure_index
-from embeddingtovectordb.excel_reader import read_excel
-from embeddingtovectordb.vector_uploader import upload
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ensure_index()
+def read_excel(file_path):
+    xls = pd.ExcelFile(file_path)
 
-for file in glob.glob(f"{get('EXCEL_INPUT_DIR')}/*.xlsx"):
-    logger.info(f"\n📘 Processing file: {file}")
+    COL_TC = "Test Case ID / Test Script ID"
 
-    # NEW: now read_excel yields tc, channel_groups
-    for tc, channel_groups in read_excel(file):
-        upload(tc, channel_groups)
+    # tc -> list of (channel, group)
+    tc_map = defaultdict(list)
 
-logger.info("🎉 All testcases uploaded into Azure AI Search")
+    for sheet in xls.sheet_names:
+        channel = sheet.strip()
+
+        df = pd.read_excel(xls, sheet_name=sheet)
+        df.columns = df.columns.str.strip()
+
+        df[COL_TC] = df[COL_TC].ffill()
+
+        grouped = df.groupby(COL_TC)
+
+        for tc, group in grouped:
+            tc_map[tc].append((channel, group))
+
+    # yield ONE TC with all channels
+    for tc, channel_groups in tc_map.items():
+        yield tc, channel_groups
