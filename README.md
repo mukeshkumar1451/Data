@@ -1,66 +1,30 @@
-import uuid
+import pandas as pd
 import logging
-from openai import AzureOpenAI
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-from config import get
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-openai_client = AzureOpenAI(
-    api_key=get("AZURE_OPENAI_KEY"),
-    api_version=get("AZURE_OPENAI_API_VERSION"),
-    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
-)
+def read_excel(file_path):
+    xls = pd.ExcelFile(file_path)
 
-search_client = SearchClient(
-    endpoint=get("AZURE_SEARCH_ENDPOINT"),
-    index_name=get("AZURE_SEARCH_INDEX"),
-    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-)
+    COL_TC = "Test Case ID / Test Script ID"
 
-def upload(tc, channel_groups):
-    logger.info(f"➡️ {tc}: merging all channels into ONE document")
+    # tc -> list of (channel, group)
+    tc_map = defaultdict(list)
 
-    content = f"TestCase: {tc}\n\n"
+    for sheet in xls.sheet_names:
+        channel = sheet.strip()
+        df = pd.read_excel(xls, sheet_name=sheet)
+        df.columns = df.columns.str.strip()
 
-    for channel, group in channel_groups:
-        content += f"\n=========== CHANNEL: {channel} ===========\n"
+        # Fix merged cells
+        df[COL_TC] = df[COL_TC].ffill()
 
-        for _, row in group.iterrows():
-            step = str(row.get("Test Step No.", "")).strip()
-            if not step.startswith("Step"):
-                continue
+        grouped = df.groupby(COL_TC)
 
-            content += f"""
-Step: {step}
+        for tc, group in grouped:
+            tc_map[tc].append((channel, group))
 
-Description:
-{row.get('Test Step Description','')}
-
-Screen:
-{row.get('Screen Name','')}
-
-Test Data:
-{row.get('Test Data','')}
-
-Expected Result:
-{row.get('Expected Results','')}
-
-----------------------------------------
-"""
-
-    emb = openai_client.embeddings.create(
-        model=get("EMBEDDING_MODEL"),
-        input=content
-    ).data[0].embedding
-
-    doc = {
-        "id": str(uuid.uuid4()),
-        "testCaseId": tc,
-        "content": content,
-        "embedding": emb
-    }
-
-    search_client.upload_documents([doc])
-    logger.info(f"✅ {tc} uploaded\n")
+    # Yield ONE TC with ALL its channels
+    for tc, channel_groups in tc_map.items():
+        yield tc, channel_groups
