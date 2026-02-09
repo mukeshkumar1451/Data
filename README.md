@@ -1,62 +1,66 @@
+import uuid
 import logging
-from azure.search.documents.indexes import SearchIndexClient
-from azure.search.documents.indexes.models import (
-    SearchIndex,
-    SimpleField,
-    SearchableField,
-    SearchField,
-    SearchFieldDataType,
-    VectorSearch,
-    VectorSearchProfile,
-    HnswAlgorithmConfiguration
-)
+from openai import AzureOpenAI
+from azure.search.documents import SearchClient
 from azure.core.credentials import AzureKeyCredential
 from config import get
 
 logger = logging.getLogger(__name__)
 
-def ensure_index():
-    index_name = get("AZURE_SEARCH_INDEX")
+openai_client = AzureOpenAI(
+    api_key=get("AZURE_OPENAI_KEY"),
+    api_version=get("AZURE_OPENAI_API_VERSION"),
+    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
+)
 
-    client = SearchIndexClient(
-        endpoint=get("AZURE_SEARCH_ENDPOINT"),
-        credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-    )
+search_client = SearchClient(
+    endpoint=get("AZURE_SEARCH_ENDPOINT"),
+    index_name=get("AZURE_SEARCH_INDEX"),
+    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+)
 
-    existing = [idx.name for idx in client.list_indexes()]
-    if index_name in existing:
-        logger.info(f"✅ Index '{index_name}' already exists")
-        return
+def upload(tc, channel_groups):
+    logger.info(f"➡️ {tc}: merging all channels into ONE document")
 
-    fields = [
-        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
-        SimpleField(name="testCaseId", type=SearchFieldDataType.String, filterable=True),
-        SearchableField(name="content", type=SearchFieldDataType.String),
-        SearchField(
-            name="embedding",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
-            vector_search_dimensions=int(get("EMBEDDING_DIMENSIONS")),
-            vector_search_profile_name="vector-profile"
-        ),
-    ]
+    content = f"TestCase: {tc}\n\n"
 
-    vector_search = VectorSearch(
-        profiles=[
-            VectorSearchProfile(
-                name="vector-profile",
-                algorithm_configuration_name="hnsw-config"
-            )
-        ],
-        algorithms=[
-            HnswAlgorithmConfiguration(name="hnsw-config")
-        ]
-    )
+    for channel, group in channel_groups:
+        content += f"\n=========== CHANNEL: {channel} ===========\n"
 
-    index = SearchIndex(
-        name=index_name,
-        fields=fields,
-        vector_search=vector_search
-    )
+        for _, row in group.iterrows():
+            step = str(row.get("Test Step No.", "")).strip()
+            if not step.startswith("Step"):
+                continue
 
-    client.create_index(index)
-    logger.info(f"✅ Index '{index_name}' created")
+            content += f"""
+Step: {step}
+
+Description:
+{row.get('Test Step Description','')}
+
+Screen:
+{row.get('Screen Name','')}
+
+Test Data:
+{row.get('Test Data','')}
+
+Expected Result:
+{row.get('Expected Results','')}
+
+----------------------------------------
+"""
+
+    emb = openai_client.embeddings.create(
+        model=get("EMBEDDING_MODEL"),
+        input=content
+    ).data[0].embedding
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "testCaseId": tc,
+        "content": content,
+        "embedding": emb
+    }
+
+    search_client.upload_documents([doc])
+    logger.info(f"✅ {tc} uploaded\n")
