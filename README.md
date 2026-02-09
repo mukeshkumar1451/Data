@@ -1,115 +1,153 @@
 # -*- coding: utf-8 -*-
-from mcp.server import FastMCP
-import json
-import logging
 import os
 import sys
+import traceback
+import logging
 
-from ado_client import fetch_from_ado
-from utils.html_image_processor import process_html_and_images
+# Add parent directory to path to import modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# -------------------------------------------------------------------
-# 🔥 FORCE LOGGING CONFIG (REQUIRED FOR MCP / FastMCP)
-# -------------------------------------------------------------------
-
-sys.stdout.reconfigure(line_buffering=True)
-
+# Configure logging
 log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
 os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "mcp_server.log")
+log_file = os.path.join(log_dir, "test_rag_runner.log")
 
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.DEBUG)
-
-# Remove existing handlers added by MCP runtime
-for h in root_logger.handlers[:]:
-    root_logger.removeHandler(h)
-
-formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
 )
-
-file_handler = logging.FileHandler(log_file, encoding="utf-8")
-file_handler.setFormatter(formatter)
-
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(formatter)
-
-root_logger.addHandler(file_handler)
-root_logger.addHandler(console_handler)
-
 logger = logging.getLogger(__name__)
-logger.info("=" * 80)
-logger.info("✅ MCP Custom Logging Initialized")
-logger.info("=" * 80)
 
-# -------------------------------------------------------------------
-# MCP SERVER
-# -------------------------------------------------------------------
-
-mcp = FastMCP("ADO User Story Server")
+from ContextRetrieval_ReRanking.ragquery.rag_query import TestCaseRAGRetriever as RAGRetriever
+from ContextRetrieval_ReRanking.llm.llm_step_parser import parse_llm_steps
+from ContextRetrieval_ReRanking.excelexport.excel_multi_sheet_exporter import MultiSheetExcelExporter
+from embeddingtovectordb.config import get
+from ContextRetrieval_ReRanking.channel_detect.channel_detector import detect_channels
 
 
-@mcp.tool()
-def get_user_story(user_story_id: str):
-    logger.info(f"Fetching user story: {user_story_id}")
-
+def run_rag_pipeline(user_story_id, user_story, description, ac)-> str:
+    """
+    Execute the RAG pipeline for test case generation.
+    
+    Args:
+        user_story_id: The ID of the user story
+        user_story: The user story text
+        description: The description of the user story
+        ac: The acceptance criteria
+        
+    Returns:
+        str: Path to the generated Excel file
+    """
+    
     try:
-        story = fetch_from_ado(user_story_id)
-        logger.debug(f"Fetched story: {story}")
+        logger.info("\n" + "="*80)
+        logger.info("🚀 TRUE Channel-Aware RAG Test Case Generation Started")
+        logger.info("="*80 + "\n")
 
-        if not all(k in story for k in ["title", "description", "acceptance_criteria"]):
-            raise KeyError("Missing required keys in ADO response")
+        # ---------------------------------------------------
+        # Step 1 — Detect Channels from AC
+        # ---------------------------------------------------
+        logger.info("Step 1: Detecting channels from acceptance criteria...")
+        channels = detect_channels(ac)
+        logger.info(f"🔎 Channels detected: {channels}")
+        
 
-        clean_ac = process_html_and_images(story["acceptance_criteria"])
-        logger.debug(f"Clean AC: {clean_ac}")
+        # ---------------------------------------------------
+        # Step 2 — Initialize Retriever
+        # ---------------------------------------------------
+        logger.info("Step 2: Initializing RAG retriever...")
+        retriever = RAGRetriever()
+        logger.info("✅ RAG retriever initialized")
 
-        result = {
-            "user_story_id": user_story_id,
-            "title": story["title"],
-            "description": story["description"],
-            "acceptance_criteria": clean_ac,
-        }
+        all_generated_testcases = []
 
-        logger.info(f"Successfully processed user story {user_story_id}")
-        return json.dumps(result, indent=2)
+        # ---------------------------------------------------
+        # Step 3 — PROCESS EACH CHANNEL SEPARATELY
+        # ---------------------------------------------------
+        for channel in channels:
+            logger.info(f"\n==============================")
+            logger.info(f"🔷 Processing Channel: {channel}")
+            logger.info(f"==============================\n")
 
-    except Exception as e:
-        logger.exception(f"Error in get_user_story for {user_story_id}")
-        raise
+            # 🔍 Vector search only for this channel
+            logger.info(f"Performing vector search for channel {channel}...")
+            results = retriever.retrieve_for_channel(
+                user_story,
+                description,
+                ac,
+                channel
+            )
 
+            logger.info(f"✅ Retrieved {len(results)} chunks for {channel}")
 
-@mcp.tool()
-def us_TestcaseGenerator(user_story_id: str):
-    logger.info("=" * 80)
-    logger.info(f"TEST CASE GENERATION STARTED FOR: {user_story_id}")
+            # 🤖 Generate testcase using this channel history
+            logger.info(f"Generating test cases with LLM for channel {channel}...")
+            llm_outputs = retriever.generate_testcase_with_llm(
+                user_story_id=user_story_id,
+                user_story=user_story,
+                description=description,
+                ac=ac,
+                retrieved_chunks=results
+            )
 
-    try:
-        story = fetch_from_ado(user_story_id)
-        logger.debug(f"Fetched story: {story}")
+            llm_text = llm_outputs[channel]
 
-        clean_ac = process_html_and_images(story["acceptance_criteria"])
+            logger.info("Parsing LLM response...")
+            parsed = parse_llm_steps(llm_text)
+            logger.info(f"✅ Parsed {len(parsed)} test cases from LLM output")
 
-        logger.info("Starting RAG pipeline...")
-        from test_rag_runner import run_rag_pipeline
+            for tc in parsed:
+                tc["channels"] = [channel]
 
-        output_excel = run_rag_pipeline(
+            all_generated_testcases.extend(parsed)
+            logger.info(f"Total test cases so far: {len(all_generated_testcases)}")
+
+        # ---------------------------------------------------
+        # Step 4 — Export to Excel
+        # ---------------------------------------------------
+        logger.info("\n" + "="*80)
+        logger.info("Step 4: Exporting test cases to Excel...")
+        logger.info("="*80)
+        logger.info("\n📄 Writing channel-specific testcases into Excel template...\n")
+
+        template_path = get("EXCEL_TEMPLATE_PATH")
+        output_dir = get("EXCEL_OUTPUT_DIR")
+        logger.info(f"Template path: {template_path}")
+        logger.info(f"Output directory: {output_dir}")
+        
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_file = os.path.join(
+            output_dir,
+            f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
+        )
+        logger.info(f"Output file path: {output_file}")
+
+        exporter = MultiSheetExcelExporter(template_path)
+        logger.info(f"Exporting {len(all_generated_testcases)} test cases to Excel...")
+        exporter.export(
+            testcases=all_generated_testcases,
             user_story_id=user_story_id,
-            user_story=story["title"],
-            description=story["description"],
-            ac=clean_ac,
+            output_path=output_file
         )
 
-        logger.info(f"Test cases generated: {output_excel}")
-        logger.info("=" * 80)
-        return f"Test cases generated: {output_excel}"
+        logger.info(f"\n" + "="*80)
+        logger.info(f"🎉 Excel generated successfully!")
+        logger.info(f"📁 Output file: {output_file}")
+        logger.info("="*80 + "\n")
+        
+        return output_file
 
-    except Exception:
-        logger.exception("Error during test case generation")
+    except Exception as e:
+        logger.error("\n" + "="*80)
+        logger.error("❌ ERROR OCCURRED IN RAG PIPELINE")
+        logger.error("="*80)
+        logger.error(f"Error: {e}")
+        logger.error("\n📌 TRACEBACK:")
+        logger.error(traceback.format_exc())
+        logger.error("="*80 + "\n")
         raise
-
-
-if __name__ == "__main__":
-    logger.info("[*] MCP Server starting...")
-    logger.info("[*] Available tools: get_user_story, us_TestcaseGenerator")
-    mcp.run()
