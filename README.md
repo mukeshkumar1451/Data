@@ -1,10 +1,13 @@
-026-02-09 23:36:10,055 - test_rag_runner - ERROR - ERROR OCCURRED IN RAG PIPELINE
+2026-02-09 23:41:27,507 - httpx - INFO - HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2026-02-09 23:41:27,508 - ContextRetrieval_ReRanking.ragquery.rag_query - INFO - ✅ LLM response received for WHL
+
+2026-02-09 23:41:27,508 - test_rag_runner - ERROR - ERROR OCCURRED IN RAG PIPELINE
 Traceback (most recent call last):
   File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 48, in run_rag_pipeline
-    parsed = parse_llm_steps(llm_outputs[channel])
-                             ~~~~~~~~~~~^^^^^^^^^
+    parsed = parse_llm_steps(llm_outputs["COMMON"])
+                             ^^^^^^^^^^^^^^^^^^^^
 KeyError: 'CL1'
-2026-02-09 23:36:10,056 - __main__ - ERROR - Error during test case generation
+2026-02-09 23:41:27,531 - __main__ - ERROR - Error during test case generation
 Traceback (most recent call last):
   File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\server.py", line 103, in us_TestcaseGenerator
     output_excel = run_rag_pipeline(
@@ -13,6 +16,6 @@ Traceback (most recent call last):
         ac=clean_ac,
     )
   File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 48, in run_rag_pipeline
-    parsed = parse_llm_steps(llm_outputs[channel])
-                             ~~~~~~~~~~~^^^^^^^^^
+    parsed = parse_llm_steps(llm_outputs["COMMON"])
+                             ^^^^^^^^^^^^^^^^^^^^
 KeyError: 'CL1'
