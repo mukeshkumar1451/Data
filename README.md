@@ -1,120 +1,75 @@
 # -*- coding: utf-8 -*-
-from mcp.server import FastMCP
-import json
-import logging
 import os
 import sys
-from dotenv import load_dotenv
+import traceback
+import logging
 
-from ado_client import fetch_from_ado
-from utils.html_image_processor import process_html_and_images
-
-# -------------------------------------------------------------------
-# ✅ ENV-CONTROLLED MCP LOGGING (ROOT LOGGER)
-# -------------------------------------------------------------------
-
-load_dotenv()
-
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-
-level_map = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
-}
-
-LOGGING_LEVEL = level_map.get(LOG_LEVEL, logging.INFO)
-
-sys.stdout.reconfigure(line_buffering=True)
-
-log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "mcp_server.log")
-
-root_logger = logging.getLogger()
-root_logger.setLevel(LOGGING_LEVEL)
-
-# Remove handlers added by MCP runtime
-for h in root_logger.handlers[:]:
-    root_logger.removeHandler(h)
-
-formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-
-file_handler = logging.FileHandler(log_file, encoding="utf-8")
-file_handler.setFormatter(formatter)
-
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(formatter)
-
-root_logger.addHandler(file_handler)
-root_logger.addHandler(console_handler)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logger = logging.getLogger(__name__)
-logger.info(f"✅ MCP Logging initialized with level: {LOG_LEVEL}")
 
-# -------------------------------------------------------------------
-# MCP SERVER
-# -------------------------------------------------------------------
+from ContextRetrieval_ReRanking.ragquery.rag_query import TestCaseRAGRetriever as RAGRetriever
+from ContextRetrieval_ReRanking.llm.llm_step_parser import parse_llm_steps
+from ContextRetrieval_ReRanking.excelexport.excel_multi_sheet_exporter import MultiSheetExcelExporter
+from embeddingtovectordb.config import get
+from ContextRetrieval_ReRanking.channel_detect.channel_detector import detect_channels
 
-mcp = FastMCP("ADO User Story Server")
 
-
-@mcp.tool()
-def get_user_story(user_story_id: str):
-    logger.info(f"Fetching user story: {user_story_id}")
-
+def run_rag_pipeline(user_story_id, user_story, description, ac) -> str:
     try:
-        story = fetch_from_ado(user_story_id)
+        logger.info("🚀 Channel-Aware RAG Test Case Generation Started")
 
-        if not all(k in story for k in ["title", "description", "acceptance_criteria"]):
-            raise KeyError("Missing required keys in ADO response")
+        channels = detect_channels(ac)
+        logger.info(f"Channels detected: {channels}")
 
-        clean_ac = process_html_and_images(story["acceptance_criteria"])
+        retriever = RAGRetriever()
 
-        result = {
-            "user_story_id": user_story_id,
-            "title": story["title"],
-            "description": story["description"],
-            "acceptance_criteria": clean_ac,
-        }
+        all_generated_testcases = []
 
-        logger.info(f"Successfully processed user story {user_story_id}")
-        return json.dumps(result, indent=2)
+        for channel in channels:
+            logger.info(f"Processing Channel: {channel}")
 
-    except Exception:
-        logger.exception(f"Error in get_user_story for {user_story_id}")
-        raise
+            results = retriever.retrieve_for_channel(
+                user_story,
+                description,
+                ac,
+                channel
+            )
 
+            llm_outputs = retriever.generate_testcase_with_llm(
+                user_story_id=user_story_id,
+                user_story=user_story,
+                description=description,
+                ac=ac,
+                retrieved_chunks=results
+            )
 
-@mcp.tool()
-def us_TestcaseGenerator(user_story_id: str):
-    logger.info(f"TEST CASE GENERATION STARTED FOR: {user_story_id}")
+            parsed = parse_llm_steps(llm_outputs[channel])
 
-    try:
-        story = fetch_from_ado(user_story_id)
-        clean_ac = process_html_and_images(story["acceptance_criteria"])
+            for tc in parsed:
+                tc["channels"] = [channel]
 
-        from test_rag_runner import run_rag_pipeline
+            all_generated_testcases.extend(parsed)
 
-        output_excel = run_rag_pipeline(
-            user_story_id=user_story_id,
-            user_story=story["title"],
-            description=story["description"],
-            ac=clean_ac,
+        template_path = get("EXCEL_TEMPLATE_PATH")
+        output_dir = get("EXCEL_OUTPUT_DIR")
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_file = os.path.join(
+            output_dir,
+            f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
         )
 
-        logger.info(f"Test cases generated: {output_excel}")
-        return f"Test cases generated: {output_excel}"
+        exporter = MultiSheetExcelExporter(template_path)
+        exporter.export(
+            testcases=all_generated_testcases,
+            user_story_id=user_story_id,
+            output_path=output_file
+        )
+
+        logger.info(f"Excel generated: {output_file}")
+        return output_file
 
     except Exception:
-        logger.exception("Error during test case generation")
+        logger.exception("ERROR OCCURRED IN RAG PIPELINE")
         raise
-
-
-if __name__ == "__main__":
-    logger.info("[*] MCP Server starting...")
-    logger.info("[*] Available tools: get_user_story, us_TestcaseGenerator")
-    mcp.run()
