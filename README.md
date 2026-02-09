@@ -1,21 +1,164 @@
-2026-02-09 23:41:27,507 - httpx - INFO - HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-2026-02-09 23:41:27,508 - ContextRetrieval_ReRanking.ragquery.rag_query - INFO - ✅ LLM response received for WHL
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
+from azure.search.documents.models import VectorizedQuery
 
-2026-02-09 23:41:27,508 - test_rag_runner - ERROR - ERROR OCCURRED IN RAG PIPELINE
-Traceback (most recent call last):
-  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 48, in run_rag_pipeline
-    parsed = parse_llm_steps(llm_outputs["COMMON"])
-                             ^^^^^^^^^^^^^^^^^^^^
-KeyError: 'CL1'
-2026-02-09 23:41:27,531 - __main__ - ERROR - Error during test case generation
-Traceback (most recent call last):
-  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\server.py", line 103, in us_TestcaseGenerator
-    output_excel = run_rag_pipeline(
-        user_story_id=user_story_id,
-    ...<2 lines>...
-        ac=clean_ac,
-    )
-  File "c:\Users\h84609n\Desktop\VectorDb Test\adomcpserver\test_rag_runner.py", line 48, in run_rag_pipeline
-    parsed = parse_llm_steps(llm_outputs["COMMON"])
-                             ^^^^^^^^^^^^^^^^^^^^
-KeyError: 'CL1'
+import logging
+from openai import AzureOpenAI
+from embeddingtovectordb.config import get
+from ContextRetrieval_ReRanking.prompts.prompt_templates import build_testcase_prompt
+from ContextRetrieval_ReRanking.rerankerbase.reranker import LLMReranker
+
+logger = logging.getLogger(__name__)
+
+
+class TestCaseRAGRetriever:
+
+    def __init__(self):
+
+        # -------- Azure OpenAI --------
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION")
+        )
+
+        self.chat_model = get("CHAT_MODEL")
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.top_k = get("TOP_K", int)
+
+        # -------- LLM Reranker --------
+        self.reranker = LLMReranker(self.openai, self.chat_model)
+
+        # -------- Azure AI Search --------
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+        )
+
+    # ----------------------------------------------------
+    # Create embedding
+    # ----------------------------------------------------
+    def embed_query(self, text):
+        emb = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text
+        )
+        return emb.data[0].embedding
+
+    # ----------------------------------------------------
+    # Hybrid + Semantic + Vector Search
+    # ----------------------------------------------------
+    def retrieve_for_channel(self, user_story, description, ac, channel):
+        logger.info(f"\n🔎 Hybrid search for channel: {channel}")
+
+        query_text = f"""
+User Story:
+{user_story}
+
+Description:
+{description}
+
+Acceptance Criteria:
+{ac}
+"""
+
+        query_vector = self.embed_query(query_text)
+
+        vector_query = VectorizedQuery(
+            kind="vector",
+            vector=query_vector,
+            k=50,                     # get more candidates
+            fields="embedding"
+        )
+
+        # ✅ BEST POSSIBLE SEARCH FOR YOUR DATA
+        results = self.search_client.search(
+            search_text=query_text,                 # keyword
+            vector_queries=[vector_query],          # vector
+
+            # filter using channels list field
+            filter=f"channels/any(c: c eq '{channel}')",
+
+            # semantic ranking on content
+            query_type="semantic",
+            semantic_configuration_name="default",
+
+            select=["id", "testCaseId", "channels", "content"],
+
+            top=50
+        )
+
+        results_list = list(results)
+        logger.info(f"✅ Retrieved {len(results_list)} candidates before rerank")
+
+        # ---------------- Re-ranking ----------------
+        reranked = self.reranker.rerank(query_text, results_list)
+
+        logger.info("\n🔁 After LLM Re-ranking:\n")
+        for r in reranked[:10]:
+            logger.info(
+                f"   🦬 Rerank: {r['rerank_score']:.3f} | "
+                f"TC: {r['testCaseId']}"
+            )
+
+        return reranked
+
+    # ----------------------------------------------------
+    # Build historical context
+    # ----------------------------------------------------
+    def _build_historical_context(self, results):
+        historical_context = ""
+
+        for r in results:
+            historical_context += (
+                f"\n\n### Historical TestCase: {r['testCaseId']}\n"
+                f"{r['content']}\n"
+            )
+
+        return historical_context
+
+    # ----------------------------------------------------
+    # Generate testcase using LLM
+    # ----------------------------------------------------
+    def generate_testcase_with_llm(
+        self,
+        user_story_id,
+        user_story,
+        description,
+        ac,
+        retrieved_chunks,
+    ):
+
+        if not retrieved_chunks:
+            logger.warning("⚠️ No historical testcases → skipping LLM")
+            return {}
+
+        # channels is list
+        channel = retrieved_chunks[0]["channels"][0]
+
+        historical_context = self._build_historical_context(retrieved_chunks)
+
+        prompt = build_testcase_prompt(
+            user_story_id=user_story_id,
+            user_story=user_story,
+            description=description,
+            ac=ac,
+            historical_context=historical_context
+        )
+
+        logger.info(f"🤖 Sending {channel} context to Azure OpenAI...\n")
+
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[
+                {"role": "system", "content": "You are a QA Test Case Designer."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
+
+        output = response.choices[0].message.content
+        logger.info(f"✅ LLM response received for {channel}\n")
+
+        return {"COMMON": output}
