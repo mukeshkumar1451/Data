@@ -1,61 +1,38 @@
-import re
+def extract_preconditions(ac_text: str):
+    text = ac_text.lower()
 
+    # Loan Purpose
+    if "refinance" in text:
+        loan_purpose = "Refinance"
+    elif "purchase" in text:
+        loan_purpose = "Purchase"
+    else:
+        loan_purpose = ""
 
-def parse_llm_steps(llm_text: str):
-    """
-    Parse LLM output and MERGE ALL steps into ONE SINGLE testcase.
-    Handles messy LLM formatting safely.
-    """
+    # Loan Type
+    for t in ["fha", "va", "usda", "heloc", "conventional"]:
+        if t in text:
+            loan_type = t.upper()
+            break
+    else:
+        loan_type = ""
 
-    scenario = ""
-    script = ""
-    precondition = ""
-    requirement = ""
+    # Product mapping
+    product_map = {
+        "FHA": "FF30",
+        "VA": "VF30",
+        "USDA": "",
+        "HELOC": "NRZHeloc",
+        "CONVENTIONAL": "CF30",
+    }
+    product_code = product_map.get(loan_type, "")
 
-    steps = []
-    step_counter = 1
+    # Loan Stage
+    if "approval" in text:
+        loan_stage = "Approval"
+    elif "submission" in text:
+        loan_stage = "Submission"
+    else:
+        loan_stage = ""
 
-    for raw in llm_text.splitlines():
-        line = raw.strip()
-
-        # ---------------- Header fields ----------------
-        if line.lower().startswith("scenario:") and not scenario:
-            scenario = line.split(":", 1)[1].strip()
-
-        elif line.lower().startswith("script:") and not script:
-            script = line.split(":", 1)[1].strip()
-
-        elif line.lower().startswith("precondition:") and not precondition:
-            precondition = line.split(":", 1)[1].strip()
-
-        elif line.lower().startswith("requirement:") and not requirement:
-            requirement = line.split(":", 1)[1].strip()
-
-        # ---------------- Step lines ----------------
-        elif re.match(r"^step\s*\d+", line.lower()):
-            # Normalize weird spacing
-            parts = [p.strip() for p in re.split(r"\s*\|\s*", line)]
-
-            if len(parts) >= 5:
-                steps.append({
-                    "step_no": f"Step {step_counter:02d}",
-                    "desc": parts[1],
-                    "screen": parts[2],
-                    "data": parts[3],
-                    "expected": parts[4],
-                })
-                step_counter += 1
-
-    # Safety: if headers missing, prevent crash
-    scenario = scenario or "Generated Test Scenario"
-    script = script or "Generated_Test_Script"
-    precondition = precondition or ""
-    requirement = requirement or ""
-
-    return [{
-        "scenario": scenario,
-        "script": script,
-        "precondition": precondition,
-        "requirement": requirement,
-        "steps": steps
-    }]
+    return loan_purpose, loan_type, product_code, loan_stage
