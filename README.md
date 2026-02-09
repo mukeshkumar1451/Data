@@ -1,154 +1,234 @@
-# -*- coding: utf-8 -*-
-from mcp.server import FastMCP
-import json
-import logging
+#config.py
 import os
-from ado_client import fetch_from_ado
-from utils.html_image_processor import process_html_and_images
+from dotenv import load_dotenv
+from openai import AzureOpenAI
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
 
-# Configure logging
-log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "mcp_server.log")
+load_dotenv()
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler()
-    ]
-)
+
+def get(key, cast=str):
+    val=os.getenv(key)
+    return cast(val) if val and cast != str else val    
+
+
+---------------------------------------------------
+# excel_reader.py
+import pandas as pd
+import logging
+
 logger = logging.getLogger(__name__)
-logger.info("=" * 80)
-logger.info("MCP Server Started")
 
-logger.info("=" * 80)
+def read_excel(file_path):
+    xls = pd.ExcelFile(file_path)
 
-# Create MCP server instance
-mcp = FastMCP("ADO User Story Server")
+    for sheet in xls.sheet_names:
+        channel = sheet.strip()   # ✅ THIS IS YOUR CHANNEL
 
-@mcp.tool()
-def get_user_story(user_story_id: str):
-    """
-    Fetches a user story from Azure DevOps and returns structured data.
-    
-    Args:
-        user_story_id: The ID of the user story to fetch
-        
-    Returns:
-        JSON string with user_story_id, title, description, and cleaned acceptance_criteria
-    """
-    progress_messages = []
-    logger.info(f"Fetching user story: {user_story_id}")
-    progress_messages.append(f" Fetching user story {user_story_id} from Azure DevOps...")
-    try:
-        # Get story from ADO
-        story = fetch_from_ado(user_story_id)
-        logger.info(f"Successfully fetched story: {story['title']}")
-        
-        # Debug log to inspect the fetched story
-        logger.debug(f"Fetched story content: {story}")
+        df = pd.read_excel(xls, sheet_name=sheet)
+        df.columns = df.columns.str.strip()
 
-        # Ensure required keys exist in the story dictionary
-        if not all(key in story for key in ['title', 'description', 'acceptance_criteria']):
-            raise KeyError("The fetched story is missing one or more required keys: 'title', 'description', 'acceptance_criteria'")
-        
-        # Clean HTML + OCR images from acceptance criteria
-        clean_ac = process_html_and_images(story["acceptance_criteria"])
-        logger.info(f"HTML processing complete for {user_story_id}")
-        
-        # Build structured response
-        result = {
-            "user_story_id": user_story_id,
-            "title": story["title"],
-            "description": story["description"],
-            "acceptance_criteria": clean_ac
+        COL_TC = "Test Case ID / Test Script ID"
+        COL_STEP = "Test Step No."
+
+        # 🔥 Fix merged TestCaseId cells
+        df[COL_TC] = df[COL_TC].ffill()
+
+        grouped = df.groupby(COL_TC)
+
+        for tc, group in grouped:
+            step_count = (
+                group[COL_STEP]
+                .astype(str)
+                .str.strip()
+                .str.startswith("Step")
+                .sum()
+            )
+
+            logger.info(f" sheet='{channel}' | test_case_id='{tc}' | steps={step_count}")
+
+            # ✅ return channel
+            yield channel, tc, group, step_count
+
+
+            ------------------------------------------------
+            # index_manager.py
+import logging
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchIndex,
+    SimpleField,
+    SearchableField,
+    SearchField,
+    SearchFieldDataType,
+    VectorSearch,
+    VectorSearchProfile,
+    HnswAlgorithmConfiguration
+)
+from azure.core.credentials import AzureKeyCredential
+
+from embeddingtovectordb.config import get
+
+logger = logging.getLogger(__name__)
+
+
+def ensure_index():
+
+    index_name = get("AZURE_SEARCH_INDEX")
+
+    client = SearchIndexClient(
+        endpoint=get("AZURE_SEARCH_ENDPOINT"),
+        credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+    )
+
+    existing = [idx.name for idx in client.list_indexes()]
+
+    if index_name in existing:
+        logger.info(f"✅ Index '{index_name}' already exists")
+        return
+
+    logger.info(f"🛠️ Creating index '{index_name}' ...")
+
+    fields = [
+
+        SimpleField(
+            name="id",
+            type=SearchFieldDataType.String,
+            key=True
+        ),
+
+        SimpleField(
+            name="testCaseId",
+            type=SearchFieldDataType.String,
+            filterable=True
+        ),
+
+        SimpleField(
+            name="chunkId",
+            type=SearchFieldDataType.Int32,
+            filterable=True,
+            sortable=True
+        ),
+
+        SimpleField(
+            name="channel",
+            type=SearchFieldDataType.String,
+            filterable=True
+        ),
+
+        SearchableField(
+            name="content",
+            type=SearchFieldDataType.String
+        ),
+
+        SearchField(
+            name="embedding",
+            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+            vector_search_dimensions=3072,
+            vector_search_profile_name="vector-profile"
+        ),
+    ]
+
+    vector_search = VectorSearch(
+        profiles=[
+            VectorSearchProfile(
+                name="vector-profile",
+                algorithm_configuration_name="hnsw-config"
+            )
+        ],
+        algorithms=[
+            HnswAlgorithmConfiguration(
+                name="hnsw-config"
+            )
+        ]
+    )
+
+    index = SearchIndex(
+        name=index_name,
+        fields=fields,
+        vector_search=vector_search
+    )
+
+    client.create_index(index)
+
+    logger.info(f"✅ Index '{index_name}' created successfully")
+----------------------------------------------------------------------
+# vector_uploader.py
+import uuid
+import logging
+from openai import AzureOpenAI
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
+from embeddingtovectordb.config import get
+
+logger = logging.getLogger(__name__)
+
+openai_client = AzureOpenAI(
+    api_key=get("AZURE_OPENAI_KEY"),
+    api_version=get("AZURE_OPENAI_API_VERSION"),
+    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
+)
+
+search_client = SearchClient(
+    endpoint=get("AZURE_SEARCH_ENDPOINT"),
+    index_name=get("AZURE_SEARCH_INDEX"),
+    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+)
+
+MAX_STEPS = get("MAX_STEPS_PER_CHUNK", int)
+
+
+def build_chunks(group):
+    chunks, current, count = [], "", 0
+
+    for _, row in group.iterrows():
+        step = str(row.get("Test Step No.", "")).strip()
+        if not step.startswith("Step"):
+            continue
+
+        block = f"""{step}
+{row.get('Test Step Description','')}
+Screen: {row.get('Screen Name','')}
+Data: {row.get('Test Data','')}
+Expected: {row.get('Expected Results','')}
+
+"""
+        current += block
+        count += 1
+
+        if count == MAX_STEPS:
+            chunks.append(current)
+            current, count = "", 0
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
+def upload(sheet, tc, group, step_count):
+    chunks = build_chunks(group)
+
+    logger.info(f"➡️ {tc}: {'Single' if step_count<=MAX_STEPS else 'Multi'} chunk ({len(chunks)})")
+
+    for idx, text in enumerate(chunks, 1):
+        content = f"TestCase: {tc}\nChannel: {sheet}\nChunk:{idx}\n\n{text}"
+
+        emb = openai_client.embeddings.create(
+            model=get("EMBEDDING_MODEL"),
+            input=content
+        ).data[0].embedding
+
+        doc = {
+            "id": str(uuid.uuid4()),
+            "testCaseId": tc,
+            "chunkId": idx,
+            "channel": sheet,
+            "content": content,
+            "embedding": emb
         }
-        
-        logger.info(f"Successfully processed user story {user_story_id}")
-        return json.dumps(result, indent=2)
-    except Exception as e:
-        logger.error(f"Error fetching user story {user_story_id}: {str(e)}")
-        raise
 
-@mcp.tool()
-def us_TestcaseGenerator(user_story_id: str):
-    """
-    This tool performs end-to-end automated test case generation from an Azure DevOps User Story.
+        search_client.upload_documents([doc])
 
-    Given a user_story_id, the tool will:
-
-    1. Fetch the user story from Azure DevOps (title, description, acceptance criteria with HTML and images).
-    2. Extract images from the acceptance criteria and perform OCR to capture UI flow text.
-    3. Clean and merge OCR text with acceptance criteria.
-    4. Detect applicable channels (RTL, WHL, DTC, CL1) from the acceptance criteria.
-    5. Perform semantic vector search in Azure AI Search for historical test cases.
-    6. Apply hybrid retrieval with LLM re-ranking for best matching test cases.
-    7. Generate new channel-specific test cases using Azure OpenAI based on historical patterns.
-    8. Export the generated test cases into a multi-sheet Excel file using the project template.
-
-    Args:
-        user_story_id: The ID of the user story to process
-
-    Returns:
-        A confirmation message with the path to the generated Excel test script file saved in the project output folder.
-    """
-    logger.info(f"=" * 80)
-    logger.info(f"TEST CASE GENERATION STARTED FOR USER STORY: {user_story_id}")
-    logger.info(f"=" * 80)
-    
-    try:
-        # Get story from ADO
-        logger.info(f"📥 Fetching user story {user_story_id} from Azure DevOps...")
-        story = fetch_from_ado(user_story_id)
-        logger.info(f"✅ Successfully fetched user story: {story['title']}")
-
-        # Debug log to inspect the fetched story
-        logger.debug(f"Fetched story content: {story}")
-
-        # Ensure required keys exist in the story dictionary
-        if not all(key in story for key in ['title', 'description', 'acceptance_criteria']):
-            raise KeyError("The fetched story is missing one or more required keys: 'title', 'description', 'acceptance_criteria'")
-
-        # Clean HTML + OCR images
-        logger.info(f"🖼️  Processing HTML and extracting images from acceptance criteria...")
-        clean_ac = process_html_and_images(story["acceptance_criteria"])
-        logger.info(f"✅ HTML processing and OCR complete")
-
-        # Call your existing RAG pipeline
-        logger.info(f"🚀 Starting RAG pipeline for test case generation...")
-        from test_rag_runner import run_rag_pipeline
-
-        output_excel = run_rag_pipeline(
-            user_story_id=user_story_id,
-            user_story=story["title"],
-            description=story["description"],
-            ac=clean_ac
-        )
-        
-        logger.info(f"=" * 80)
-        logger.info(f"✅ TEST CASE GENERATION COMPLETED SUCCESSFULLY")
-        logger.info(f"📁 Output file: {output_excel}")
-        logger.info(f"=" * 80)
-
-        return f"Test cases generated: {output_excel}"
-        
-    except Exception as e:
-        logger.error(f"=" * 80)
-        logger.error(f"❌ ERROR DURING TEST CASE GENERATION FOR USER STORY: {user_story_id}")
-        logger.error(f"Error details: {str(e)}")
-        logger.error(f"=" * 80)
-        import traceback
-        logger.error(traceback.format_exc())
-        raise
-
-if __name__ == "__main__":
-    import sys
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info("[*] MCP Server starting...")
-    logger.info("[*] Server location: adomcpserver/server.py")
-    logger.info("[*] MCP Server is RUNNING and waiting for connections")
-    logger.info("[*] Available tools: get_user_story, us_TestcaseGenerator")
-    mcp.run()
+    logger.info(f"✅ {tc} uploaded\n")
