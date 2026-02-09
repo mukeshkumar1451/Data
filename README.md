@@ -1,4 +1,3 @@
-
 from openpyxl import load_workbook
 
 
@@ -32,7 +31,7 @@ class MultiSheetExcelExporter:
 
         wb = load_workbook(self.template_path)
 
-        # Ensure all channel sheets exist
+        # Ensure channel sheets exist
         for ch in ["RTL", "WHL", "DTC", "CL1"]:
             if ch not in wb.sheetnames:
                 wb.create_sheet(ch)
@@ -40,22 +39,25 @@ class MultiSheetExcelExporter:
         sheets = {name: wb[name] for name in wb.sheetnames}
         row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
 
-        tc_counter = 1
+        # ✅ Channel-wise testcase counters (CRITICAL FIX)
+        tc_counter = {
+            "RTL": 1,
+            "WHL": 1,
+            "DTC": 1,
+            "CL1": 1
+        }
 
         # ---------------------------------------------------
         # Each testcase block
         # ---------------------------------------------------
         for tc in testcases:
 
-            generated_tc_id = f"US_{user_story_id}_TC_{tc_counter:02d}"
-            tc_counter += 1
-
             scenario = tc["scenario"]
             script = tc["script"]
             pre = tc["precondition"]
             req = tc["requirement"]
             steps = tc["steps"]
-            channels = tc["channels"]  # write to multiple sheets
+            channels = tc["channels"]
 
             # ---------------------------------------------------
             # Write SAME testcase to multiple channel sheets
@@ -65,9 +67,12 @@ class MultiSheetExcelExporter:
                 ws = sheets[channel]
                 row = row_tracker[channel]
 
+                # ✅ TC id generated PER CHANNEL
+                generated_tc_id = f"US_{user_story_id}_TC_{tc_counter[channel]:02d}"
+
                 for idx, step in enumerate(steps):
 
-                    # Write header columns ONLY for first step
+                    # Header columns only once per testcase
                     ws.cell(row, 1).value = generated_tc_id if idx == 0 else ""
                     ws.cell(row, 2).value = script if idx == 0 else ""
                     ws.cell(row, 3).value = "NA" if idx == 0 else ""
@@ -84,6 +89,10 @@ class MultiSheetExcelExporter:
 
                     row += 1
 
+                # update row for this sheet
                 row_tracker[channel] = row
+
+                # ✅ increment ONLY this channel counter
+                tc_counter[channel] += 1
 
         wb.save(output_path)
