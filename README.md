@@ -1,31 +1,62 @@
-import pandas as pd
 import logging
-from collections import defaultdict
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchIndex,
+    SimpleField,
+    SearchableField,
+    SearchField,
+    SearchFieldDataType,
+    VectorSearch,
+    VectorSearchProfile,
+    HnswAlgorithmConfiguration
+)
+from azure.core.credentials import AzureKeyCredential
+from config import get
 
 logger = logging.getLogger(__name__)
 
-def read_excel(file_path):
-    xls = pd.ExcelFile(file_path)
+def ensure_index():
+    index_name = get("AZURE_SEARCH_INDEX")
 
-    # tc -> list of (channel, group)
-    tc_map = defaultdict(list)
+    client = SearchIndexClient(
+        endpoint=get("AZURE_SEARCH_ENDPOINT"),
+        credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+    )
 
-    COL_TC = "Test Case ID / Test Script ID"
-    COL_STEP = "Test Step No."
+    existing = [idx.name for idx in client.list_indexes()]
+    if index_name in existing:
+        logger.info(f"✅ Index '{index_name}' already exists")
+        return
 
-    for sheet in xls.sheet_names:
-        channel = sheet.strip()
+    fields = [
+        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
+        SimpleField(name="testCaseId", type=SearchFieldDataType.String, filterable=True),
+        SearchableField(name="content", type=SearchFieldDataType.String),
+        SearchField(
+            name="embedding",
+            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+            vector_search_dimensions=int(get("EMBEDDING_DIMENSIONS")),
+            vector_search_profile_name="vector-profile"
+        ),
+    ]
 
-        df = pd.read_excel(xls, sheet_name=sheet)
-        df.columns = df.columns.str.strip()
+    vector_search = VectorSearch(
+        profiles=[
+            VectorSearchProfile(
+                name="vector-profile",
+                algorithm_configuration_name="hnsw-config"
+            )
+        ],
+        algorithms=[
+            HnswAlgorithmConfiguration(name="hnsw-config")
+        ]
+    )
 
-        df[COL_TC] = df[COL_TC].ffill()
+    index = SearchIndex(
+        name=index_name,
+        fields=fields,
+        vector_search=vector_search
+    )
 
-        grouped = df.groupby(COL_TC)
-
-        for tc, group in grouped:
-            tc_map[tc].append((channel, group))
-
-    # Yield one TC with all channels
-    for tc, channel_groups in tc_map.items():
-        yield tc, channel_groups
+    client.create_index(index)
+    logger.info(f"✅ Index '{index_name}' created")
