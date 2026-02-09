@@ -1,18 +1,59 @@
-This tool performs end-to-end automated test case generation from an Azure DevOps User Story.
+def build_testcase_prompt(
+    user_story_id,
+    user_story,
+    description,
+    ac,
+    historical_context
+):
+    return f"""
+You are a QA Test Case Designer.
 
-Given a user_story_id, the tool will:
+You must generate EXACTLY ONE test case for this User Story.
 
-1. Fetch the user story from Azure DevOps (title, description, acceptance criteria with HTML and images).
-2. Extract images from the acceptance criteria and perform OCR to capture UI flow text.
-3. Clean and merge OCR text with acceptance criteria.
-4. Detect applicable channels (RTL, WHL, DTC, CL1) from the acceptance criteria.
-5. Perform semantic vector search in Azure AI Search for historical test cases.
-6. Apply hybrid retrieval with LLM re-ranking for best matching test cases.
-7. Generate new channel-specific test cases using Azure OpenAI based on historical patterns.
-8. Export the generated test cases into a multi-sheet Excel file using the project template.
+CRITICAL RULES (DO NOT VIOLATE):
 
-This tool requires only:
-- user_story_id
+1) Generate ONLY ONE test case.
+2) Do NOT create multiple test cases.
+3) Do NOT restart step numbering.
+4) Steps MUST start from Step 01 and continue sequentially until the end.
+5) Do NOT stop early — include ALL required steps.
+6) Do NOT explain anything.
+7) Output must strictly follow the format below.
+8) Every step MUST use "|" separator.
 
-Output:
-An Excel test script file saved to the project output folder.
+MANDATORY OUTPUT FORMAT:
+
+Scenario: <short scenario>
+Script: <script name>
+Precondition: <precondition>
+Requirement: <requirement mapping>
+
+Step 01 | <step description> | <screen name> | <test data> | <expected result>
+Step 02 | <step description> | <screen name> | <test data> | <expected result>
+Step 03 | <step description> | <screen name> | <test data> | <expected result>
+
+Continue steps sequentially. Do NOT start a new Scenario.
+
+------------------------------------------------------------
+
+USER STORY ID:
+{user_story_id}
+
+USER STORY:
+{user_story}
+
+DESCRIPTION:
+{description}
+
+ACCEPTANCE CRITERIA:
+{ac}
+
+------------------------------------------------------------
+
+HISTORICAL TEST CASES FOR LEARNING STYLE:
+{historical_context}
+
+------------------------------------------------------------
+
+Generate the single consolidated test case now.
+"""
