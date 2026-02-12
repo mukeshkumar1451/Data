@@ -1,128 +1,84 @@
-import uuid
-from collections import OrderedDict
-from openai import AzureOpenAI
-from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchIndex,
+    SearchField,
+    SearchFieldDataType,
+    SimpleField,
+    SearchableField,
+    VectorSearch,
+    HnswAlgorithmConfiguration,
+    VectorSearchProfile
+)
 from azure.core.credentials import AzureKeyCredential
-from embeddingtovectordb.config import get
-from precondition_extractor import PreconditionExtractor
+from config import AZURE_SEARCH_ENDPOINT, AZURE_SEARCH_KEY, AZURE_SEARCH_INDEX
 
 
-openai_client = AzureOpenAI(
-    api_key=get("AZURE_OPENAI_KEY"),
-    api_version=get("AZURE_OPENAI_API_VERSION"),
-    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
-)
+def create_vector_index():
 
-search_client = SearchClient(
-    endpoint=get("AZURE_SEARCH_ENDPOINT"),
-    index_name=get("AZURE_SEARCH_INDEX"),
-    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-)
-
-
-PRE_COL = "Pre-Condition & Assumptions"
-
-
-def build_preconditions(channel_groups):
-    ORDER = ["RTL", "WHL", "DTC", "CL1"]
-    group_map = {c: g for c, g in channel_groups}
-
-    # Get precondition text from any sheet (same TC)
-    sample_group = list(group_map.values())[0]
-
-    pre_text = (
-        sample_group[PRE_COL]
-        .dropna()
-        .astype(str)
-        .iloc[0]
+    credential = AzureKeyCredential(AZURE_SEARCH_KEY)
+    client = SearchIndexClient(
+        endpoint=AZURE_SEARCH_ENDPOINT,
+        credential=credential
     )
 
-    loan_purpose, loan_type, product_code, loan_stage = \
-        PreconditionExtractor.extract(pre_text)
+    fields = [
 
-    pre = "\n=========== PRE-CONDITIONS ===========\n"
+        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
 
-    for channel in ORDER:
-        if channel not in group_map:
-            continue
+        SearchableField(name="content", type=SearchFieldDataType.String),
 
-        if channel == "RTL":
-            portal = "Customer Portal"
-        elif channel in ["WHL", "CL1"]:
-            portal = "Broker Portal"
-        elif channel == "DTC":
-            portal = "Ignite Portal"
-        else:
-            portal = ""
+        SearchField(
+            name="embedding",
+            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+            searchable=True,
+            vector_search_dimensions=3072,
+            vector_search_profile_name="vector-profile"
+        ),
 
-        pre += f"""
-{channel}:
-Create a loan from {portal} as per pre-conditions below:
-Channel: {channel}
-Loan Purpose: {loan_purpose}
-Loan Type: {loan_type}
-Product Code: {product_code}
-Loan Stage: {loan_stage}
+        SimpleField(name="channel", type=SearchFieldDataType.String, filterable=True, facetable=True),
+        SimpleField(name="knowledgeType", type=SearchFieldDataType.String, filterable=True, facetable=True),
+        SimpleField(name="stage", type=SearchFieldDataType.String, filterable=True, facetable=True),
+        SimpleField(name="subStage", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="role", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="system", type=SearchFieldDataType.String, filterable=True),
 
-----------------------------------------
-"""
+        SimpleField(name="nextStage", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="orderIndex", type=SearchFieldDataType.Int32, filterable=True, sortable=True),
+        SimpleField(name="pageNumber", type=SearchFieldDataType.Int32, filterable=True),
+        SimpleField(name="sheetName", type=SearchFieldDataType.String, filterable=True),
 
-    return pre
+        SimpleField(name="stepNumber", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="feature", type=SearchFieldDataType.String, filterable=True),
+        SearchableField(name="expectedResult", type=SearchFieldDataType.String),
+
+        SimpleField(name="testCaseId", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="scenario", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="priority", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="activeFlag", type=SearchFieldDataType.Boolean, filterable=True)
+    ]
+
+    vector_search = VectorSearch(
+        algorithms=[
+            HnswAlgorithmConfiguration(name="hnsw")
+        ],
+        profiles=[
+            VectorSearchProfile(
+                name="vector-profile",
+                algorithm_configuration_name="hnsw"
+            )
+        ]
+    )
+
+    index = SearchIndex(
+        name=AZURE_SEARCH_INDEX,
+        fields=fields,
+        vector_search=vector_search
+    )
+
+    client.create_or_update_index(index)
+    print(f"✅ Index '{AZURE_SEARCH_INDEX}' created successfully.")
 
 
-def upload(tc, channel_groups):
-    channels = [c for c, _ in channel_groups]
+if __name__ == "__main__":
+    create_vector_index()
 
-    step_map = OrderedDict()
-
-    for _, group in channel_groups:
-        for _, row in group.iterrows():
-            step_no = str(row.get("Test Step No.", "")).strip()
-            if not step_no.startswith("Step"):
-                continue
-
-            if step_no not in step_map:
-                step_map[step_no] = {
-                    "description": row.get("Test Step Description", ""),
-                    "screen": row.get("Screen Name", ""),
-                    "data": row.get("Test Data", ""),
-                    "expected": row.get("Expected Results", "")
-                }
-
-    content = f"\nTestCase: {tc}\n"
-    content += build_preconditions(channel_groups)
-    content += "\n=========== TEST STEPS ===========\n"
-
-    for step_no, d in step_map.items():
-        content += f"""
-{step_no}
-
-Description:
-{d['description']}
-
-Screen:
-{d['screen']}
-
-Test Data:
-{d['data']}
-
-Expected Result:
-{d['expected']}
-
-----------------------------------------
-"""
-
-    emb = openai_client.embeddings.create(
-        model=get("EMBEDDING_MODEL"),
-        input=content
-    ).data[0].embedding
-
-    doc = {
-        "id": str(uuid.uuid4()),
-        "testCaseId": tc,
-        "channels": channels,
-        "content": content,
-        "embedding": emb
-    }
-
-    search_client.upload_documents([doc])
