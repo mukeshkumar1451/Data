@@ -1,84 +1,70 @@
-from azure.search.documents.indexes import SearchIndexClient
-from azure.search.documents.indexes.models import (
-    SearchIndex,
-    SearchField,
-    SearchFieldDataType,
-    SimpleField,
-    SearchableField,
-    VectorSearch,
-    HnswAlgorithmConfiguration,
-    VectorSearchProfile
-)
-from azure.core.credentials import AzureKeyCredential
-from config import AZURE_SEARCH_ENDPOINT, AZURE_SEARCH_KEY, AZURE_SEARCH_INDEX
+import statistics
+from typing import List, Dict
 
 
-def create_vector_index():
+# ---------------------------------------------------------
+# Extract scores safely
+# ---------------------------------------------------------
+def _scores(docs: List[Dict]) -> List[float]:
+    scores = []
+    for d in docs:
+        s = d.get("@search.score") or d.get("score") or 0
+        if isinstance(s, (int, float)):
+            scores.append(float(s))
+    return scores
 
-    credential = AzureKeyCredential(AZURE_SEARCH_KEY)
-    client = SearchIndexClient(
-        endpoint=AZURE_SEARCH_ENDPOINT,
-        credential=credential
+
+# ---------------------------------------------------------
+# Agreement: do top docs say same thing?
+# simple lexical overlap
+# ---------------------------------------------------------
+def _agreement_score(docs: List[Dict]) -> float:
+    if len(docs) < 2:
+        return 0.5
+
+    texts = [d.get("content", "")[:800].lower() for d in docs[:3]]
+
+    overlaps = []
+    for i in range(len(texts)):
+        for j in range(i + 1, len(texts)):
+            a = set(texts[i].split())
+            b = set(texts[j].split())
+            if not a or not b:
+                continue
+            overlaps.append(len(a & b) / max(len(a | b), 1))
+
+    if not overlaps:
+        return 0.5
+
+    return statistics.mean(overlaps)
+
+
+# ---------------------------------------------------------
+# Compute final confidence
+# ---------------------------------------------------------
+def compute_confidence(flow_docs, rule_docs, test_docs) -> int:
+
+    flow_scores = _scores(flow_docs)
+    rule_scores = _scores(rule_docs)
+    test_scores = _scores(test_docs)
+
+    # relevance (vector similarity)
+    relevance = (
+        (sum(flow_scores[:3]) / 3 if flow_scores else 0) * 0.4 +
+        (sum(rule_scores[:3]) / 3 if rule_scores else 0) * 0.3 +
+        (sum(test_scores[:5]) / 5 if test_scores else 0) * 0.3
     )
 
-    fields = [
+    # agreement
+    agreement = _agreement_score(flow_docs + rule_docs)
 
-        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
+    # coverage
+    coverage = 0
+    coverage += 1 if flow_docs else 0
+    coverage += 1 if rule_docs else 0
+    coverage += 1 if test_docs else 0
+    coverage = coverage / 3
 
-        SearchableField(name="content", type=SearchFieldDataType.String),
+    final_score = (relevance * 0.5 + agreement * 0.3 + coverage * 0.2)
 
-        SearchField(
-            name="embedding",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
-            searchable=True,
-            vector_search_dimensions=3072,
-            vector_search_profile_name="vector-profile"
-        ),
-
-        SimpleField(name="channel", type=SearchFieldDataType.String, filterable=True, facetable=True),
-        SimpleField(name="knowledgeType", type=SearchFieldDataType.String, filterable=True, facetable=True),
-        SimpleField(name="stage", type=SearchFieldDataType.String, filterable=True, facetable=True),
-        SimpleField(name="subStage", type=SearchFieldDataType.String, filterable=True),
-        SimpleField(name="role", type=SearchFieldDataType.String, filterable=True),
-        SimpleField(name="system", type=SearchFieldDataType.String, filterable=True),
-
-        SimpleField(name="nextStage", type=SearchFieldDataType.String, filterable=True),
-        SimpleField(name="orderIndex", type=SearchFieldDataType.Int32, filterable=True, sortable=True),
-        SimpleField(name="pageNumber", type=SearchFieldDataType.Int32, filterable=True),
-        SimpleField(name="sheetName", type=SearchFieldDataType.String, filterable=True),
-
-        SimpleField(name="stepNumber", type=SearchFieldDataType.String, filterable=True),
-        SimpleField(name="feature", type=SearchFieldDataType.String, filterable=True),
-        SearchableField(name="expectedResult", type=SearchFieldDataType.String),
-
-        SimpleField(name="testCaseId", type=SearchFieldDataType.String, filterable=True),
-        SimpleField(name="scenario", type=SearchFieldDataType.String, filterable=True),
-        SimpleField(name="priority", type=SearchFieldDataType.String, filterable=True),
-        SimpleField(name="activeFlag", type=SearchFieldDataType.Boolean, filterable=True)
-    ]
-
-    vector_search = VectorSearch(
-        algorithms=[
-            HnswAlgorithmConfiguration(name="hnsw")
-        ],
-        profiles=[
-            VectorSearchProfile(
-                name="vector-profile",
-                algorithm_configuration_name="hnsw"
-            )
-        ]
-    )
-
-    index = SearchIndex(
-        name=AZURE_SEARCH_INDEX,
-        fields=fields,
-        vector_search=vector_search
-    )
-
-    client.create_or_update_index(index)
-    print(f"✅ Index '{AZURE_SEARCH_INDEX}' created successfully.")
-
-
-if __name__ == "__main__":
-    create_vector_index()
-
+    return int(max(0, min(final_score * 100, 100)))
