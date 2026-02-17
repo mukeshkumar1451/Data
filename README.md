@@ -2,7 +2,7 @@
 import logging
 import os
 import re
-from typing import Dict
+from typing import Dict, List
 
 from openpyxl import load_workbook
 from config.config import get
@@ -19,13 +19,12 @@ class ExcelExportAgent:
         self.output_dir = get("EXCEL_OUTPUT_DIR")
 
     # ---------------------------------------------------------
-    # Parse raw LLM text into structured testcase
+    # Parse MULTIPLE testcases from LLM output
     # ---------------------------------------------------------
-    def _parse_llm_output(self, llm_text: str) -> Dict:
-        scenario = ""
-        script = ""
-        requirement = ""
-        steps = []
+    def _parse_llm_output(self, llm_text: str) -> List[Dict]:
+
+        testcases = []
+        current = None
         step_counter = 1
 
         GENERIC_WORDS = ["action", "verify", "check", "navigate", "enter", "select"]
@@ -36,43 +35,49 @@ class ExcelExportAgent:
             if not line:
                 continue
 
-            # ---------------- headers ----------------
-            if line.lower().startswith("scenario:") and not scenario:
-                scenario = line.split(":", 1)[1].strip()
+            # -------- New Scenario Block --------
+            if line.lower().startswith("scenario:"):
+                if current:
+                    testcases.append(current)
+
+                current = {
+                    "scenario": line.split(":", 1)[1].strip(),
+                    "script": "",
+                    "requirement": "",
+                    "steps": []
+                }
+                step_counter = 1
                 continue
 
-            if line.lower().startswith("script:") and not script:
-                script = line.split(":", 1)[1].strip()
+            if not current:
                 continue
 
-            if line.lower().startswith("requirement:") and not requirement:
-                requirement = line.split(":", 1)[1].strip()
+            # -------- Headers --------
+            if line.lower().startswith("script:"):
+                current["script"] = line.split(":", 1)[1].strip()
                 continue
 
-            # ---------------- steps ----------------
+            if line.lower().startswith("requirement:"):
+                current["requirement"] = line.split(":", 1)[1].strip()
+                continue
+
+            # -------- Steps --------
             if re.match(r"^step\s*\d+", line.lower()):
 
-                # remove "Step 01"
                 cleaned = re.sub(r"^step\s*\d+\s*", "", line, flags=re.IGNORECASE).strip()
 
-                # split pipe or legacy format
                 if "|" in cleaned:
                     parts = [p.strip() for p in cleaned.split("|")]
                 else:
                     parts = [cleaned]
 
-                # remove empties
                 parts = [p for p in parts if p]
-
                 if not parts:
                     continue
 
-                # ---------------- intelligent column mapping ----------------
                 if len(parts) >= 4:
-
                     first = parts[0].lower()
 
-                    # LLM inserted verb column → shift left
                     if first in GENERIC_WORDS:
                         desc = parts[1]
                         screen = parts[2] if len(parts) > 2 else "NA"
@@ -99,7 +104,7 @@ class ExcelExportAgent:
                     data = "NA"
                     expected = "Verify system behavior"
 
-                steps.append({
+                current["steps"].append({
                     "step_no": f"Step {step_counter:02d}",
                     "desc": desc,
                     "screen": screen,
@@ -109,12 +114,10 @@ class ExcelExportAgent:
 
                 step_counter += 1
 
-        return {
-            "scenario": scenario,
-            "script": script,
-            "requirement": requirement,
-            "steps": steps
-        }
+        if current:
+            testcases.append(current)
+
+        return testcases
 
     # ---------------------------------------------------------
     # Convert inferred setup -> Template precondition
@@ -125,17 +128,13 @@ class ExcelExportAgent:
             logger.warning(f"⚠️ No setup found for {channel}, using fallback")
             return f"Channel: {channel}"
 
-        # 🔥 USE NORMALIZED STRUCTURE
         data = normalize_full_setup(channel, setup_text)
 
-        loan_purpose = data["loan_purpose"]
+        loan_purpose = data["purpose"]
         loan_type = data["loan_type"]
         loan_stage = data["loan_stage"]
 
-        product_code = resolve_product_code(
-            loan_type=loan_type,
-            channel=channel
-        )
+        product_code = resolve_product_code(loan_type)
 
         portal_map = {
             "RTL": "Customer Portal",
@@ -182,6 +181,7 @@ class ExcelExportAgent:
     # LangGraph entry
     # ---------------------------------------------------------
     def run(self, state: dict) -> dict:
+
         logger.info("📄 Excel Export Agent started")
 
         os.makedirs(self.output_dir, exist_ok=True)
@@ -201,22 +201,27 @@ class ExcelExportAgent:
 
         logger.info(f"Incoming setup_map keys: {list(setup_map.keys())}")
 
+        # -------- MULTI TESTCASE SUPPORT --------
         for channel, llm_text in llm_outputs.items():
 
-            tc_data = self._parse_llm_output(llm_text)
+            testcases = self._parse_llm_output(llm_text)
             ws = sheets[channel]
             row = row_tracker[channel]
-            tc_id = f"US_{user_story_id}_TC_{tc_counter[channel]:02d}"
 
             setup_text = setup_map.get(channel, "")
             precondition = self._format_precondition(channel, setup_text)
 
             logger.info(f"\nFormatted precondition for {channel}:\n{precondition}\n")
 
-            new_row = self._write_testcase(ws, row, tc_id, tc_data, precondition)
+            for tc_data in testcases:
+                tc_id = f"US_{user_story_id}_TC_{tc_counter[channel]:02d}"
 
-            row_tracker[channel] = new_row
-            tc_counter[channel] += 1
+                new_row = self._write_testcase(ws, row, tc_id, tc_data, precondition)
+
+                row = new_row
+                tc_counter[channel] += 1
+
+            row_tracker[channel] = row
 
         output_file = os.path.join(
             self.output_dir,
@@ -226,6 +231,5 @@ class ExcelExportAgent:
         wb.save(output_file)
         logger.info(f"✅ Excel generated: {output_file}")
 
-        # DO NOT REBUILD STATE
         state["excel_output"] = output_file
         return state
