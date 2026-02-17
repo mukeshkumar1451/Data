@@ -1,53 +1,112 @@
-# utils/channel_detector.py
+# utils/html_image_processor.py
+
+import os
 import re
-import logging
+import requests
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
-logger = logging.getLogger(__name__)
+load_dotenv()
+ADO_PAT = os.getenv("ADO_PAT")
 
-ALL_CHANNELS = ["RTL", "WHL", "DTC", "CL1"]
+
+# ---------------------------------------------------------
+# Download ADO image
+# ---------------------------------------------------------
+def _download_ado_image(url: str, save_path: str) -> str:
+    try:
+        response = requests.get(url, auth=("", ADO_PAT))
+        response.raise_for_status()
+
+        with open(save_path, "wb") as f:
+            f.write(response.content)
+
+        return save_path
+    except Exception as e:
+        return f"[Image download failed: {e}]"
 
 
-# -------------------------------------------------
-# Behavioral Channel Detection
-# -------------------------------------------------
-def detect_channels(text: str) -> list:
+# ---------------------------------------------------------
+# Clean extracted text (VERY IMPORTANT FOR LLM)
+# ---------------------------------------------------------
+def _normalize_text(text: str) -> str:
+    if not text:
+        return ""
 
-    logger.info("Behavioral channel detection started...")
+    # 1️⃣ Fix broken words: sh ould -> should
+    text = re.sub(r'(\w)\s{2,}(\w)', r'\1\2', text)
 
-    t = text.upper()
+    # 2️⃣ Remove excessive spaces
+    text = re.sub(r'[ \t]+', ' ', text)
 
-    # ---------------------------
-    # 1. Persona Detection (strongest signal)
-    # ---------------------------
-    if "NON-BROKER USER IN H2O" in t or "INTERNAL USER" in t:
-        logger.info("Detected INTERNAL H2O user → WHL")
-        return ["WHL"]
+    # 3️⃣ Join broken lines but keep paragraphs
+    text = re.sub(r'\n(?=[a-z])', ' ', text)
+    text = re.sub(r'\n{2,}', '\n', text)
 
-    if "BROKER PORTAL" in t or "BROKER LO" in t:
-        logger.info("Detected Broker persona → WHL")
-        return ["WHL"]
+    # 4️⃣ Remove dot noise produced by ADO formatting
+    text = re.sub(r'\.\s*\.\s*\.\s*', ' ', text)
 
-    if "CUSTOMER PORTAL" in t or "BORROWER" in t:
-        logger.info("Detected Borrower persona → RTL")
-        return ["RTL"]
+    # 5️⃣ Remove space before punctuation
+    text = re.sub(r'\s+([.,!?])', r'\1', text)
 
-    if "IGNITE" in t or "DIRECT TO CONSUMER" in t:
-        logger.info("Detected Ignite flow → DTC")
-        return ["DTC"]
+    # 6️⃣ Normalize colon spacing (important for extractors)
+    text = re.sub(r'\s*:\s*', ': ', text)
 
-    if "CORRESPONDENT" in t or "CL1" in t:
-        logger.info("Detected Correspondent → CL1")
-        return ["CL1"]
+    return text.strip()
 
-    # ---------------------------
-    # 2. Feature based detection
-    # ---------------------------
-    if "BUSINESS UNIT" in t or "CREATE LOAN ON BEHALF OF" in t:
-        logger.info("Detected internal operations feature → WHL")
-        return ["WHL"]
 
-    # ---------------------------
-    # Fallback
-    # ---------------------------
-    logger.info("No strong signal → using ALL channels")
-    return ALL_CHANNELS
+# ---------------------------------------------------------
+# MAIN FUNCTION
+# ---------------------------------------------------------
+def process_html_and_download_images(html: str, story_id: str, section: str) -> str:
+    """
+    Extract readable text + download images from ADO HTML
+
+    section = 'description' or 'ac'
+    """
+
+    if not html:
+        return ""
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # remove unwanted tags
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+
+    # -------------------------------------------------
+    # IMAGE DOWNLOAD
+    # -------------------------------------------------
+    images = soup.find_all("img")
+
+    img_folder = os.path.join("downloads", story_id, section)
+    os.makedirs(img_folder, exist_ok=True)
+
+    image_references = []
+
+    for idx, img in enumerate(images, start=1):
+        src = img.get("src")
+        if not src:
+            continue
+
+        save_path = os.path.join(img_folder, f"image_{idx}.png")
+        downloaded_path = _download_ado_image(src, save_path)
+
+        image_references.append(f"[IMAGE DOWNLOADED: {downloaded_path}]")
+
+    # -------------------------------------------------
+    # TEXT EXTRACTION
+    # -------------------------------------------------
+    raw_text = soup.get_text(separator="\n")
+
+    clean_text = _normalize_text(raw_text)
+
+    # -------------------------------------------------
+    # APPEND IMAGE REFERENCES
+    # -------------------------------------------------
+    if image_references:
+        final_text = clean_text + "\n\n" + "\n".join(image_references)
+    else:
+        final_text = clean_text
+
+    return final_text
