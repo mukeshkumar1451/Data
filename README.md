@@ -1,95 +1,229 @@
-\def _parse_llm_output(self, llm_text: str) -> Dict:
+=========== ADO INTELLIGENCE AGENT OUTPUT ===========
 
-    scenario = ""
-    script = ""
-    requirement = ""
-    steps = []
-    step_counter = 1
+User Story ID:
+725102
 
-    GENERIC_WORDS = ["action", "verify", "check", "navigate", "enter", "select"]
+----------- TITLE -----------
+None
 
-    for raw in llm_text.splitlines():
-        line = raw.strip()
+----------- ENRICHED DESCRIPTION -----------
+As a
+ User
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+I want 
+to update the 'Select a Company' and 'Originator' dropdowns that exist in the 'Create Loan on Behalf of' screen to be paginated Pickers  
+ 
+ 
+ 
+So that
+ this screen performs better by not needing to load as much data in a single dropdown 
+ 
+ 
+Present Day, users accessing this screen may (based on their individual level of access) come across lengthy loading times due to the number of Companies that can appear in the 'Select a Company' dropdown. 
+ 
+ 
+Using monitoring, you can see that it takes over 20 seconds of loading the 'companiesforuser' when trying to load the screen for myself (I have access to all WHL Business Units) 
+ 
+ 
+It actually took just over 30 seconds to complete -  
+ 
+ 
+Most WHL users who would create loans in this screen also have access to many different WHL Business Units and would see lengthy loading times as well. Updating this screen to use paginated pickers would cut down on this loading time significantly. 
+ 
+General UI Mockup - 
+ 
+ 
+*'Select a Company' picker should be able to be clicked in the above state. 'Originator' picker should be greyed out until a Company has been selected via the 'Select a Company' picker.
+ 
+ 
+ 
+'Select a Company' picker mockup - 
+ 
+ 
+--This picker should have columns for 'Broker Id' and 'Company' 
+--This picker should contain all values that the dropdown normally would given the logged in user's access levels. 
+ 
+--Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) 
+--Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches (For example - if user searches for 35, system should return BID 35 as well as BID 355 (if they exist) as well as Company "35th St Loans" (if they exist)) 
+--After user clicks on a result from the list, popup should close and selected Company should pull into the 'Select a Company' field 
+--Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Select a Company' field 
+ 
+After selecting a Company, users should then be able to click on the 'Originator' picker.
+ 
+'Originator' picker mockup - 
+ 
+*Originator in this use case = Broker LO
+ 
+--This picker should have columns for 'Id', 'First Name', 'Last Name', and 'Office Phone' 
+--This picker sh
+ould contain all active Broker Employees for the selected Company
+ 
+ 
+ 
+ 
+--Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) 
+--Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches similar to what was mentioned in 'Company' picker section. 
+*Valid Search Criteria should include ID, First Name, Last Name, or Office Phone
+ 
+--After user clicks on a result from the list, popup should close and selected Originator should pull into the 'Originator' field 
+--Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Originator' field 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Notes:
+ 
+-Screen should look similar to how 'Rep & Branch' interface behaves now - when a picker is opened, the selected picker should popup in the center of the screen and the background should slightly grey itself out.  
+Example of current state 'Rep & Branch' screen with picker open -  
+ 
+-Broker users who also see this interface do not have access to 'Select a Company' so they would be considered out of scope. We 
+should not
+ 
+update
+ 
+their UI. 
+ 
+ 
+-If a logged in user only has a single Company that would be available for picking, 'Select a Company' picker should intelligently default to that single Company. 
+-Same behavior should be coded in for 'Originator' picker. If a selected Company has only one active Originator selection available, the 'Originator' picker should default to that selection. 
+ 
+ 
+ 
+ 
+ 
+ 
 
-        if not line:
-            continue
+[IMAGE DOWNLOADED: downloads\725102\description\image_1.png]
+[IMAGE DOWNLOADED: downloads\725102\description\image_2.png]
+[IMAGE DOWNLOADED: downloads\725102\description\image_3.png]
+[IMAGE DOWNLOADED: downloads\725102\description\image_4.png]
+[IMAGE DOWNLOADED: downloads\725102\description\image_5.png]
+[IMAGE DOWNLOADED: downloads\725102\description\image_6.png]
+[IMAGE DOWNLOADED: downloads\725102\description\image_7.png]
 
-        # ---------------- headers ----------------
-        if line.lower().startswith("scenario:") and not scenario:
-            scenario = line.split(":", 1)[1].strip()
-            continue
+----------- CHANNELS -----------
+['RTL']
 
-        if line.lower().startswith("script:") and not script:
-            script = line.split(":", 1)[1].strip()
-            continue
+----------- ENRICHED ACCEPTANCE CRITERIA -----------
+AC1: 
+ 
+ 
+Given 
+that I am a non-Broker user in H2O 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+When
+ 
+I access 'Create Loan on Behalf of' Loan Creation screen
+ 
+ 
+ 
+ 
+ 
+ 
+Then
+ 
+I expect to see the updated UI/Functionality as mentioned in this US Description
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+General UI Mockup - 
+ 
+ 
+*'Select a Company' picker should be able to be clicked in the above state. 'Originator' picker should be greyed out until a Company has been selected via the 'Select a Company' picker.
+ 
+ 
+ 
+'Select a Company' picker mockup - 
+ 
+ 
+--This picker should have columns for 'Broker Id' and 'Company' 
+--This picker should contain all values that the dropdown normally would given the logged in user's access levels. 
+ 
+--Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) 
+--Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches (For example - if user searches for 35, system should return BID 35 as well as BID 355 (if they exist) as well as Company "35th St Loans" (if they exist)) 
+--After user clicks on a result from the list, popup should close and selected Company should pull into the 'Select a Company' field 
+--Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Select a Company' field 
+ 
+After selecting a Company, users should then be able to click on the 'Originator' picker.
+ 
+'Originator' picker mockup - 
+ 
+*Originator in this use case = Broker LO
+ 
+--This picker should have columns for 'Id', 'First Name', 'Last Name', and 'Office Phone' 
+--This picker sh
+ould contain all active Broker Employees for the selected Company
+ 
+ 
+ 
+ 
+--Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) 
+--Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches similar to what was mentioned in 'Company' picker section. 
+--After user clicks on a result from the list, popup should close and selected Originator should pull into the 'Originator' field 
+--Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Originator' field 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Notes:
+ 
+-Screen should look similar to how 'Rep & Branch' interface behaves now - when a picker is opened, the selected picker should popup in the center of the screen and the background should slightly grey itself out.  
+Example of current state 'Rep & Branch' screen with picker open -  
+ 
+-Broker users who also see this interface do not have access to 'Select a Company' so they would be considered out of scope. We
+ 
+should not
+ 
+update
+ 
+their UI. 
+ 
+ 
+-If a logged in user only has a single Company that would be available for picking, 'Select a Company' picker should intelligently default to that single Company. 
+-Same behavior should be coded in for 'Originator' picker. If a selected Company has only one active Originator selection available, the 'Originator' picker should default to that selection. 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 
-        if line.lower().startswith("requirement:") and not requirement:
-            requirement = line.split(":", 1)[1].strip()
-            continue
+[IMAGE DOWNLOADED: downloads\725102\ac\image_1.png]
+[IMAGE DOWNLOADED: downloads\725102\ac\image_2.png]
+[IMAGE DOWNLOADED: downloads\725102\ac\image_3.png]
+[IMAGE DOWNLOADED: downloads\725102\ac\image_4.png]
 
-        # ---------------- steps ----------------
-        if re.match(r"^step\s*\d+", line.lower()):
-
-            # remove "Step 01"
-            cleaned = re.sub(r"^step\s*\d+\s*", "", line, flags=re.IGNORECASE).strip()
-
-            # split pipe or legacy format
-            if "|" in cleaned:
-                parts = [p.strip() for p in cleaned.split("|")]
-            else:
-                parts = [cleaned]
-
-            # remove empties
-            parts = [p for p in parts if p]
-
-            if not parts:
-                continue
-
-            # ---------------- intelligent column mapping ----------------
-            if len(parts) >= 4:
-
-                first = parts[0].lower()
-
-                # LLM inserted verb column → shift left
-                if first in GENERIC_WORDS:
-                    desc = parts[1]
-                    screen = parts[2] if len(parts) > 2 else "NA"
-                    data = parts[3] if len(parts) > 3 else "NA"
-                    expected = parts[4] if len(parts) > 4 else "Verify system behavior"
-                else:
-                    desc = parts[0]
-                    screen = parts[1] if len(parts) > 1 else "NA"
-                    data = parts[2] if len(parts) > 2 else "NA"
-                    expected = parts[3] if len(parts) > 3 else "Verify system behavior"
-
-            elif len(parts) == 3:
-                desc, screen, data = parts
-                expected = "Verify system behavior"
-
-            elif len(parts) == 2:
-                desc, screen = parts
-                data = "NA"
-                expected = "Verify system behavior"
-
-            else:
-                desc = parts[0]
-                screen = "NA"
-                data = "NA"
-                expected = "Verify system behavior"
-
-            steps.append({
-                "step_no": f"Step {step_counter:02d}",
-                "desc": desc,
-                "screen": screen,
-                "data": data,
-                "expected": expected,
-            })
-
-            step_counter += 1
-
-    return {
-        "scenario": scenario,
-        "script": script,
-        "requirement": requirement,
-        "steps": steps
-    }
+----------- PRECONDITIONS -----------
