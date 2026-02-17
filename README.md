@@ -1,160 +1,187 @@
+# agents/excel_export_agent.py
+import logging
+import os
 import re
+from typing import Dict
 
-# =========================================================
-# 1. PRODUCT MAPPING (Domain Truth)
-# =========================================================
+from openpyxl import load_workbook
+from config.config import get
+from utils.product_mapper import resolve_product_code
+from utils.loan_domain_normalizer import normalize_full_setup
 
-LOAN_TYPE_PRODUCT_MAP = {
-    "CONVENTIONAL": "CF30",
-    "CONVENTIONAL JUMBO": "JCPF30",
-    "FHA": "FF30",
-    "VA": "VF30",
-    "USDA": "UF30",
-    "HELOC": "NRZHeloc",
-    "NON QM": "NRSEF30",
-    "SECOND LIEN": "SASF30A"
-}
+logger = logging.getLogger(__name__)
 
 
-def normalize_loan_type(raw: str) -> str:
-    if not raw:
-        return "Conventional"
+class ExcelExportAgent:
 
-    raw = raw.upper()
+    def __init__(self):
+        self.template_path = get("EXCEL_TEMPLATE_PATH")
+        self.output_dir = get("EXCEL_OUTPUT_DIR")
 
-    for key in LOAN_TYPE_PRODUCT_MAP:
-        if key in raw:
-            return key.title()
+    # ---------------------------------------------------------
+    # Parse raw LLM text into structured testcase
+    # ---------------------------------------------------------
+    def _parse_llm_output(self, llm_text: str) -> Dict:
+        scenario = ""
+        script = ""
+        requirement = ""
+        steps = []
+        step_counter = 1
 
-    return "Conventional"
+        for raw in llm_text.splitlines():
+            line = raw.strip()
 
+            if line.lower().startswith("scenario:") and not scenario:
+                scenario = line.split(":", 1)[1].strip()
 
-def resolve_product_code(loan_type: str) -> str:
-    key = loan_type.upper()
-    return LOAN_TYPE_PRODUCT_MAP.get(key, "CF30")
+            elif line.lower().startswith("script:") and not script:
+                script = line.split(":", 1)[1].strip()
 
+            elif line.lower().startswith("requirement:") and not requirement:
+                requirement = line.split(":", 1)[1].strip()
 
-# =========================================================
-# 2. STAGE NORMALIZATION
-# =========================================================
+            elif re.match(r"^step\s*\d+", line.lower()):
+                parts = [p.strip() for p in re.split(r"\s*\|\s*", line)]
+                if len(parts) >= 5:
+                    steps.append({
+                        "step_no": f"Step {step_counter:02d}",
+                        "desc": parts[1],
+                        "screen": parts[2],
+                        "data": parts[3],
+                        "expected": parts[4],
+                    })
+                    step_counter += 1
 
-CHANNEL_STAGES = {
+        return {
+            "scenario": scenario,
+            "script": script,
+            "requirement": requirement,
+            "steps": steps
+        }
 
-    "RTL": [
-        "Application Accepted", "In-Processing", "UW Submitted",
-        "Approved W/Conditions", "Conditions Submitted",
-        "Conditions In Review", "Final Approval In Review",
-        "Clear To Close", "Closing Disclosure Ordered",
-        "Closing Disclosure Sent", "Closing Docs sent",
-        "Funds Ordered", "Funds Sent", "Funds Released"
-    ],
+    # ---------------------------------------------------------
+    # Extract value helper
+    # ---------------------------------------------------------
+    def _extract(self, text: str, field: str) -> str:
+        if not text:
+            return ""
+        match = re.search(rf"{field}\s*:\s*(.*)", text, re.IGNORECASE)
+        return match.group(1).strip() if match else ""
 
-    "WHL": [
-        "Created", "LE Sent", "Submission Review", "UW Submitted",
-        "Approved W/Conditions", "Conditions Submitted",
-        "Conditions In Review", "Final Approval In Review",
-        "Clear To Close", "Closing Disclosure Ordered",
-        "Closing Disclosure Sent", "Closing Docs sent",
-        "Funds Ordered", "Funds Sent", "Funds Released"
-    ],
+    # ---------------------------------------------------------
+    # Convert inferred setup -> Template precondition
+    # ---------------------------------------------------------
+    def _format_precondition(self, channel: str, setup_text: str) -> str:
 
-    "DTC": [
-        "Application Accepted", "CD Audit Submitted", "CD Audit Completed",
-        "UW Submitted", "Approved W/Conditions", "Conditions Submitted",
-        "Conditions In Review", "Final Approval In Review",
-        "Clear To Close", "Closing Disclosure Ordered",
-        "Closing Disclosure Sent", "Closing Docs sent",
-        "Funds Ordered", "Funds Sent", "Funds Released"
-    ],
+        if not setup_text:
+            logger.warning(f"⚠️ No setup found for {channel}, using fallback")
+            return f"Channel: {channel}"
 
-    "CL1": [
-        "Created", "UW Submitted", "Approved W/Conditions",
-        "Conditions Submitted", "Conditions In Review",
-        "Final Approval In Review", "Clear To Close",
-        "Closing Disclosure Ordered", "Closing Disclosure Sent",
-        "Closing Docs sent", "Correspondent Funded",
-        "Loan Purchase Review", "Purchase Wire Review",
-        "Approved For Purchase", "Funds Released"
-    ]
-}
+        loan_purpose = self._extract(setup_text, "Loan Purpose")
+        loan_type = self._extract(setup_text, "Loan Type")
+        loan_stage = self._extract(setup_text, "Loan Stage")
+        
+        data=normalize_full_setup(channel, setup_text)
 
+        product_code = resolve_product_code(
+            loan_type = loan_type,
+            channel = channel
+        )
 
-STAGE_SYNONYMS = {
-    "approved with conditions": "Approved W/Conditions",
-    "approval with conditions": "Approved W/Conditions",
-    "generate disclosures": "Closing Disclosure Ordered",
-    "disclosure generation": "Closing Disclosure Ordered",
-    "cd generated": "Closing Disclosure Sent",
-    "ctc": "Clear To Close",
-}
+        portal_map = {
+            "RTL": "Customer Portal",
+            "WHL": "Broker Portal",
+            "CL1": "Broker Portal",
+            "DTC": "Ignite Portal"
+        }
 
+        portal = portal_map.get(channel, "Portal")
 
-def normalize_stage(channel: str, raw_stage: str) -> str:
+        formatted = f"""Create a loan from {portal} as per pre-conditions below:
+1. Channel: {channel}
+2. Loan Purpose: {loan_purpose}
+3. Loan Type: {loan_type}
+4. Product Code: {product_code}
+5. Loan Stage: {loan_stage}"""
 
-    if not raw_stage:
-        return CHANNEL_STAGES[channel][0]
+        return formatted
 
-    stage = raw_stage.lower()
+    # ---------------------------------------------------------
+    def _write_testcase(self, ws, start_row, tc_id, tc_data, precondition):
+        row = start_row
 
-    # remove ranges
-    if "through" in stage or "to" in stage:
-        parts = re.split(r"through|to", stage)
-        stage = parts[-1].strip()
+        for idx, step in enumerate(tc_data["steps"]):
+            ws.cell(row, 1).value = tc_id if idx == 0 else ""
+            ws.cell(row, 2).value = tc_data["script"] if idx == 0 else ""
+            ws.cell(row, 3).value = "NA" if idx == 0 else ""
+            ws.cell(row, 4).value = tc_data["scenario"] if idx == 0 else ""
+            ws.cell(row, 5).value = precondition if idx == 0 else ""
 
-    # synonyms
-    for key, value in STAGE_SYNONYMS.items():
-        if key in stage:
-            return value
+            ws.cell(row, 6).value = step["step_no"]
+            ws.cell(row, 7).value = step["desc"]
+            ws.cell(row, 8).value = step["screen"]
+            ws.cell(row, 9).value = step["data"]
+            ws.cell(row, 10).value = step["expected"]
 
-    # fuzzy match
-    for allowed in CHANNEL_STAGES[channel]:
-        if allowed.lower() in stage:
-            return allowed
+            ws.cell(row, 11).value = tc_data["requirement"] if idx == 0 else ""
 
-    return CHANNEL_STAGES[channel][0]
+            row += 1
 
+        return row
 
-# =========================================================
-# 3. PURPOSE NORMALIZATION
-# =========================================================
+    # ---------------------------------------------------------
+    # LangGraph entry
+    # ---------------------------------------------------------
+    def run(self, state: dict) -> dict:
+        logger.info("📄 Excel Export Agent started")
 
-def normalize_purpose(raw: str) -> str:
+        os.makedirs(self.output_dir, exist_ok=True)
+        wb = load_workbook(self.template_path)
 
-    if not raw:
-        return "Purchase"
+        # ensure sheets exist
+        for ch in ["RTL", "WHL", "DTC", "CL1"]:
+            if ch not in wb.sheetnames:
+                wb.create_sheet(ch)
 
-    raw = raw.lower()
+        sheets = {name: wb[name] for name in wb.sheetnames}
+        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
+        tc_counter = {ch: 1 for ch in ["RTL", "WHL", "DTC", "CL1"]}
 
-    if "refi" in raw:
-        return "Refinance"
-    if "construction" in raw:
-        return "Construction Permanent"
+        user_story_id = state["user_story_id"]
 
-    return "Purchase"
+        # 🔥 inferred setup from retrieval agent
+        setup_map = state.get("channel_setup", {})
 
+        llm_outputs = state["llm_outputs"]
 
-# =========================================================
-# MAIN ENTRY — NORMALIZE WHOLE SETUP
-# =========================================================
+        for channel, llm_text in llm_outputs.items():
 
-def normalize_full_setup(channel: str, setup_text: str) -> dict:
+            tc_data = self._parse_llm_output(llm_text)
 
-    def extract(label):
-        m = re.search(fr"{label}\s*:\s*(.*)", setup_text, re.I)
-        return m.group(1).strip() if m else ""
+            ws = sheets[channel]
+            row = row_tracker[channel]
 
-    purpose_raw = extract("Loan Purpose")
-    type_raw = extract("Loan Type")
-    stage_raw = extract("Loan Stage")
+            tc_id = f"US_{user_story_id}_TC_{tc_counter[channel]:02d}"
 
-    purpose = normalize_purpose(purpose_raw)
-    loan_type = normalize_loan_type(type_raw)
-    product = resolve_product_code(loan_type)
-    stage = normalize_stage(channel, stage_raw)
+            setup_text = setup_map.get(channel, "")
+            precondition = self._format_precondition(channel, setup_text)
 
-    return {
-        "purpose": purpose,
-        "loan_type": loan_type,
-        "product_code": product,
-        "loan_stage": stage
-    }
+            logger.info(f"\nFormatted precondition for {channel}:\n{precondition}\n")
+
+            new_row = self._write_testcase(ws, row, tc_id, tc_data, precondition)
+
+            row_tracker[channel] = new_row
+            tc_counter[channel] += 1
+
+        output_file = os.path.join(
+            self.output_dir,
+            f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
+        )
+
+        wb.save(output_file)
+        logger.info(f"✅ Excel generated: {output_file}")
+
+        return {
+            **state,
+            "excel_output": output_file
+        }
