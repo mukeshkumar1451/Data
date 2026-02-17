@@ -1,9 +1,12 @@
-def _parse_llm_output(self, llm_text: str) -> Dict:
+\def _parse_llm_output(self, llm_text: str) -> Dict:
+
     scenario = ""
     script = ""
     requirement = ""
     steps = []
     step_counter = 1
+
+    GENERIC_WORDS = ["action", "verify", "check", "navigate", "enter", "select"]
 
     for raw in llm_text.splitlines():
         line = raw.strip()
@@ -24,28 +27,43 @@ def _parse_llm_output(self, llm_text: str) -> Dict:
             requirement = line.split(":", 1)[1].strip()
             continue
 
-        # ---------------- STEP DETECTION ----------------
-        # supports:
-        # Step 01
-        # Step01
-        # 1 |
-        # Step 1 |
-        if re.match(r"^(step\s*\d+|\d+\s*\|)", line.lower()):
+        # ---------------- steps ----------------
+        if re.match(r"^step\s*\d+", line.lower()):
 
-            # remove step prefix
-            cleaned = re.sub(r"^(step\s*\d+\s*\|?|\d+\s*\|)", "", line, flags=re.IGNORECASE).strip()
+            # remove "Step 01"
+            cleaned = re.sub(r"^step\s*\d+\s*", "", line, flags=re.IGNORECASE).strip()
 
-            # split columns
+            # split pipe or legacy format
             if "|" in cleaned:
-                parts = [p.strip() for p in re.split(r"\s*\|\s*", cleaned) if p.strip()]
+                parts = [p.strip() for p in cleaned.split("|")]
             else:
                 parts = [cleaned]
 
-            # ---------- intelligent repair ----------
-            if len(parts) == 1:
-                desc = parts[0]
-                screen = "NA"
-                data = "NA"
+            # remove empties
+            parts = [p for p in parts if p]
+
+            if not parts:
+                continue
+
+            # ---------------- intelligent column mapping ----------------
+            if len(parts) >= 4:
+
+                first = parts[0].lower()
+
+                # LLM inserted verb column → shift left
+                if first in GENERIC_WORDS:
+                    desc = parts[1]
+                    screen = parts[2] if len(parts) > 2 else "NA"
+                    data = parts[3] if len(parts) > 3 else "NA"
+                    expected = parts[4] if len(parts) > 4 else "Verify system behavior"
+                else:
+                    desc = parts[0]
+                    screen = parts[1] if len(parts) > 1 else "NA"
+                    data = parts[2] if len(parts) > 2 else "NA"
+                    expected = parts[3] if len(parts) > 3 else "Verify system behavior"
+
+            elif len(parts) == 3:
+                desc, screen, data = parts
                 expected = "Verify system behavior"
 
             elif len(parts) == 2:
@@ -53,15 +71,11 @@ def _parse_llm_output(self, llm_text: str) -> Dict:
                 data = "NA"
                 expected = "Verify system behavior"
 
-            elif len(parts) == 3:
-                desc, screen, data = parts
-                expected = "Verify system behavior"
-
             else:
                 desc = parts[0]
-                screen = parts[1] if len(parts) > 1 else "NA"
-                data = parts[2] if len(parts) > 2 else "NA"
-                expected = parts[3] if len(parts) > 3 else "Verify system behavior"
+                screen = "NA"
+                data = "NA"
+                expected = "Verify system behavior"
 
             steps.append({
                 "step_no": f"Step {step_counter:02d}",
