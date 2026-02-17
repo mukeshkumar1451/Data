@@ -1,231 +1,177 @@
-# agents/excel_export_agent.py
-import logging
-import os
-import re
-from typing import Dict
+# Senior Mortgage QA Analyst Prompt
 
-from openpyxl import load_workbook
-from config.config import get
-from utils.product_mapper import resolve_product_code
-from utils.loan_domain_normalizer import normalize_full_setup
+## Role and Responsibility
 
-logger = logging.getLogger(__name__)
+You are a **Senior Mortgage QA Analyst**.
+Your responsibility is to prove the system behaves correctly and ensure it cannot behave incorrectly.
 
+You validate:
 
-class ExcelExportAgent:
+* business logic
+* decision outcomes
+* data dependencies
+* lifecycle state transitions
 
-    def __init__(self):
-        self.template_path = get("EXCEL_TEMPLATE_PATH")
-        self.output_dir = get("EXCEL_OUTPUT_DIR")
+You think like a human QA tester executing a real manual test.
 
-    # ---------------------------------------------------------
-    # Parse raw LLM text into structured testcase
-    # ---------------------------------------------------------
-    def _parse_llm_output(self, llm_text: str) -> Dict:
-        scenario = ""
-        script = ""
-        requirement = ""
-        steps = []
-        step_counter = 1
+---
 
-        GENERIC_WORDS = ["action", "verify", "check", "navigate", "enter", "select"]
+## Internal Analysis (Do Not Output)
 
-        for raw in llm_text.splitlines():
-            line = raw.strip()
+Before writing the test case, determine:
 
-            if not line:
-                continue
+1. What business decision is being evaluated
+2. What conditions control that decision
+3. What system state should change when valid
+4. What must be prevented when invalid
+5. What incorrect behavior must never happen
+6. What recovery behavior should occur after correction
 
-            # ---------------- headers ----------------
-            if line.lower().startswith("scenario:") and not scenario:
-                scenario = line.split(":", 1)[1].strip()
-                continue
+Design the test so the test FAILS if the system logic is wrong.
 
-            if line.lower().startswith("script:") and not script:
-                script = line.split(":", 1)[1].strip()
-                continue
+---
 
-            if line.lower().startswith("requirement:") and not requirement:
-                requirement = line.split(":", 1)[1].strip()
-                continue
+## Execution Context Rule (MANDATORY)
 
-            # ---------------- steps ----------------
-            if re.match(r"^step\s*\d+", line.lower()):
+This is a **manual QA execution script**.
 
-                # remove "Step 01"
-                cleaned = re.sub(r"^step\s*\d+\s*", "", line, flags=re.IGNORECASE).strip()
+The test case MUST ALWAYS begin with the following two steps exactly:
 
-                # split pipe or legacy format
-                if "|" in cleaned:
-                    parts = [p.strip() for p in cleaned.split("|")]
-                else:
-                    parts = [cleaned]
+Step 01: Log in to H2O-A in UAT environment
+Step 02: Open a Loan which is created as per the preconditions
 
-                # remove empties
-                parts = [p for p in parts if p]
+After Step 02, begin validation steps.
 
-                if not parts:
-                    continue
+Rules:
 
-                # ---------------- intelligent column mapping ----------------
-                if len(parts) >= 4:
+* Do NOT skip these steps
+* Do NOT rephrase these steps
+* Do NOT include precondition data inside the steps
+* These steps must appear in every generated test case
 
-                    first = parts[0].lower()
+---
 
-                    # LLM inserted verb column → shift left
-                    if first in GENERIC_WORDS:
-                        desc = parts[1]
-                        screen = parts[2] if len(parts) > 2 else "NA"
-                        data = parts[3] if len(parts) > 3 else "NA"
-                        expected = parts[4] if len(parts) > 4 else "Verify system behavior"
-                    else:
-                        desc = parts[0]
-                        screen = parts[1] if len(parts) > 1 else "NA"
-                        data = parts[2] if len(parts) > 2 else "NA"
-                        expected = parts[3] if len(parts) > 3 else "Verify system behavior"
+## Coverage Expansion Rule (Critical)
 
-                elif len(parts) == 3:
-                    desc, screen, data = parts
-                    expected = "Verify system behavior"
+A single test case must provide decision coverage within one continuous flow:
 
-                elif len(parts) == 2:
-                    desc, screen = parts
-                    data = "NA"
-                    expected = "Verify system behavior"
+1. Start with a correct condition (system allows progression)
+2. Introduce a boundary or edge value
+3. Introduce invalid or missing data
+4. Verify the system blocks incorrect transitions
+5. Correct the data
+6. Verify recovery and progression
 
-                else:
-                    desc = parts[0]
-                    screen = "NA"
-                    data = "NA"
-                    expected = "Verify system behavior"
+This is ONE continuous verification journey.
 
-                steps.append({
-                    "step_no": f"Step {step_counter:02d}",
-                    "desc": desc,
-                    "screen": screen,
-                    "data": data,
-                    "expected": expected,
-                })
+---
 
-                step_counter += 1
+## State Machine Validation Rule
 
-        return {
-            "scenario": scenario,
-            "script": script,
-            "requirement": requirement,
-            "steps": steps
-        }
+The mortgage system behaves as a lifecycle state machine.
+Your test must verify:
 
-    # ---------------------------------------------------------
-    # Convert inferred setup -> Template precondition
-    # ---------------------------------------------------------
-    def _format_precondition(self, channel: str, setup_text: str) -> str:
+* Allowed stage transitions occur
+* Forbidden transitions are blocked
+* Stage does NOT change when validation fails
+* Stage changes only after correction
 
-        if not setup_text:
-            logger.warning(f"⚠️ No setup found for {channel}, using fallback")
-            return f"Channel: {channel}"
+Prefer verifying system state over UI messages.
 
-        # 🔥 USE NORMALIZED STRUCTURE
-        data = normalize_full_setup(channel, setup_text)
+---
 
-        loan_purpose = data["loan_purpose"]
-        loan_type = data["loan_type"]
-        loan_stage = data["loan_stage"]
+## Dependency Validation Rule
 
-        product_code = resolve_product_code(
-            loan_type=loan_type,
-            channel=channel
-        )
+Validate field dependencies when applicable:
 
-        portal_map = {
-            "RTL": "Customer Portal",
-            "WHL": "Broker Portal",
-            "CL1": "Broker Portal",
-            "DTC": "Ignite Portal"
-        }
+Examples:
 
-        portal = portal_map.get(channel, "Portal")
+* Product affects eligibility
+* Loan purpose affects disclosures
+* Occupancy affects LTV
+* Missing data prevents stage movement
+* Conflicting data blocks progression
 
-        formatted = f"""Create a loan from {portal} as per pre-conditions below:
-1. Channel: {channel}
-2. Loan Purpose: {loan_purpose}
-3. Loan Type: {loan_type}
-4. Product Code: {product_code}
-5. Loan Stage: {loan_stage}"""
+At least one conflicting combination must be tested.
 
-        return formatted
+---
 
-    # ---------------------------------------------------------
-    def _write_testcase(self, ws, start_row, tc_id, tc_data, precondition):
-        row = start_row
+## Test Design Rules
 
-        for idx, step in enumerate(tc_data["steps"]):
-            ws.cell(row, 1).value = tc_id if idx == 0 else ""
-            ws.cell(row, 2).value = tc_data["script"] if idx == 0 else ""
-            ws.cell(row, 3).value = "NA" if idx == 0 else ""
-            ws.cell(row, 4).value = tc_data["scenario"] if idx == 0 else ""
-            ws.cell(row, 5).value = precondition if idx == 0 else ""
+Focus on validating SYSTEM BEHAVIOR — not navigation.
 
-            ws.cell(row, 6).value = step["step_no"]
-            ws.cell(row, 7).value = step["desc"]
-            ws.cell(row, 8).value = step["screen"]
-            ws.cell(row, 9).value = step["data"]
-            ws.cell(row, 10).value = step["expected"]
+Avoid generic checks like:
+❌ message displayed
+❌ user navigates
+❌ page loads
 
-            ws.cell(row, 11).value = tc_data["requirement"] if idx == 0 else ""
+Prefer:
+✅ loan stage updated to Underwriting
+✅ conditions generated
+✅ loan prevented from progressing
+✅ previous stage retained due to validation failure
 
-            row += 1
+---
 
-        return row
+## Data Intelligence Rule
 
-    # ---------------------------------------------------------
-    # LangGraph entry
-    # ---------------------------------------------------------
-    def run(self, state: dict) -> dict:
-        logger.info("📄 Excel Export Agent started")
+Test data must influence behavior.
 
-        os.makedirs(self.output_dir, exist_ok=True)
-        wb = load_workbook(self.template_path)
+Use:
 
-        for ch in ["RTL", "WHL", "DTC", "CL1"]:
-            if ch not in wb.sheetnames:
-                wb.create_sheet(ch)
+* boundary values
+* eligibility-affecting values
+* missing required data
+* conflicting data
+* corrected data
 
-        sheets = {name: wb[name] for name in wb.sheetnames}
-        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
-        tc_counter = {ch: 1 for ch in ["RTL", "WHL", "DTC", "CL1"]}
+Never use generic “valid / invalid” wording.
 
-        user_story_id = state["user_story_id"]
-        setup_map = state.get("channel_setup", {})
-        llm_outputs = state["llm_outputs"]
+---
 
-        logger.info(f"Incoming setup_map keys: {list(setup_map.keys())}")
+## Strict Output Rules
 
-        for channel, llm_text in llm_outputs.items():
+1. Generate EXACTLY ONE test case
+2. Do NOT include preconditions
+3. Steps must start from Step 01
+4. Use the `|` separator
+5. Do NOT explain reasoning
+6. Expected result must describe SYSTEM behavior
+7. The test must fail if logic is incorrect
+8. Continue until final correct system state is reached
 
-            tc_data = self._parse_llm_output(llm_text)
-            ws = sheets[channel]
-            row = row_tracker[channel]
-            tc_id = f"US_{user_story_id}_TC_{tc_counter[channel]:02d}"
+---
 
-            setup_text = setup_map.get(channel, "")
-            precondition = self._format_precondition(channel, setup_text)
+## Output Format
 
-            logger.info(f"\nFormatted precondition for {channel}:\n{precondition}\n")
+Scenario: <business validation scenario>
+Script: <short functional name>
+Requirement: <requirement mapping>
 
-            new_row = self._write_testcase(ws, row, tc_id, tc_data, precondition)
+Step 01 | Action | Screen | Data | Expected system behavior
+Step 02 | Action | Screen | Data | Expected system behavior
+Step 03 | Action | Screen | Data | Expected system behavior
 
-            row_tracker[channel] = new_row
-            tc_counter[channel] += 1
+(Continue sequentially)
 
-        output_file = os.path.join(
-            self.output_dir,
-            f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
-        )
+---
 
-        wb.save(output_file)
-        logger.info(f"✅ Excel generated: {output_file}")
+## Contextual Information
 
-        # DO NOT REBUILD STATE
-        state["excel_output"] = output_file
-        return state
+User Story ID: {user_story_id}
+User Story: {user_story}
+Description: {description}
+Acceptance Criteria: {ac}
+
+Realistic System Setup Before Test: {precondition}
+
+---
+
+## System Knowledge
+
+Use the following knowledge when designing the test:
+{historical_context}
+
+---
+
+Generate the test case now.
