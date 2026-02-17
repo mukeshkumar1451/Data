@@ -1,155 +1,66 @@
-# -*- coding: utf-8 -*-
-# utils/channel_detector.py
+# utils/html_image_processor.py
 
-import re
-import logging
+import os
+import requests
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
-logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------
-# Known channels
-# ---------------------------------------------------
-ALL_CHANNELS = ["RTL", "WHL", "DTC", "CL1"]
-
-CHANNEL_MAP = {
-    "RTL": ["RTL", "RET", "RETAIL"],
-    "WHL": ["WHL", "WHOLESALE"],
-    "DTC": ["DTC", "DIRECT TO CUSTOMER"],
-    "CL1": ["CL1", "CORRESPONDENT"]
-}
+load_dotenv()
+ADO_PAT = os.getenv("ADO_PAT")
 
 
-# ---------------------------------------------------
-# Helper
-# ---------------------------------------------------
-def sentence_contains_channel(sentence, keywords):
-    return any(k in sentence for k in keywords)
-
-
-# ---------------------------------------------------
-# NEW: Behavioral Channel Detection (Mortgage Aware)
-# ---------------------------------------------------
-def detect_by_behavior(text: str) -> list:
+def _download_ado_image(url: str, save_path: str) -> str:
     """
-    Detect channel using workflow meaning instead of keywords.
-    Runs only when explicit channel not found.
+    Download image from ADO attachment using PAT authentication.
+    """
+    try:
+        response = requests.get(url, auth=("", ADO_PAT))
+        response.raise_for_status()
+
+        with open(save_path, "wb") as f:
+            f.write(response.content)
+
+        return save_path
+    except Exception as e:
+        return f"[Image download failed: {e}]"
+
+
+def process_html_and_download_images(html: str, story_id: str, section: str) -> str:
+    """
+    1. Extract images from HTML
+    2. Download them locally
+    3. Clean HTML text
+    4. Append image references into text
+
+    section = 'description' or 'ac'
     """
 
-    t = text.lower()
-    detected = set()
+    if not html:
+        return ""
 
-    # ---------- WHOLESALE ----------
-    whl_signals = [
-        "broker",
-        "originator",
-        "create loan on behalf",
-        "h2o",
-        "broker id",
-        "company picker",
-        "business unit",
-        "broker employees"
-    ]
+    soup = BeautifulSoup(html, "html.parser")
+    images = soup.find_all("img")
 
-    if sum(1 for s in whl_signals if s in t) >= 3:
-        detected.add("WHL")
+    # Folder to save images
+    img_folder = os.path.join("downloads", story_id, section)
+    os.makedirs(img_folder, exist_ok=True)
 
-    # ---------- RETAIL ----------
-    rtl_signals = [
-        "loan officer",
-        "borrower",
-        "customer portal",
-        "retail user",
-        "face to face"
-    ]
+    image_references = []
 
-    if sum(1 for s in rtl_signals if s in t) >= 3:
-        detected.add("RTL")
+    for idx, img in enumerate(images, start=1):
+        src = img.get("src")
+        if not src:
+            continue
 
-    # ---------- DTC ----------
-    dtc_signals = [
-        "consumer",
-        "self service",
-        "online application",
-        "borrower completes application",
-        "no loan officer"
-    ]
+        save_path = os.path.join(img_folder, f"image_{idx}.png")
+        downloaded_path = _download_ado_image(src, save_path)
 
-    if sum(1 for s in dtc_signals if s in t) >= 2:
-        detected.add("DTC")
+        image_references.append(f"[IMAGE DOWNLOADED: {downloaded_path}]")
 
-    # ---------- CORRESPONDENT ----------
-    cl1_signals = [
-        "correspondent",
-        "delegated",
-        "non delegated",
-        "purchase advice",
-        "loan purchase"
-    ]
+    # Clean HTML → readable text
+    clean_text = soup.get_text(separator="\n")
 
-    if sum(1 for s in cl1_signals if s in t) >= 2:
-        detected.add("CL1")
+    final_text = clean_text + "\n\n" + "\n".join(image_references)
 
-    return list(detected)
+    return final_text
 
-
-# ---------------------------------------------------
-# MAIN DETECTOR
-# ---------------------------------------------------
-def detect_channels(ac_text: str) -> list:
-
-    logger.info("Intelligent channel detection started...")
-
-    text = ac_text.upper()
-    sentences = re.split(r'[.\n]', text)
-
-    include = set()
-    exclude = set()
-
-    # -------------------------------
-    # Stage 1 & 2 — Explicit Detection
-    # -------------------------------
-    for s in sentences:
-        s = s.strip()
-
-        for channel, keywords in CHANNEL_MAP.items():
-            if sentence_contains_channel(s, keywords):
-
-                # Explicit inclusion
-                if any(word in s for word in ["CHANNEL =", "ONLY", "APPLIES TO"]):
-                    include.add(channel)
-
-                # Negative validation (must test)
-                elif "DO NOT HAVE" in s or "NOT AVAILABLE" in s:
-                    include.add(channel)
-
-                # Not applicable
-                elif "NOT APPLICABLE" in s:
-                    exclude.add(channel)
-
-                # Default mention
-                else:
-                    include.add(channel)
-
-    # --------------------------------
-    # Stage 3 — Behavioral Detection
-    # --------------------------------
-    if not include:
-        logger.info(" No explicit channel → trying behavioral detection")
-
-        behavioral = detect_by_behavior(ac_text)
-
-        if behavioral:
-            logger.info(f" Behavior detected channels: {behavioral}")
-            return behavioral
-
-        logger.info(" No behavior detected → using ALL channels")
-        return ALL_CHANNELS
-
-    # --------------------------------
-    # Final resolution
-    # --------------------------------
-    final = include - exclude
-
-    logger.info(f" Channels selected for testing: {final}")
-
-    return list(final)
