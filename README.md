@@ -16,14 +16,39 @@ LOAN_TYPE_PRODUCT_MAP = {
 }
 
 
+# ---------------------------------------------------------
+# Robust extractor (handles LLM formatting noise)
+# ---------------------------------------------------------
+def _extract(label: str, text: str) -> str:
+    if not text:
+        return ""
+
+    patterns = [
+        rf"{label}\s*:\s*(.*)",
+        rf"{label}\s*-\s*(.*)",
+        rf"\*\*{label}\*\*\s*:\s*(.*)",
+    ]
+
+    for p in patterns:
+        m = re.search(p, text, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+
+    return ""
+
+
+# =========================================================
+# 2. LOAN TYPE NORMALIZATION
+# =========================================================
+
 def normalize_loan_type(raw: str) -> str:
     if not raw:
         return "Conventional"
 
-    raw = raw.upper()
+    raw_upper = raw.upper()
 
     for key in LOAN_TYPE_PRODUCT_MAP:
-        if key in raw:
+        if key in raw_upper:
             return key.title()
 
     return "Conventional"
@@ -35,46 +60,46 @@ def resolve_product_code(loan_type: str) -> str:
 
 
 # =========================================================
-# 2. STAGE NORMALIZATION
+# 3. STAGE NORMALIZATION
 # =========================================================
 
 CHANNEL_STAGES = {
 
     "RTL": [
-        "Application Accepted", "In-Processing", "UW Submitted",
-        "Approved W/Conditions", "Conditions Submitted",
-        "Conditions In Review", "Final Approval In Review",
-        "Clear To Close", "Closing Disclosure Ordered",
-        "Closing Disclosure Sent", "Closing Docs sent",
-        "Funds Ordered", "Funds Sent", "Funds Released"
+        "Application Accepted","In-Processing","UW Submitted",
+        "Approved W/Conditions","Conditions Submitted",
+        "Conditions In Review","Final Approval In Review",
+        "Clear To Close","Closing Disclosure Ordered",
+        "Closing Disclosure Sent","Closing Docs sent",
+        "Funds Ordered","Funds Sent","Funds Released"
     ],
 
     "WHL": [
-        "Created", "LE Sent", "Submission Review", "UW Submitted",
-        "Approved W/Conditions", "Conditions Submitted",
-        "Conditions In Review", "Final Approval In Review",
-        "Clear To Close", "Closing Disclosure Ordered",
-        "Closing Disclosure Sent", "Closing Docs sent",
-        "Funds Ordered", "Funds Sent", "Funds Released"
+        "Created","LE Sent","Submission Review","UW Submitted",
+        "Approved W/Conditions","Conditions Submitted",
+        "Conditions In Review","Final Approval In Review",
+        "Clear To Close","Closing Disclosure Ordered",
+        "Closing Disclosure Sent","Closing Docs sent",
+        "Funds Ordered","Funds Sent","Funds Released"
     ],
 
     "DTC": [
-        "Application Accepted", "CD Audit Submitted", "CD Audit Completed",
-        "UW Submitted", "Approved W/Conditions", "Conditions Submitted",
-        "Conditions In Review", "Final Approval In Review",
-        "Clear To Close", "Closing Disclosure Ordered",
-        "Closing Disclosure Sent", "Closing Docs sent",
-        "Funds Ordered", "Funds Sent", "Funds Released"
+        "Application Accepted","CD Audit Submitted","CD Audit Completed",
+        "UW Submitted","Approved W/Conditions","Conditions Submitted",
+        "Conditions In Review","Final Approval In Review",
+        "Clear To Close","Closing Disclosure Ordered",
+        "Closing Disclosure Sent","Closing Docs sent",
+        "Funds Ordered","Funds Sent","Funds Released"
     ],
 
     "CL1": [
-        "Created", "UW Submitted", "Approved W/Conditions",
-        "Conditions Submitted", "Conditions In Review",
-        "Final Approval In Review", "Clear To Close",
-        "Closing Disclosure Ordered", "Closing Disclosure Sent",
-        "Closing Docs sent", "Correspondent Funded",
-        "Loan Purchase Review", "Purchase Wire Review",
-        "Approved For Purchase", "Funds Released"
+        "Created","UW Submitted","Approved W/Conditions",
+        "Conditions Submitted","Conditions In Review",
+        "Final Approval In Review","Clear To Close",
+        "Closing Disclosure Ordered","Closing Disclosure Sent",
+        "Closing Docs sent","Correspondent Funded",
+        "Loan Purchase Review","Purchase Wire Review",
+        "Approved For Purchase","Funds Released"
     ]
 }
 
@@ -96,17 +121,17 @@ def normalize_stage(channel: str, raw_stage: str) -> str:
 
     stage = raw_stage.lower()
 
-    # remove ranges
+    # handle ranges like "Application Accepted through CD Audit Completed"
     if "through" in stage or "to" in stage:
         parts = re.split(r"through|to", stage)
         stage = parts[-1].strip()
 
-    # synonyms
+    # synonym mapping
     for key, value in STAGE_SYNONYMS.items():
         if key in stage:
             return value
 
-    # fuzzy match
+    # fuzzy match allowed stages
     for allowed in CHANNEL_STAGES[channel]:
         if allowed.lower() in stage:
             return allowed
@@ -115,7 +140,7 @@ def normalize_stage(channel: str, raw_stage: str) -> str:
 
 
 # =========================================================
-# 3. PURPOSE NORMALIZATION
+# 4. PURPOSE NORMALIZATION
 # =========================================================
 
 def normalize_purpose(raw: str) -> str:
@@ -134,26 +159,23 @@ def normalize_purpose(raw: str) -> str:
 
 
 # =========================================================
-# MAIN ENTRY — NORMALIZE WHOLE SETUP
+# MAIN ENTRY — CONTRACT GUARANTEED STRUCTURE
 # =========================================================
 
 def normalize_full_setup(channel: str, setup_text: str) -> dict:
 
-    def extract(label):
-        m = re.search(fr"{label}\s*:\s*(.*)", setup_text, re.I)
-        return m.group(1).strip() if m else ""
-
-    purpose_raw = extract("Loan Purpose")
-    type_raw = extract("Loan Type")
-    stage_raw = extract("Loan Stage")
+    purpose_raw = _extract("Loan Purpose", setup_text)
+    type_raw = _extract("Loan Type", setup_text)
+    stage_raw = _extract("Loan Stage", setup_text)
 
     purpose = normalize_purpose(purpose_raw)
     loan_type = normalize_loan_type(type_raw)
     product = resolve_product_code(loan_type)
     stage = normalize_stage(channel, stage_raw)
 
+    # IMPORTANT: standardized keys used by Excel agent
     return {
-        "purpose": purpose,
+        "loan_purpose": purpose,
         "loan_type": loan_type,
         "product_code": product,
         "loan_stage": stage
