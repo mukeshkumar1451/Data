@@ -1,92 +1,68 @@
-# utils/loan_setup_normalizer.py
-
-import re
-from typing import Dict
+# utils/product_mapper.py
 
 # ---------------------------------------------------------
-# Allowed Domain Values
+# Product Rules (Domain Accurate)
 # ---------------------------------------------------------
 
-LOAN_TYPES = ["Conventional", "FHA", "VA", "USDA", "Heloc"]
-
-PRODUCT_MAP = {
-    "Conventional": "CF30",
-    "FHA": "FF30",
-    "VA": "VF30",
-    "USDA": "CF30",
-    "Heloc": "NRZHeloc"
+PRIMARY_PRODUCTS = {
+    "CONVENTIONAL": ["CF30", "CF15", "CF10"],
+    "CONVENTIONAL JUMBO": ["JCPF30", "JEG10A", "JF30B"],
+    "FHA": ["FF30"],
+    "VA": ["VF30", "VF15"],
+    "USDA": ["CF30"],
+    "HELOC": ["NRZHeloc"],
+    "NON QM": ["NRSEF30", "NRSVF30"],
 }
 
-LIEN_TYPES = ["First Lien", "Second Lien"]
-DOC_TYPES = ["Full", "Streamline"]
+SECOND_LIEN_PRODUCTS = ["SASF30A", "SASF30B", "SASF30C"]
 
-# Channel stage restrictions
-CHANNEL_STAGES = {
-    "RTL": [
-        "Application Accepted","In-Processing","UW Submitted","Approved W/Conditions",
-        "Conditions Submitted","Conditions In Review","Final Approval In Review",
-        "Clear To Close","Closing Disclosure Sent","Funds Released"
-    ],
-    "WHL": [
-        "Created","Submission Review","UW Submitted","Approved W/Conditions",
-        "Clear To Close","Closing Disclosure Sent","Funds Released"
-    ],
-    "DTC": [
-        "Application Accepted","CD Audit Submitted","CD Audit Completed",
-        "UW Submitted","Approved W/Conditions","Clear To Close","Funds Released"
-    ],
-    "CL1": [
-        "Created","UW Submitted","Approved W/Conditions",
-        "Clear To Close","Funds Released"
-    ]
-}
+HELOC_ALLOWED_CHANNELS = ["RTL", "DTC"]
+
 
 # ---------------------------------------------------------
-# Helpers
+# Resolver
 # ---------------------------------------------------------
 
-def _extract(text: str, key: str) -> str:
-    match = re.search(rf"{key}:\s*(.+)", text, re.IGNORECASE)
-    return match.group(1).strip() if match else ""
+def resolve_product_code(
+    loan_type: str,
+    channel: str = None,
+    lien_type: str = "First Lien",
+    doc_type: str = "Full"
+) -> str:
+    """
+    Smart deterministic product resolver.
+    Prevents impossible combinations.
+    """
 
+    if not loan_type:
+        return "CF30"
 
-def _closest(value: str, allowed: list, default: str):
-    for a in allowed:
-        if a.lower() in value.lower():
-            return a
-    return default
+    lt = loan_type.upper().strip()
+    lien = (lien_type or "").upper()
 
-# ---------------------------------------------------------
-# Main Normalizer
-# ---------------------------------------------------------
+    # -----------------------------
+    # Second lien overrides all
+    # -----------------------------
+    if "SECOND" in lien:
+        return SECOND_LIEN_PRODUCTS[0]
 
-def normalize_setup(channel: str, setup_text: str) -> Dict:
+    # -----------------------------
+    # HELOC restrictions
+    # -----------------------------
+    if "HELOC" in lt:
+        if channel in HELOC_ALLOWED_CHANNELS:
+            return "NRZHeloc"
+        else:
+            return "CF30"  # fallback safe loan
 
-    purpose = _extract(setup_text, "Loan Purpose")
-    ltype = _extract(setup_text, "Loan Type")
-    stage = _extract(setup_text, "Loan Stage")
+    # -----------------------------
+    # Standard mapping
+    # -----------------------------
+    for key in PRIMARY_PRODUCTS:
+        if key in lt:
+            return PRIMARY_PRODUCTS[key][0]
 
-    # ---- normalize loan type
-    loan_type = _closest(ltype, LOAN_TYPES, "Conventional")
-
-    # ---- lien logic
-    lien = "Second Lien" if "second" in setup_text.lower() else "First Lien"
-
-    # ---- doc type logic
-    doc = "Streamline" if "streamline" in setup_text.lower() else "Full"
-
-    # ---- stage normalization by channel
-    allowed_stages = CHANNEL_STAGES[channel]
-    loan_stage = _closest(stage, allowed_stages, allowed_stages[0])
-
-    # ---- product mapping
-    product_code = PRODUCT_MAP.get(loan_type, "CF30")
-
-    return {
-        "purpose": purpose or "Purchase",
-        "loan_type": loan_type,
-        "product_code": product_code,
-        "lien": lien,
-        "doc_type": doc,
-        "stage": loan_stage
-    }
+    # -----------------------------
+    # Safe default
+    # -----------------------------
+    return "CF30"
