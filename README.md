@@ -1,107 +1,17 @@
-# utils/html_image_processor.py
+=========== ADO INTELLIGENCE AGENT OUTPUT ===========
 
-import os
-import re
-import requests
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
+User Story ID:
+725102
 
-load_dotenv()
-ADO_PAT = os.getenv("ADO_PAT")
+----------- TITLE -----------
+None
 
+----------- ENRICHED DESCRIPTION -----------
+As a. User. . . . . . . . . . I want . to update the 'Select a Company' and 'Originator' dropdowns that exist in the 'Create Loan on Behalf of' screen to be paginated Pickers . . . . So that. this screen performs better by not needing to load as much data in a single dropdown . . . Present Day, users accessing this screen may (based on their individual level of access) come across lengthy loading times due to the number of Companies that can appear in the 'Select a Company' dropdown. . . . Using monitoring, you can see that it takes over 20 seconds of loading the 'companiesforuser' when trying to load the screen for myself (I have access to all WHL Business Units) . . . It actually took just over 30 seconds to complete - . . . Most WHL users who would create loans in this screen also have access to many different WHL Business Units and would see lengthy loading times as well. Updating this screen to use paginated pickers would cut down on this loading time significantly. . . General UI Mockup - . . . . 'Select a Company' picker should be able to be clicked in the above state. 'Originator' picker should be greyed out until a Company has been selected via the 'Select a Company' picker. . . . 'Select a Company' picker mockup - . . . . This picker should have columns for 'Broker Id' and 'Company' . . This picker should contain all values that the dropdown normally would given the logged in user's access levels. . . . Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) . . Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches (For example - if user searches for 35, system should return BID 35 as well as BID 355 (if they exist) as well as Company "35th St Loans" (if they exist)) . . After user clicks on a result from the list, popup should close and selected Company should pull into the 'Select a Company' field . . Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Select a Company' field . . After selecting a Company, users should then be able to click on the 'Originator' picker. . 'Originator' picker mockup - . . . Originator in this use case = Broker LO. . . This picker should have columns for 'Id', 'First Name', 'Last Name', and 'Office Phone' . . This picker should contain all active Broker Employees for the selected Company. . . . . . Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) . . Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches similar to what was mentioned in 'Company' picker section. . . Valid Search Criteria should include ID, First Name, Last Name, or Office Phone. . . After user clicks on a result from the list, popup should close and selected Originator should pull into the 'Originator' field . . Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Originator' field . . . . . . . . Notes:. . -Screen should look similar to how 'Rep & Branch' interface behaves now - when a picker is opened, the selected picker should popup in the center of the screen and the background should slightly grey itself out. . Example of current state 'Rep & Branch' screen with picker open - . . -Broker users who also see this interface do not have access to 'Select a Company' so they would be considered out of scope. We . should not. . update. . their UI. . . . -If a logged in user only has a single Company that would be available for picking, 'Select a Company' picker should intelligently default to that single Company. . -Same behavior should be coded in for 'Originator' picker. If a selected Company has only one active Originator selection available, the 'Originator' picker should default to that selection. . . . . . .
+----------- CHANNELS -----------
+['RTL']
 
-# =========================================================
-# Download ADO attachment
-# =========================================================
-def _download_ado_image(url: str, save_path: str) -> str:
-    try:
-        response = requests.get(url, auth=("", ADO_PAT))
-        response.raise_for_status()
-
-        with open(save_path, "wb") as f:
-            f.write(response.content)
-
-        return save_path
-    except Exception as e:
-        return f"[Image download failed: {e}]"
+----------- ENRICHED ACCEPTANCE CRITERIA -----------
+AC1: . . . Given . that I am a non-Broker user in H2O . . . . . . . . . . . . . . When. . I access 'Create Loan on Behalf of' Loan Creation screen. . . . . . . Then. . I expect to see the updated UI/Functionality as mentioned in this US Description. . . . . . . . . . General UI Mockup - . . . . 'Select a Company' picker should be able to be clicked in the above state. 'Originator' picker should be greyed out until a Company has been selected via the 'Select a Company' picker. . . . 'Select a Company' picker mockup - . . . . This picker should have columns for 'Broker Id' and 'Company' . . This picker should contain all values that the dropdown normally would given the logged in user's access levels. . . . Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) . . Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches (For example - if user searches for 35, system should return BID 35 as well as BID 355 (if they exist) as well as Company "35th St Loans" (if they exist)) . . After user clicks on a result from the list, popup should close and selected Company should pull into the 'Select a Company' field . . Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Select a Company' field . . After selecting a Company, users should then be able to click on the 'Originator' picker. . 'Originator' picker mockup - . . . Originator in this use case = Broker LO. . . This picker should have columns for 'Id', 'First Name', 'Last Name', and 'Office Phone' . . This picker should contain all active Broker Employees for the selected Company. . . . . . Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) . . Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches similar to what was mentioned in 'Company' picker section. . . After user clicks on a result from the list, popup should close and selected Originator should pull into the 'Originator' field . . Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Originator' field . . . . . . . . Notes:. . -Screen should look similar to how 'Rep & Branch' interface behaves now - when a picker is opened, the selected picker should popup in the center of the screen and the background should slightly grey itself out. . Example of current state 'Rep & Branch' screen with picker open - . . -Broker users who also see this interface do not have access to 'Select a Company' so they would be considered out of scope. We. . should not. . update. . their UI. . . . -If a logged in user only has a single Company that would be available for picking, 'Select a Company' picker should intelligently default to that single Company. . -Same behavior should be coded in for 'Originator' picker. If a selected Company has only one active Originator selection available, the 'Originator' picker should default to that selection. . . . . . . .
 
 
-# =========================================================
-# TEXT NORMALIZER (CRITICAL FOR AI QUALITY)
-# =========================================================
-def _normalize_ado_text(text: str) -> str:
-    if not text:
-        return ""
-
-    # remove excessive spaces
-    text = re.sub(r"[ \t]+", " ", text)
-
-    # fix broken OCR words
-    text = re.sub(r"\bsh\s+ould\b", "should", text, flags=re.I)
-    text = re.sub(r"\bca\s+n\b", "can", text, flags=re.I)
-    text = re.sub(r"\bdo\s+es\b", "does", text, flags=re.I)
-    text = re.sub(r"\bse\s+lect\b", "select", text, flags=re.I)
-
-    # remove bullet garbage
-    text = re.sub(r"--+", ". ", text)
-    text = re.sub(r"\*\s*", ". ", text)
-
-    # join broken lines into sentences
-    text = re.sub(r"\n+", "\n", text)
-    text = re.sub(r"(?<![.!?])\n", ". ", text)
-
-    # remove repeated punctuation
-    text = re.sub(r"\.{2,}", ".", text)
-
-    # remove double spaces again
-    text = re.sub(r"\s{2,}", " ", text)
-
-    return text.strip()
-
-
-# =========================================================
-# MAIN FUNCTION
-# =========================================================
-def process_html_and_download_images(html: str, story_id: str, section: str) -> str:
-    """
-    1. Extract images
-    2. Download locally
-    3. Clean HTML text
-    4. Normalize text for NLP
-    5. Append image references
-    """
-
-    if not html:
-        return ""
-
-    soup = BeautifulSoup(html, "html.parser")
-    images = soup.find_all("img")
-
-    img_folder = os.path.join("downloads", story_id, section)
-    os.makedirs(img_folder, exist_ok=True)
-
-    image_references = []
-
-    for idx, img in enumerate(images, start=1):
-        src = img.get("src")
-        if not src:
-            continue
-
-        save_path = os.path.join(img_folder, f"image_{idx}.png")
-        downloaded_path = _download_ado_image(src, save_path)
-
-        image_references.append(f"[IMAGE DOWNLOADED: {downloaded_path}]")
-
-    # Extract readable text
-    raw_text = soup.get_text(separator="\n")
-
-    # 🔥 Normalize text (THIS FIXES CHANNEL DETECTION)
-    clean_text = _normalize_ado_text(raw_text)
-
-    # Keep images but separated
-    if image_references:
-        final_text = clean_text + "\n\n--- ATTACHMENTS ---\n" + "\n".join(image_references)
-    else:
-        final_text = clean_text
-
-    return final_text
