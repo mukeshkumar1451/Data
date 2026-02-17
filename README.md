@@ -1,17 +1,53 @@
-=========== ADO INTELLIGENCE AGENT OUTPUT ===========
+# utils/channel_detector.py
+import re
+import logging
 
-User Story ID:
-725102
+logger = logging.getLogger(__name__)
 
------------ TITLE -----------
-None
-
------------ ENRICHED DESCRIPTION -----------
-As a. User. . . . . . . . . . I want . to update the 'Select a Company' and 'Originator' dropdowns that exist in the 'Create Loan on Behalf of' screen to be paginated Pickers . . . . So that. this screen performs better by not needing to load as much data in a single dropdown . . . Present Day, users accessing this screen may (based on their individual level of access) come across lengthy loading times due to the number of Companies that can appear in the 'Select a Company' dropdown. . . . Using monitoring, you can see that it takes over 20 seconds of loading the 'companiesforuser' when trying to load the screen for myself (I have access to all WHL Business Units) . . . It actually took just over 30 seconds to complete - . . . Most WHL users who would create loans in this screen also have access to many different WHL Business Units and would see lengthy loading times as well. Updating this screen to use paginated pickers would cut down on this loading time significantly. . . General UI Mockup - . . . . 'Select a Company' picker should be able to be clicked in the above state. 'Originator' picker should be greyed out until a Company has been selected via the 'Select a Company' picker. . . . 'Select a Company' picker mockup - . . . . This picker should have columns for 'Broker Id' and 'Company' . . This picker should contain all values that the dropdown normally would given the logged in user's access levels. . . . Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) . . Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches (For example - if user searches for 35, system should return BID 35 as well as BID 355 (if they exist) as well as Company "35th St Loans" (if they exist)) . . After user clicks on a result from the list, popup should close and selected Company should pull into the 'Select a Company' field . . Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Select a Company' field . . After selecting a Company, users should then be able to click on the 'Originator' picker. . 'Originator' picker mockup - . . . Originator in this use case = Broker LO. . . This picker should have columns for 'Id', 'First Name', 'Last Name', and 'Office Phone' . . This picker should contain all active Broker Employees for the selected Company. . . . . . Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) . . Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches similar to what was mentioned in 'Company' picker section. . . Valid Search Criteria should include ID, First Name, Last Name, or Office Phone. . . After user clicks on a result from the list, popup should close and selected Originator should pull into the 'Originator' field . . Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Originator' field . . . . . . . . Notes:. . -Screen should look similar to how 'Rep & Branch' interface behaves now - when a picker is opened, the selected picker should popup in the center of the screen and the background should slightly grey itself out. . Example of current state 'Rep & Branch' screen with picker open - . . -Broker users who also see this interface do not have access to 'Select a Company' so they would be considered out of scope. We . should not. . update. . their UI. . . . -If a logged in user only has a single Company that would be available for picking, 'Select a Company' picker should intelligently default to that single Company. . -Same behavior should be coded in for 'Originator' picker. If a selected Company has only one active Originator selection available, the 'Originator' picker should default to that selection. . . . . . .
------------ CHANNELS -----------
-['RTL']
-
------------ ENRICHED ACCEPTANCE CRITERIA -----------
-AC1: . . . Given . that I am a non-Broker user in H2O . . . . . . . . . . . . . . When. . I access 'Create Loan on Behalf of' Loan Creation screen. . . . . . . Then. . I expect to see the updated UI/Functionality as mentioned in this US Description. . . . . . . . . . General UI Mockup - . . . . 'Select a Company' picker should be able to be clicked in the above state. 'Originator' picker should be greyed out until a Company has been selected via the 'Select a Company' picker. . . . 'Select a Company' picker mockup - . . . . This picker should have columns for 'Broker Id' and 'Company' . . This picker should contain all values that the dropdown normally would given the logged in user's access levels. . . . Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) . . Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches (For example - if user searches for 35, system should return BID 35 as well as BID 355 (if they exist) as well as Company "35th St Loans" (if they exist)) . . After user clicks on a result from the list, popup should close and selected Company should pull into the 'Select a Company' field . . Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Select a Company' field . . After selecting a Company, users should then be able to click on the 'Originator' picker. . 'Originator' picker mockup - . . . Originator in this use case = Broker LO. . . This picker should have columns for 'Id', 'First Name', 'Last Name', and 'Office Phone' . . This picker should contain all active Broker Employees for the selected Company. . . . . . Picker should display 5 items at a time by default. Users can choose to display either 5, 10, or 20 items in a single page, and screen should display total list of items given the selected number of pages. (same as above mockup) . . Users should be able to enter search criteria with results to appear after clicking 'Search'. Search function should return partial matches similar to what was mentioned in 'Company' picker section. . . After user clicks on a result from the list, popup should close and selected Originator should pull into the 'Originator' field . . Clicking 'Close' without selecting a result from the list should close out the popup without updating the 'Originator' field . . . . . . . . Notes:. . -Screen should look similar to how 'Rep & Branch' interface behaves now - when a picker is opened, the selected picker should popup in the center of the screen and the background should slightly grey itself out. . Example of current state 'Rep & Branch' screen with picker open - . . -Broker users who also see this interface do not have access to 'Select a Company' so they would be considered out of scope. We. . should not. . update. . their UI. . . . -If a logged in user only has a single Company that would be available for picking, 'Select a Company' picker should intelligently default to that single Company. . -Same behavior should be coded in for 'Originator' picker. If a selected Company has only one active Originator selection available, the 'Originator' picker should default to that selection. . . . . . . .
+ALL_CHANNELS = ["RTL", "WHL", "DTC", "CL1"]
 
 
+# -------------------------------------------------
+# Behavioral Channel Detection
+# -------------------------------------------------
+def detect_channels(text: str) -> list:
+
+    logger.info("Behavioral channel detection started...")
+
+    t = text.upper()
+
+    # ---------------------------
+    # 1. Persona Detection (strongest signal)
+    # ---------------------------
+    if "NON-BROKER USER IN H2O" in t or "INTERNAL USER" in t:
+        logger.info("Detected INTERNAL H2O user → WHL")
+        return ["WHL"]
+
+    if "BROKER PORTAL" in t or "BROKER LO" in t:
+        logger.info("Detected Broker persona → WHL")
+        return ["WHL"]
+
+    if "CUSTOMER PORTAL" in t or "BORROWER" in t:
+        logger.info("Detected Borrower persona → RTL")
+        return ["RTL"]
+
+    if "IGNITE" in t or "DIRECT TO CONSUMER" in t:
+        logger.info("Detected Ignite flow → DTC")
+        return ["DTC"]
+
+    if "CORRESPONDENT" in t or "CL1" in t:
+        logger.info("Detected Correspondent → CL1")
+        return ["CL1"]
+
+    # ---------------------------
+    # 2. Feature based detection
+    # ---------------------------
+    if "BUSINESS UNIT" in t or "CREATE LOAN ON BEHALF OF" in t:
+        logger.info("Detected internal operations feature → WHL")
+        return ["WHL"]
+
+    # ---------------------------
+    # Fallback
+    # ---------------------------
+    logger.info("No strong signal → using ALL channels")
+    return ALL_CHANNELS
