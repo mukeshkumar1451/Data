@@ -60,15 +60,6 @@ class ExcelExportAgent:
         }
 
     # ---------------------------------------------------------
-    # Extract value helper
-    # ---------------------------------------------------------
-    def _extract(self, text: str, field: str) -> str:
-        if not text:
-            return ""
-        match = re.search(rf"{field}\s*:\s*(.*)", text, re.IGNORECASE)
-        return match.group(1).strip() if match else ""
-
-    # ---------------------------------------------------------
     # Convert inferred setup -> Template precondition
     # ---------------------------------------------------------
     def _format_precondition(self, channel: str, setup_text: str) -> str:
@@ -77,15 +68,16 @@ class ExcelExportAgent:
             logger.warning(f"⚠️ No setup found for {channel}, using fallback")
             return f"Channel: {channel}"
 
-        loan_purpose = self._extract(setup_text, "Loan Purpose")
-        loan_type = self._extract(setup_text, "Loan Type")
-        loan_stage = self._extract(setup_text, "Loan Stage")
-        
-        data=normalize_full_setup(channel, setup_text)
+        # 🔥 USE NORMALIZED STRUCTURE
+        data = normalize_full_setup(channel, setup_text)
+
+        loan_purpose = data.get("loan_purpose", "")
+        loan_type = data.get("loan_type", "")
+        loan_stage = data.get("loan_stage", "")
 
         product_code = resolve_product_code(
-            loan_type = loan_type,
-            channel = channel
+            loan_type=loan_type,
+            channel=channel
         )
 
         portal_map = {
@@ -138,7 +130,6 @@ class ExcelExportAgent:
         os.makedirs(self.output_dir, exist_ok=True)
         wb = load_workbook(self.template_path)
 
-        # ensure sheets exist
         for ch in ["RTL", "WHL", "DTC", "CL1"]:
             if ch not in wb.sheetnames:
                 wb.create_sheet(ch)
@@ -148,19 +139,16 @@ class ExcelExportAgent:
         tc_counter = {ch: 1 for ch in ["RTL", "WHL", "DTC", "CL1"]}
 
         user_story_id = state["user_story_id"]
-
-        # 🔥 inferred setup from retrieval agent
         setup_map = state.get("channel_setup", {})
-
         llm_outputs = state["llm_outputs"]
+
+        logger.info(f"Incoming setup_map keys: {list(setup_map.keys())}")
 
         for channel, llm_text in llm_outputs.items():
 
             tc_data = self._parse_llm_output(llm_text)
-
             ws = sheets[channel]
             row = row_tracker[channel]
-
             tc_id = f"US_{user_story_id}_TC_{tc_counter[channel]:02d}"
 
             setup_text = setup_map.get(channel, "")
@@ -181,7 +169,6 @@ class ExcelExportAgent:
         wb.save(output_file)
         logger.info(f"✅ Excel generated: {output_file}")
 
-        return {
-            **state,
-            "excel_output": output_file
-        }
+        # DO NOT REBUILD STATE
+        state["excel_output"] = output_file
+        return state
