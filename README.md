@@ -1,184 +1,40 @@
-# run_agent.py
+# graph/graph_builder.py
 
-import logging
+from langgraph.graph import StateGraph, END
 
-from graph.graph_builder import build_graph
+from state.rag_state import RAGState
 
-logging.basicConfig(level=logging.INFO)
-
-
-def run(user_story_id: str):
-    app = build_graph()
-
-    initial_state = {        "user_story_id": user_story_id
-    }
-
-    final_state = app.invoke(initial_state)
-
-    print("\n✅ Excel Generated at:")
-    print(final_state["excel_output"])
-
-
-if __name__ == "__main__":
-    # Example run
-    run("718521")
-
-------------------------------------------------------------
-# ado_client.py - Fetches work item data from Azure DevOps using the REST API.
-import os
-import requests
-from dotenv import load_dotenv
-
-load_dotenv()
-
-ORG = os.getenv("ADO_ORG")
-PROJECT = os.getenv("ADO_PROJECT")
-PAT = os.getenv("ADO_PAT")
-
-def fetch_from_ado(work_item_id: str):
-    url = f"https://dev.azure.com/{ORG}/{PROJECT}/_apis/wit/workitems/{work_item_id}?api-version=7.1"
-
-    response = requests.get(
-        url,
-        auth=("", PAT)
-    )
-    response.raise_for_status()
-
-    data = response.json()["fields"]
-
-    # Debug log to inspect the fetched data
-   # print(f"Fetched data from ADO: {data}")
-
-    # Validate required fields
-    required_fields = ["System.Title", "System.Description", "Microsoft.VSTS.Common.AcceptanceCriteria"]
-    missing_fields = [field for field in required_fields if field not in data]
-    if missing_fields:
-        raise KeyError(f"Missing required fields in ADO response: {missing_fields}")
-
-    return {
-        "id": work_item_id,
-        "title": data.get("System.Title", ""),
-        "description": data.get("System.Description", ""),
-        "acceptance_criteria": data.get("Microsoft.VSTS.Common.AcceptanceCriteria", "")
-    }
-----------------------------------------------------------------
-# agents/ado_intelligence_agent.py
-import logging
-from ado.ado_client import fetch_from_ado
-from utils.html_image_processor import process_html_and_download_images
-from utils.channel_detector import detect_channels
-from utils.state_debugger import dump_state_to_txt
+from agents.ado_intelligence_agent import ADOIntelligenceAgent
+from agents.retrieval_intelligence_agent import RetrievalIntelligenceAgent
+from agents.llm_testcase_generator_agent import LLMTestcaseGeneratorAgent
+from agents.excel_export_agent import ExcelExportAgent
 
 
 
-logger = logging.getLogger(__name__)
+def build_graph():
 
+    graph = StateGraph(RAGState)
 
-class ADOIntelligenceAgent:
-    """
-    Responsibilities:
-    1. Fetch User Story from ADO
-    2. Clean Description HTML + download images
-    3. Clean Acceptance Criteria HTML + download images
-    4. Detect Channels from enriched AC
-    5. Prepare channel-specific preconditions
-    6. Prepare full state for downstream agents (LangGraph-safe)
-    """
+    # Initialize agents
+    ado_agent = ADOIntelligenceAgent()
+    retrieval_agent = RetrievalIntelligenceAgent()
+    llm_agent = LLMTestcaseGeneratorAgent()
+    excel_agent = ExcelExportAgent()
+    
 
-    # ---------------------------------------------------------
-    # Channel Precondition Templates (SYSTEM GENERATED)
-    # ---------------------------------------------------------
-    def _build_preconditions(self):
-        return {
-            "RTL": """Create a loan from Customer Portal as per pre-conditions below:
-1. Channel: RTL
-2. Loan Purpose:
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:""",
+    # Add nodes
+    graph.add_node("ado_agent", ado_agent.run)
+    graph.add_node("retrieval_agent", retrieval_agent.run)
+    graph.add_node("llm_agent", llm_agent.run)
+    graph.add_node("excel_agent", excel_agent.run)
+     
 
-            "WHL": """Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: WHL
-2. Loan Purpose:
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:""",
+    # Define flow
+    graph.set_entry_point("ado_agent")
 
-            "DTC": """Create a loan from Ignite Portal as per pre-conditions below:
-1. Channel: DTC
-2. Loan Purpose: Refinance
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:""",
+    graph.add_edge("ado_agent", "retrieval_agent")
+    graph.add_edge("retrieval_agent", "llm_agent")
+    graph.add_edge("llm_agent", "excel_agent")
+    graph.add_edge("excel_agent", END)
 
-            "CL1": """Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: CL1
-2. Loan Purpose:
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:"""
-        }
-
-    # ---------------------------------------------------------
-    # MAIN ENTRY FOR LANGGRAPH
-    # ---------------------------------------------------------
-    def run(self, state: dict) -> dict:
-        logger.info("🚀 ADO Intelligence Agent started")
-
-        user_story_id = state["user_story_id"]
-
-        # Step 1 — Fetch from ADO
-        story = fetch_from_ado(user_story_id)
-
-        # Step 2 — Process HTML + Download Images
-        logger.info("🧹 Processing Description HTML + Images...")
-        description_enriched = process_html_and_download_images(
-            story["description"], user_story_id, "description"
-        )
-
-        logger.info("🧹 Processing Acceptance Criteria HTML + Images...")
-        ac_enriched = process_html_and_download_images(
-            story["acceptance_criteria"], user_story_id, "ac"
-        )
-
-        # Step 3 — Detect Channels
-        channels = detect_channels(ac_enriched)
-        logger.info(f"✅ Channels detected: {channels}")
-
-        # Step 4 — Build Preconditions
-        preconditions = self._build_preconditions()
-
-        # Debug print
-        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
-        print(f"User Story ID: {user_story_id}")
-        print("TITLE:", story["title"])
-        print("\nCHANNELS:", channels)
-        print("\n=====================================================\n")
-
-        # Dump debug state
-        dump_state_to_txt({
-            "user_story_id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
-            "channels": channels
-        })
-
-        # -------------------------------------------------
-        # 🔥 CRITICAL — MUTATE STATE (DO NOT REPLACE)
-        # -------------------------------------------------
-        state["user_story"] = story["title"]
-        state["description"] = description_enriched
-        state["acceptance_criteria"] = ac_enriched
-        state["channels"] = channels
-        state["preconditions"] = preconditions
-
-        # used by LLM + Excel agents
-        state["story"] = {
-            "id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
-        }
-
-        return state
+    return graph.compile()
