@@ -1,46 +1,51 @@
-# mcp_tools/ado_server.py
-from mcp.server.fastmcp import FastMCP
-from utils.ado_client import fetch_from_ado
-import logging
+# mcp_client/ado_mcp_client.py
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-mcp = FastMCP("ado-intelligence")
-
-# ---------------------------------------------------------
-# TOOL: Get User Story From Azure DevOps
-# ---------------------------------------------------------
-@mcp.tool()
-def get_user_story(work_item_id: str) -> dict:
-    """
-    Fetch a User Story from Azure DevOps by ID.
-
-    Args:
-        work_item_id: Azure DevOps Work Item ID
-
-    Returns:
-        id, title, description, acceptance_criteria
-    """
-
-    logger.info(f"Fetching ADO work item: {work_item_id}")
-
-    try:
-        data = fetch_from_ado(work_item_id)
-
-        return {
-            "success": True,
-            "data": data
-        }
-
-    except Exception as e:
-        logger.exception("ADO fetch failed")
-        return {
-            "success": False,
-            "error": str(e)
-        }
+import asyncio
+from mcp.client.session import ClientSession
+from mcp.client.stdio import stdio_client
 
 
-# Required for VS Code MCP runtime
-if __name__ == "__main__":
-    mcp.run(transport="stdio")
+class AdoMCPClient:
+
+    def __init__(self):
+        self.session = None
+        self.client = None
+
+    # --------------------------------------------
+    # Start MCP server process and connect
+    # --------------------------------------------
+    async def connect(self):
+        self.client = await stdio_client(
+            command="python",
+            args=["mcp_tools/ado_server.py"]
+        )
+        self.session = await ClientSession.create(self.client)
+
+    # --------------------------------------------
+    # Call MCP Tool
+    # --------------------------------------------
+    async def get_user_story(self, work_item_id: str):
+        result = await self.session.call_tool(
+            "get_user_story",
+            {"work_item_id": work_item_id}
+        )
+        return result.content[0].text
+
+    # --------------------------------------------
+    async def close(self):
+        if self.session:
+            await self.session.close()
+        if self.client:
+            await self.client.close()
+
+
+# synchronous wrapper (so your agents can call normally)
+def fetch_user_story_via_mcp(work_item_id: str):
+    async def _run():
+        client = AdoMCPClient()
+        await client.connect()
+        data = await client.get_user_story(work_item_id)
+        await client.close()
+        return data
+
+    return asyncio.run(_run())
