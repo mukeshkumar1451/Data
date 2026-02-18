@@ -1,40 +1,54 @@
-# graph/graph_builder.py
+=========== ADO INTELLIGENCE AGENT OUTPUT ===========
 
-from langgraph.graph import StateGraph, END
+User Story ID:
+718521
 
-from state.rag_state import RAGState
+----------- TITLE -----------
+Modernized Audit additions - DIS > Generate Disclosures Fields
 
-from agents.ado_intelligence_agent import ADOIntelligenceAgent
-from agents.retrieval_intelligence_agent import RetrievalIntelligenceAgent
-from agents.llm_testcase_generator_agent import LLMTestcaseGeneratorAgent
-from agents.excel_export_agent import ExcelExportAgent
+----------- ENRICHED DESCRIPTION -----------
+Business would like to add the following fields to Modernized Audit. 
+ 
+DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
+ 
+ 
+Intent to Proceed -  
+ 
+ 
+Mortgage Broker Fee/Compensation Agreement -  
+ 
+*Appears to be privilege restrictedMortgage Broker License Type -  
+ 
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
+**Also appears to be privilege restricted
 
+[IMAGE DOWNLOADED: downloads\718521\description\image_1.png]
+[IMAGE DOWNLOADED: downloads\718521\description\image_2.png]
+[IMAGE DOWNLOADED: downloads\718521\description\image_3.png]
+[IMAGE DOWNLOADED: downloads\718521\description\image_4.png]
 
+----------- CHANNELS -----------
+['RTL', 'WHL', 'DTC', 'CL1']
 
-def build_graph():
+----------- ENRICHED ACCEPTANCE CRITERIA -----------
+Business would like to add the following fields to Modernized Audit. 
+ 
+DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
+ 
+ 
+Intent to Proceed -  
+ 
+ 
+Mortgage Broker Fee/Compensation Agreement -  
+ 
+*Appears to be privilege restrictedMortgage Broker License Type -  
+ 
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
+**Also appears to be privilege restricted
 
-    graph = StateGraph(RAGState)
+[IMAGE DOWNLOADED: downloads\718521\ac\image_1.png]
+[IMAGE DOWNLOADED: downloads\718521\ac\image_2.png]
+[IMAGE DOWNLOADED: downloads\718521\ac\image_3.png]
+[IMAGE DOWNLOADED: downloads\718521\ac\image_4.png]
 
-    # Initialize agents
-    ado_agent = ADOIntelligenceAgent()
-    retrieval_agent = RetrievalIntelligenceAgent()
-    llm_agent = LLMTestcaseGeneratorAgent()
-    excel_agent = ExcelExportAgent()
-    
-
-    # Add nodes
-    graph.add_node("ado_agent", ado_agent.run)
-    graph.add_node("retrieval_agent", retrieval_agent.run)
-    graph.add_node("llm_agent", llm_agent.run)
-    graph.add_node("excel_agent", excel_agent.run)
-     
-
-    # Define flow
-    graph.set_entry_point("ado_agent")
-
-    graph.add_edge("ado_agent", "retrieval_agent")
-    graph.add_edge("retrieval_agent", "llm_agent")
-    graph.add_edge("llm_agent", "excel_agent")
-    graph.add_edge("excel_agent", END)
-
-    return graph.compile()
+----------- PRECONDITIONS -----------
