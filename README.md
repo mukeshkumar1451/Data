@@ -1,81 +1,184 @@
-# mcp_tools/qa_mcp_server.py
+# run_agent.py
 
-from mcp.server.fastmcp import FastMCP
-import sys
-import os
-import traceback
+import logging
 
-# allow project imports
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from graph.graph_builder import build_graph
 
-from run_agent import run
-from agents.ado_intelligence_agent import ADOIntelligenceAgent
-
-mcp = FastMCP("mortgage-ai")
-
-# ------------------------------------------------------------
-# Tool 1 — FULL TESTCASE GENERATION
-# ------------------------------------------------------------
-@mcp.tool()
-def generate_testcases(work_item_id: str) -> str:
-    """
-    Generate full mortgage testcases from an Azure DevOps work item.
-    Returns the generated excel path.
-    """
-    try:
-        result = run(work_item_id)
-        return f"Testcases generated successfully.\nFile: {result}"
-    except Exception:
-        return traceback.format_exc()
+logging.basicConfig(level=logging.INFO)
 
 
-# ------------------------------------------------------------
-# Tool 2 — ONLY ANALYZE USER STORY
-# ------------------------------------------------------------
-@mcp.tool()
-def analyze_userstory(work_item_id: str) -> str:
-    """
-    Analyze ADO work item and return extracted details (channels, AC, description).
-    """
-    try:
-        agent = ADOIntelligenceAgent()
-        state = {"user_story_id": work_item_id}
-        output = agent.run(state)
+def run(user_story_id: str):
+    app = build_graph()
 
-        return f"""
-USER STORY ANALYSIS
+    initial_state = {        "user_story_id": user_story_id
+    }
 
-Channels: {output.get("channels")}
-Title: {output.get("user_story")}
-Description: {output.get("description")[:800]}
-Acceptance Criteria: {output.get("acceptance_criteria")[:800]}
-"""
-    except Exception:
-        return traceback.format_exc()
+    final_state = app.invoke(initial_state)
+
+    print("\n✅ Excel Generated at:")
+    print(final_state["excel_output"])
 
 
-# ------------------------------------------------------------
-# Tool 3 — DEBUG PRECONDITIONS
-# ------------------------------------------------------------
-@mcp.tool()
-def get_preconditions(work_item_id: str) -> str:
-    """
-    Returns inferred loan setup per channel.
-    """
-    try:
-        from graph.graph_builder import build_graph
-
-        app = build_graph()
-        state = {"user_story_id": work_item_id}
-        result = app.invoke(state)
-
-        return str(result.get("channel_setup"))
-    except Exception:
-        return traceback.format_exc()
-
-
-# ------------------------------------------------------------
-# START SERVER
-# ------------------------------------------------------------
 if __name__ == "__main__":
-    mcp.run()
+    # Example run
+    run("718521")
+
+------------------------------------------------------------
+# ado_client.py - Fetches work item data from Azure DevOps using the REST API.
+import os
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+ORG = os.getenv("ADO_ORG")
+PROJECT = os.getenv("ADO_PROJECT")
+PAT = os.getenv("ADO_PAT")
+
+def fetch_from_ado(work_item_id: str):
+    url = f"https://dev.azure.com/{ORG}/{PROJECT}/_apis/wit/workitems/{work_item_id}?api-version=7.1"
+
+    response = requests.get(
+        url,
+        auth=("", PAT)
+    )
+    response.raise_for_status()
+
+    data = response.json()["fields"]
+
+    # Debug log to inspect the fetched data
+   # print(f"Fetched data from ADO: {data}")
+
+    # Validate required fields
+    required_fields = ["System.Title", "System.Description", "Microsoft.VSTS.Common.AcceptanceCriteria"]
+    missing_fields = [field for field in required_fields if field not in data]
+    if missing_fields:
+        raise KeyError(f"Missing required fields in ADO response: {missing_fields}")
+
+    return {
+        "id": work_item_id,
+        "title": data.get("System.Title", ""),
+        "description": data.get("System.Description", ""),
+        "acceptance_criteria": data.get("Microsoft.VSTS.Common.AcceptanceCriteria", "")
+    }
+----------------------------------------------------------------
+# agents/ado_intelligence_agent.py
+import logging
+from ado.ado_client import fetch_from_ado
+from utils.html_image_processor import process_html_and_download_images
+from utils.channel_detector import detect_channels
+from utils.state_debugger import dump_state_to_txt
+
+
+
+logger = logging.getLogger(__name__)
+
+
+class ADOIntelligenceAgent:
+    """
+    Responsibilities:
+    1. Fetch User Story from ADO
+    2. Clean Description HTML + download images
+    3. Clean Acceptance Criteria HTML + download images
+    4. Detect Channels from enriched AC
+    5. Prepare channel-specific preconditions
+    6. Prepare full state for downstream agents (LangGraph-safe)
+    """
+
+    # ---------------------------------------------------------
+    # Channel Precondition Templates (SYSTEM GENERATED)
+    # ---------------------------------------------------------
+    def _build_preconditions(self):
+        return {
+            "RTL": """Create a loan from Customer Portal as per pre-conditions below:
+1. Channel: RTL
+2. Loan Purpose:
+3. Loan Type:
+4. Product Code:
+5. Loan Stage:""",
+
+            "WHL": """Create a loan from Broker Portal as per pre-conditions below:
+1. Channel: WHL
+2. Loan Purpose:
+3. Loan Type:
+4. Product Code:
+5. Loan Stage:""",
+
+            "DTC": """Create a loan from Ignite Portal as per pre-conditions below:
+1. Channel: DTC
+2. Loan Purpose: Refinance
+3. Loan Type:
+4. Product Code:
+5. Loan Stage:""",
+
+            "CL1": """Create a loan from Broker Portal as per pre-conditions below:
+1. Channel: CL1
+2. Loan Purpose:
+3. Loan Type:
+4. Product Code:
+5. Loan Stage:"""
+        }
+
+    # ---------------------------------------------------------
+    # MAIN ENTRY FOR LANGGRAPH
+    # ---------------------------------------------------------
+    def run(self, state: dict) -> dict:
+        logger.info("🚀 ADO Intelligence Agent started")
+
+        user_story_id = state["user_story_id"]
+
+        # Step 1 — Fetch from ADO
+        story = fetch_from_ado(user_story_id)
+
+        # Step 2 — Process HTML + Download Images
+        logger.info("🧹 Processing Description HTML + Images...")
+        description_enriched = process_html_and_download_images(
+            story["description"], user_story_id, "description"
+        )
+
+        logger.info("🧹 Processing Acceptance Criteria HTML + Images...")
+        ac_enriched = process_html_and_download_images(
+            story["acceptance_criteria"], user_story_id, "ac"
+        )
+
+        # Step 3 — Detect Channels
+        channels = detect_channels(ac_enriched)
+        logger.info(f"✅ Channels detected: {channels}")
+
+        # Step 4 — Build Preconditions
+        preconditions = self._build_preconditions()
+
+        # Debug print
+        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
+        print(f"User Story ID: {user_story_id}")
+        print("TITLE:", story["title"])
+        print("\nCHANNELS:", channels)
+        print("\n=====================================================\n")
+
+        # Dump debug state
+        dump_state_to_txt({
+            "user_story_id": user_story_id,
+            "title": story["title"],
+            "description": description_enriched,
+            "acceptance_criteria": ac_enriched,
+            "channels": channels
+        })
+
+        # -------------------------------------------------
+        # 🔥 CRITICAL — MUTATE STATE (DO NOT REPLACE)
+        # -------------------------------------------------
+        state["user_story"] = story["title"]
+        state["description"] = description_enriched
+        state["acceptance_criteria"] = ac_enriched
+        state["channels"] = channels
+        state["preconditions"] = preconditions
+
+        # used by LLM + Excel agents
+        state["story"] = {
+            "id": user_story_id,
+            "title": story["title"],
+            "description": description_enriched,
+            "acceptance_criteria": ac_enriched,
+        }
+
+        return state
