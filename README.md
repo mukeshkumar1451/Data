@@ -1,37 +1,46 @@
-# ado_client.py - Fetches work item data from Azure DevOps using the REST API.
-import os
-import requests
-from dotenv import load_dotenv
+# mcp_tools/ado_server.py
+from mcp.server.fastmcp import FastMCP
+from utils.ado_client import fetch_from_ado
+import logging
 
-load_dotenv()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-ORG = os.getenv("ADO_ORG")
-PROJECT = os.getenv("ADO_PROJECT")
-PAT = os.getenv("ADO_PAT")
+mcp = FastMCP("ado-intelligence")
 
-def fetch_from_ado(work_item_id: str):
-    url = f"https://dev.azure.com/{ORG}/{PROJECT}/_apis/wit/workitems/{work_item_id}?api-version=7.1"
+# ---------------------------------------------------------
+# TOOL: Get User Story From Azure DevOps
+# ---------------------------------------------------------
+@mcp.tool()
+def get_user_story(work_item_id: str) -> dict:
+    """
+    Fetch a User Story from Azure DevOps by ID.
 
-    response = requests.get(
-        url,
-        auth=("", PAT)
-    )
-    response.raise_for_status()
+    Args:
+        work_item_id: Azure DevOps Work Item ID
 
-    data = response.json()["fields"]
+    Returns:
+        id, title, description, acceptance_criteria
+    """
 
-    # Debug log to inspect the fetched data
-   # print(f"Fetched data from ADO: {data}")
+    logger.info(f"Fetching ADO work item: {work_item_id}")
 
-    # Validate required fields
-    required_fields = ["System.Title", "System.Description", "Microsoft.VSTS.Common.AcceptanceCriteria"]
-    missing_fields = [field for field in required_fields if field not in data]
-    if missing_fields:
-        raise KeyError(f"Missing required fields in ADO response: {missing_fields}")
+    try:
+        data = fetch_from_ado(work_item_id)
 
-    return {
-        "id": work_item_id,
-        "title": data.get("System.Title", ""),
-        "description": data.get("System.Description", ""),
-        "acceptance_criteria": data.get("Microsoft.VSTS.Common.AcceptanceCriteria", "")
-    }
+        return {
+            "success": True,
+            "data": data
+        }
+
+    except Exception as e:
+        logger.exception("ADO fetch failed")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# Required for VS Code MCP runtime
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
