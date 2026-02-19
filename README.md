@@ -1,4 +1,3 @@
-
 import logging
 from typing import Dict, List
 
@@ -14,8 +13,11 @@ logger = logging.getLogger(__name__)
 
 class RetrievalIntelligenceAgent:
 
+    # =========================================================
+    # INIT
+    # =========================================================
     def __init__(self):
-        # Azure OpenAI
+
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
@@ -25,16 +27,15 @@ class RetrievalIntelligenceAgent:
         self.embed_model = get("EMBEDDING_MODEL")
         self.chat_model = get("CHAT_MODEL")
 
-        # Azure Search
         self.search_client = SearchClient(
             endpoint=get("AZURE_SEARCH_ENDPOINT"),
             index_name=get("AZURE_SEARCH_INDEX"),
             credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
         )
 
-    # ---------------------------------------------------------
-    # Embedding
-    # ---------------------------------------------------------
+    # =========================================================
+    # EMBEDDING
+    # =========================================================
     def _embed(self, text: str) -> List[float]:
         emb = self.openai.embeddings.create(
             model=self.embed_model,
@@ -42,10 +43,11 @@ class RetrievalIntelligenceAgent:
         )
         return emb.data[0].embedding
 
-    # ---------------------------------------------------------
-    # Generic Vector Retrieval
-    # ---------------------------------------------------------
+    # =========================================================
+    # HYBRID VECTOR SEARCH
+    # =========================================================
     def _vector_retrieve(self, query_text: str, channel: str, ktype: str, topk: int):
+
         vector_query = VectorizedQuery(
             vector=self._embed(query_text),
             fields="embedding",
@@ -64,10 +66,11 @@ class RetrievalIntelligenceAgent:
 
         return list(results)
 
-    # ---------------------------------------------------------
-    # Rerank ONLY testcases
-    # ---------------------------------------------------------
+    # =========================================================
+    # RERANK TESTCASES
+    # =========================================================
     def _rerank_testcases(self, query_text: str, docs: List[Dict]):
+
         if not docs:
             return []
 
@@ -77,7 +80,7 @@ class RetrievalIntelligenceAgent:
 Document {idx}
 TestCaseId: {d.get('testCaseId')}
 Content:
-{d['content']}
+{d.get('content')}
 ---------------------
 """
 
@@ -107,45 +110,42 @@ Do NOT explain.
 
         return ordered[:10]
 
-    # ---------------------------------------------------------
-    # Convert retrieved docs → readable context
-    # ---------------------------------------------------------
-    def _knowledge_to_text(self, docs: List[Dict]) -> str:
-        text = ""
-        for d in docs:
-            if not d:
-                continue
-            text += "\n" + d.get("content", "")
-        return text[:12000]  # token safety
-
-    # ---------------------------------------------------------
-    # REAL SETUP INFERENCE (RAG POWERED)
-    # ---------------------------------------------------------
+    # =========================================================
+    # SETUP INFERENCE (CHANNEL AWARE RAG)
+    # =========================================================
     def _infer_setup(self, channel: str, query_text: str, knowledge_docs: List[Dict]):
-        # Build knowledge context from retrieved flows & rules
+
         knowledge_context = ""
         for d in knowledge_docs[:8]:
-            knowledge_context += f"\n---\n{d['content']}\n"
+            knowledge_context += f"\n---\n{d.get('content','')}\n"
 
         prompt = f"""
-You are a Mortgage Domain Expert QA.
+You are a Mortgage Product SME.
 
-Different channels DO NOT use identical loan types.
-You must infer the MOST REALISTIC loan setup based on system workflow.
+Each channel represents a DIFFERENT business workflow.
 
-CHANNEL: {channel}
+Retail (RTL) = loan officer + borrower interaction
+Wholesale (WHL) = broker originated
+DTC = borrower self-service digital flow
+CL1 = correspondent purchase after origination
 
-USER STORY:
+You MUST infer a setup NATURAL to THAT workflow only.
+
+CHANNEL:
+{channel}
+
+CHANNEL WORKFLOW:
 {query_text}
 
-SYSTEM KNOWLEDGE (authoritative):
+SYSTEM KNOWLEDGE:
 {knowledge_context}
 
 Rules:
-• Choose the loan type that naturally occurs in this channel's lifecycle
-• Retail ≠ Wholesale ≠ DTC ≠ Broker behavior
-• Prefer realistic production setup, not generic coverage
-• DO NOT pick same loan for every channel unless evidence proves it
+• DO NOT reuse same loan setup across channels
+• Prefer production-realistic loan
+• Choose stage where this workflow logically occurs
+• Broker channels rarely behave like retail
+• Correspondent rarely originates new loans
 
 Return ONLY:
 
@@ -164,20 +164,21 @@ Existing Conditions:
 
         return resp.choices[0].message.content.strip()
 
-    # ---------------------------------------------------------
-    # Build final context per channel
-    # ---------------------------------------------------------
-    def _build_channel_context(self, query_text: str, channel: str):
-        logger.info(f"🔎 Hybrid retrieval for {channel}")
+    # =========================================================
+    # BUILD CONTEXT PER CHANNEL
+    # =========================================================
+    def _build_channel_context(self, channel_text: str, channel: str):
 
-        flows = self._vector_retrieve(query_text, channel, "e2e_pdf_flow", 6)
-        rules = self._vector_retrieve(query_text, channel, "e2e_excel", 6)
-        guidelines = self._vector_retrieve(query_text, channel, "step_guideline", 6)
-        tests = self._vector_retrieve(query_text, channel, "testcase", 40)
-        reranked_tests = self._rerank_testcases(query_text, tests)
+        logger.info(f"🔎 Hybrid retrieval for {channel} using channel specific workflow")
 
-        #  PASS KNOWLEDGE INTO SETUP INFERENCE
-        setup = self._infer_setup(channel, query_text, flows + rules + reranked_tests[:5])
+        flows = self._vector_retrieve(channel_text, channel, "e2e_pdf_flow", 6)
+        rules = self._vector_retrieve(channel_text, channel, "e2e_excel", 6)
+        guidelines = self._vector_retrieve(channel_text, channel, "step_guideline", 6)
+
+        tests = self._vector_retrieve(channel_text, channel, "testcase", 40)
+        reranked_tests = self._rerank_testcases(channel_text, tests)
+
+        setup = self._infer_setup(channel, channel_text, flows + rules + reranked_tests[:5])
 
         logger.info(f"\n Inferred Setup for {channel}:\n{setup}\n")
 
@@ -189,22 +190,33 @@ Existing Conditions:
             "setup": setup
         }
 
-    # ---------------------------------------------------------
-    # LangGraph Entry
-    # ---------------------------------------------------------
+    # =========================================================
+    # LANGGRAPH ENTRY
+    # =========================================================
     def run(self, state: Dict) -> Dict:
-        logger.info(" Retrieval Intelligence Agent (Hybrid Mode + Setup Inference)")
 
-        query_text = f"""
+        logger.info("🚀 Retrieval Intelligence Agent (Channel Aware RAG)")
+
+        retrieved_docs = {}
+
+        # channel specific story produced by ADO agent
+        channel_contexts = state.get("channel_context", {})
+
+        for channel in state["channels"]:
+
+            # 🔥 KEY FIX — channel specific retrieval
+            channel_text = channel_contexts.get(channel)
+
+            if not channel_text or len(channel_text.strip()) < 30:
+                logger.warning(f"⚠️ No specific context for {channel}, falling back to full story")
+
+                channel_text = f"""
 User Story: {state['user_story']}
 Description: {state['description']}
 Acceptance Criteria: {state['acceptance_criteria']}
 """
 
-        retrieved_docs = {}
-
-        for channel in state["channels"]:
-            retrieved_docs[channel] = self._build_channel_context(query_text, channel)
+            retrieved_docs[channel] = self._build_channel_context(channel_text, channel)
 
         state["retrieved_docs"] = retrieved_docs
         state["channel_setup"] = {ch: retrieved_docs[ch]["setup"] for ch in retrieved_docs}
@@ -212,4 +224,3 @@ Acceptance Criteria: {state['acceptance_criteria']}
         logger.info(f"\n final channel setups: {state['channel_setup']} \n")
 
         return state
-
