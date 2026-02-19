@@ -1,13 +1,12 @@
-
 import logging
+import json
+from openai import AzureOpenAI
+
 from ado.ado_client import fetch_from_ado
 from utils.html_image_processor import process_html_and_download_images
 from utils.channel_detector import detect_channels
 from utils.state_debugger import dump_state_to_txt
-from openai import AzureOpenAI
 from config.config import get
-import json
-
 
 
 logger = logging.getLogger(__name__)
@@ -19,25 +18,26 @@ class ADOIntelligenceAgent:
     1. Fetch User Story from ADO
     2. Clean Description HTML + download images
     3. Clean Acceptance Criteria HTML + download images
-    4. Detect Channels from enriched AC
-    5. Prepare channel-specific preconditions
-    6. Prepare full state for downstream agents (LangGraph-safe)
+    4. Detect Channels
+    5. 🔥 Derive channel specific flows (NEW)
+    6. Prepare state for downstream agents
     """
 
     # ---------------------------------------------------------
-    # Channel Precondition Templates (SYSTEM GENERATED)
+    # INIT
     # ---------------------------------------------------------
     def __init__(self):
-        # Azure OpenAI
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
             api_version=get("AZURE_OPENAI_API_VERSION"),
         )
 
-       
         self.model = get("CHAT_MODEL")
 
+    # ---------------------------------------------------------
+    # Channel Precondition Templates
+    # ---------------------------------------------------------
     def _build_preconditions(self):
         return {
             "RTL": """Create a loan from Customer Portal as per pre-conditions below:
@@ -70,93 +70,28 @@ class ADOIntelligenceAgent:
         }
 
     # ---------------------------------------------------------
-    # MAIN ENTRY FOR LANGGRAPH
+    # 🔥 NEW — FLOW DERIVATION
     # ---------------------------------------------------------
-    def run(self, state: dict) -> dict:
-        logger.info(" ADO Intelligence Agent started")
+    def _derive_channel_context(self, description: str, ac: str, channels):
 
-        user_story_id = state["user_story_id"]
+        logger.info("🧠 Deriving channel specific workflows...")
 
-        # Step 1 — Fetch from ADO
-        story = fetch_from_ado(user_story_id)
-
-        # Step 2 — Process HTML + Download Images
-        logger.info(" Processing Description HTML + Images...")
-        description_enriched = process_html_and_download_images(
-            story["description"], user_story_id, "description"
-        )
-
-        logger.info(" Processing Acceptance Criteria HTML + Images...")
-        ac_enriched = process_html_and_download_images(
-            story["acceptance_criteria"], user_story_id, "ac"
-        )
-
-        # Step 3 — Detect Channels
-        channels = detect_channels(ac_enriched)
-        logger.info(f" Channels detected: {channels}")
-
-        # Step 4 — Build Preconditions
-        preconditions = self._build_preconditions()
-
-        # Debug print
-        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
-        print(f"User Story ID: {user_story_id}")
-        print("TITLE:", story["title"])
-        print("\nCHANNELS:", channels)
-        print("\n=====================================================\n")
-
-        # Dump debug state
-        dump_state_to_txt({
-            "user_story_id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
-            "channels": channels
-        })
-
-        # -------------------------------------------------
-        #  CRITICAL — MUTATE STATE (DO NOT REPLACE)
-        # -------------------------------------------------
-        state["user_story"] = story["title"]
-        state["description"] = description_enriched
-        state["acceptance_criteria"] = ac_enriched
-        state["channels"] = channels
-        state["preconditions"] = preconditions
-
-        # used by LLM + Excel agents
-        state["story"] = {
-            "id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
-        }
-
-        return state
-    
-    # ---------------------------------------------------------
-# Split AC into channel specific flows
-# ---------------------------------------------------------
-def _derive_channel_context(self, description: str, ac: str, channels):
-
-    logger.info("🧠 Deriving channel specific flows from story")
-
-    prompt = f"""
+        prompt = f"""
 You are a mortgage workflow analyst.
 
-Goal:
 Split the story into channel specific workflows.
 
 Channel definitions:
-RTL → loan officer + borrower actions
+RTL → loan officer + borrower interaction
 WHL → broker submission workflow
-DTC → self service borrower portal workflow
+DTC → borrower self service portal
 CL1 → correspondent purchase workflow
 
 Rules:
 - One story may contain multiple workflows
-- Assign each workflow to the MOST appropriate channel
-- If uncertain → keep minimal text
-- NEVER duplicate the full story to all channels
+- Assign each workflow to BEST matching channel
+- DO NOT duplicate full story to all channels
+- Keep only relevant sentences
 
 TEXT:
 DESCRIPTION:
@@ -168,23 +103,99 @@ AC:
 Return STRICT JSON ONLY:
 
 {{
-  "RTL": "...only RTL related flow...",
-  "WHL": "...only WHL related flow...",
-  "DTC": "...only DTC related flow...",
-  "CL1": "...only CL1 related flow..."
+  "RTL": "...",
+  "WHL": "...",
+  "DTC": "...",
+  "CL1": "..."
 }}
 """
 
-    resp = self.openai.chat.completions.create(
-        model=self.model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
+        try:
+            resp = self.openai.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
 
-    content = resp.choices[0].message.content.strip()
+            content = resp.choices[0].message.content.strip()
+            parsed = json.loads(content)
 
-    try:
-        return json.loads(content)
-    except Exception:
-        logger.warning("⚠️ Flow derivation failed → fallback to full story")
-        return {ch: description + "\n" + ac for ch in channels}
+            logger.info("✅ Channel workflows derived successfully")
+            return parsed
+
+        except Exception as e:
+            logger.warning(f"⚠️ Flow derivation failed: {e}")
+            return {ch: description + "\n" + ac for ch in channels}
+
+    # ---------------------------------------------------------
+    # MAIN ENTRY
+    # ---------------------------------------------------------
+    def run(self, state: dict) -> dict:
+        logger.info("🚀 ADO Intelligence Agent started")
+
+        user_story_id = state["user_story_id"]
+
+        # Step 1 — Fetch
+        story = fetch_from_ado(user_story_id)
+
+        # Step 2 — Process HTML
+        logger.info("🧹 Processing Description...")
+        description_enriched = process_html_and_download_images(
+            story["description"], user_story_id, "description"
+        )
+
+        logger.info("🧹 Processing Acceptance Criteria...")
+        ac_enriched = process_html_and_download_images(
+            story["acceptance_criteria"], user_story_id, "ac"
+        )
+
+        # Step 3 — Detect channels
+        channels = detect_channels(ac_enriched)
+        logger.info(f"📡 Channels detected: {channels}")
+
+        # 🔥 Step 4 — Derive channel flows
+        channel_context = self._derive_channel_context(
+            description_enriched,
+            ac_enriched,
+            channels
+        )
+
+        # Step 5 — Preconditions
+        preconditions = self._build_preconditions()
+
+        # Debug
+        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
+        print(f"User Story ID: {user_story_id}")
+        print("TITLE:", story["title"])
+        print("CHANNELS:", channels)
+        print("CHANNEL CONTEXT:", channel_context)
+        print("\n=====================================================\n")
+
+        # Dump debug
+        dump_state_to_txt({
+            "user_story_id": user_story_id,
+            "title": story["title"],
+            "description": description_enriched,
+            "acceptance_criteria": ac_enriched,
+            "channels": channels,
+            "channel_context": channel_context
+        })
+
+        # -------------------------------------------------
+        # MUTATE STATE
+        # -------------------------------------------------
+        state["user_story"] = story["title"]
+        state["description"] = description_enriched
+        state["acceptance_criteria"] = ac_enriched
+        state["channels"] = channels
+        state["preconditions"] = preconditions
+        state["channel_context"] = channel_context  # ⭐ NEW IMPORTANT
+
+        state["story"] = {
+            "id": user_story_id,
+            "title": story["title"],
+            "description": description_enriched,
+            "acceptance_criteria": ac_enriched,
+        }
+
+        return state
