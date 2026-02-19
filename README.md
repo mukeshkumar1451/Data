@@ -1,201 +1,215 @@
+
 import logging
-import json
+from typing import Dict, List
+
+from azure.search.documents import SearchClient
+from azure.search.documents.models import VectorizedQuery
+from azure.core.credentials import AzureKeyCredential
 from openai import AzureOpenAI
 
-from ado.ado_client import fetch_from_ado
-from utils.html_image_processor import process_html_and_download_images
-from utils.channel_detector import detect_channels
-from utils.state_debugger import dump_state_to_txt
 from config.config import get
-
 
 logger = logging.getLogger(__name__)
 
 
-class ADOIntelligenceAgent:
-    """
-    Responsibilities:
-    1. Fetch User Story from ADO
-    2. Clean Description HTML + download images
-    3. Clean Acceptance Criteria HTML + download images
-    4. Detect Channels
-    5. 🔥 Derive channel specific flows (NEW)
-    6. Prepare state for downstream agents
-    """
+class RetrievalIntelligenceAgent:
 
-    # ---------------------------------------------------------
-    # INIT
-    # ---------------------------------------------------------
     def __init__(self):
+        # Azure OpenAI
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
             api_version=get("AZURE_OPENAI_API_VERSION"),
         )
 
-        self.model = get("CHAT_MODEL")
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
+
+        # Azure Search
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
+        )
 
     # ---------------------------------------------------------
-    # Channel Precondition Templates
+    # Embedding
     # ---------------------------------------------------------
-    def _build_preconditions(self):
-        return {
-            "RTL": """Create a loan from Customer Portal as per pre-conditions below:
-1. Channel: RTL
-2. Loan Purpose:
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:""",
-
-            "WHL": """Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: WHL
-2. Loan Purpose:
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:""",
-
-            "DTC": """Create a loan from Ignite Portal as per pre-conditions below:
-1. Channel: DTC
-2. Loan Purpose: Refinance
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:""",
-
-            "CL1": """Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: CL1
-2. Loan Purpose:
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:"""
-        }
+    def _embed(self, text: str) -> List[float]:
+        emb = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text
+        )
+        return emb.data[0].embedding
 
     # ---------------------------------------------------------
-    # 🔥 NEW — FLOW DERIVATION
+    # Generic Vector Retrieval
     # ---------------------------------------------------------
-    def _derive_channel_context(self, description: str, ac: str, channels):
+    def _vector_retrieve(self, query_text: str, channel: str, ktype: str, topk: int):
+        vector_query = VectorizedQuery(
+            vector=self._embed(query_text),
+            fields="embedding",
+            k_nearest_neighbors=topk
+        )
 
-        logger.info("🧠 Deriving channel specific workflows...")
+        filter_query = f"knowledgeType eq '{ktype}' and channels/any(c: c eq '{channel}')"
 
-        prompt = f"""
-You are a mortgage workflow analyst.
+        results = self.search_client.search(
+            search_text=query_text,
+            vector_queries=[vector_query],
+            filter=filter_query,
+            select=["testCaseId", "content", "knowledgeType"],
+            top=topk
+        )
 
-Split the story into channel specific workflows.
+        return list(results)
 
-Channel definitions:
-RTL → loan officer + borrower interaction
-WHL → broker submission workflow
-DTC → borrower self service portal
-CL1 → correspondent purchase workflow
+    # ---------------------------------------------------------
+    # Rerank ONLY testcases
+    # ---------------------------------------------------------
+    def _rerank_testcases(self, query_text: str, docs: List[Dict]):
+        if not docs:
+            return []
 
-Rules:
-- One story may contain multiple workflows
-- Assign each workflow to BEST matching channel
-- DO NOT duplicate full story to all channels
-- Keep only relevant sentences
-
-TEXT:
-DESCRIPTION:
-{description}
-
-AC:
-{ac}
-
-Return STRICT JSON ONLY:
-
-{{
-  "RTL": "...",
-  "WHL": "...",
-  "DTC": "...",
-  "CL1": "..."
-}}
+        combined = ""
+        for idx, d in enumerate(docs, start=1):
+            combined += f"""
+Document {idx}
+TestCaseId: {d.get('testCaseId')}
+Content:
+{d['content']}
+---------------------
 """
 
-        try:
-            resp = self.openai.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0
-            )
+        prompt = f"""
+You are a QA expert.
 
-            content = resp.choices[0].message.content.strip()
-            parsed = json.loads(content)
+User Story:
+{query_text}
 
-            logger.info("✅ Channel workflows derived successfully")
-            return parsed
+Rank the below testcases from MOST relevant to LEAST relevant.
+Return ONLY the TestCaseId list.
+Do NOT explain.
 
-        except Exception as e:
-            logger.warning(f"⚠️ Flow derivation failed: {e}")
-            return {ch: description + "\n" + ac for ch in channels}
+{combined}
+"""
+
+        resp = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+
+        ranking = resp.choices[0].message.content.strip().splitlines()
+        id_map = {d["testCaseId"]: d for d in docs if d.get("testCaseId")}
+
+        ordered = [id_map[x] for x in ranking if x in id_map]
+
+        return ordered[:10]
 
     # ---------------------------------------------------------
-    # MAIN ENTRY
+    # Convert retrieved docs → readable context
     # ---------------------------------------------------------
-    def run(self, state: dict) -> dict:
-        logger.info("🚀 ADO Intelligence Agent started")
+    def _knowledge_to_text(self, docs: List[Dict]) -> str:
+        text = ""
+        for d in docs:
+            if not d:
+                continue
+            text += "\n" + d.get("content", "")
+        return text[:12000]  # token safety
 
-        user_story_id = state["user_story_id"]
+    # ---------------------------------------------------------
+    # REAL SETUP INFERENCE (RAG POWERED)
+    # ---------------------------------------------------------
+    def _infer_setup(self, channel: str, query_text: str, knowledge_docs: List[Dict]):
+        # Build knowledge context from retrieved flows & rules
+        knowledge_context = ""
+        for d in knowledge_docs[:8]:
+            knowledge_context += f"\n---\n{d['content']}\n"
 
-        # Step 1 — Fetch
-        story = fetch_from_ado(user_story_id)
+        prompt = f"""
+You are a Mortgage Domain Expert QA.
 
-        # Step 2 — Process HTML
-        logger.info("🧹 Processing Description...")
-        description_enriched = process_html_and_download_images(
-            story["description"], user_story_id, "description"
+Different channels DO NOT use identical loan types.
+You must infer the MOST REALISTIC loan setup based on system workflow.
+
+CHANNEL: {channel}
+
+USER STORY:
+{query_text}
+
+SYSTEM KNOWLEDGE (authoritative):
+{knowledge_context}
+
+Rules:
+• Choose the loan type that naturally occurs in this channel's lifecycle
+• Retail ≠ Wholesale ≠ DTC ≠ Broker behavior
+• Prefer realistic production setup, not generic coverage
+• DO NOT pick same loan for every channel unless evidence proves it
+
+Return ONLY:
+
+Loan Purpose:
+Loan Type:
+Product:
+Loan Stage:
+Existing Conditions:
+"""
+
+        resp = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
         )
 
-        logger.info("🧹 Processing Acceptance Criteria...")
-        ac_enriched = process_html_and_download_images(
-            story["acceptance_criteria"], user_story_id, "ac"
-        )
+        return resp.choices[0].message.content.strip()
 
-        # Step 3 — Detect channels
-        channels = detect_channels(ac_enriched)
-        logger.info(f"📡 Channels detected: {channels}")
+    # ---------------------------------------------------------
+    # Build final context per channel
+    # ---------------------------------------------------------
+    def _build_channel_context(self, query_text: str, channel: str):
+        logger.info(f"🔎 Hybrid retrieval for {channel}")
 
-        # 🔥 Step 4 — Derive channel flows
-        channel_context = self._derive_channel_context(
-            description_enriched,
-            ac_enriched,
-            channels
-        )
+        flows = self._vector_retrieve(query_text, channel, "e2e_pdf_flow", 6)
+        rules = self._vector_retrieve(query_text, channel, "e2e_excel", 6)
+        guidelines = self._vector_retrieve(query_text, channel, "step_guideline", 6)
+        tests = self._vector_retrieve(query_text, channel, "testcase", 40)
+        reranked_tests = self._rerank_testcases(query_text, tests)
 
-        # Step 5 — Preconditions
-        preconditions = self._build_preconditions()
+        #  PASS KNOWLEDGE INTO SETUP INFERENCE
+        setup = self._infer_setup(channel, query_text, flows + rules + reranked_tests[:5])
 
-        # Debug
-        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
-        print(f"User Story ID: {user_story_id}")
-        print("TITLE:", story["title"])
-        print("CHANNELS:", channels)
-        print("CHANNEL CONTEXT:", channel_context)
-        print("\n=====================================================\n")
+        logger.info(f"\n Inferred Setup for {channel}:\n{setup}\n")
 
-        # Dump debug
-        dump_state_to_txt({
-            "user_story_id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
-            "channels": channels,
-            "channel_context": channel_context
-        })
-
-        # -------------------------------------------------
-        # MUTATE STATE
-        # -------------------------------------------------
-        state["user_story"] = story["title"]
-        state["description"] = description_enriched
-        state["acceptance_criteria"] = ac_enriched
-        state["channels"] = channels
-        state["preconditions"] = preconditions
-        state["channel_context"] = channel_context  # ⭐ NEW IMPORTANT
-
-        state["story"] = {
-            "id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
+        return {
+            "flow": flows,
+            "rules": rules,
+            "guidelines": guidelines,
+            "tests": reranked_tests,
+            "setup": setup
         }
 
+    # ---------------------------------------------------------
+    # LangGraph Entry
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+        logger.info(" Retrieval Intelligence Agent (Hybrid Mode + Setup Inference)")
+
+        query_text = f"""
+User Story: {state['user_story']}
+Description: {state['description']}
+Acceptance Criteria: {state['acceptance_criteria']}
+"""
+
+        retrieved_docs = {}
+
+        for channel in state["channels"]:
+            retrieved_docs[channel] = self._build_channel_context(query_text, channel)
+
+        state["retrieved_docs"] = retrieved_docs
+        state["channel_setup"] = {ch: retrieved_docs[ch]["setup"] for ch in retrieved_docs}
+
+        logger.info(f"\n final channel setups: {state['channel_setup']} \n")
+
         return state
+
