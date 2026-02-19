@@ -1,105 +1,55 @@
-import requests
+# ---------------------------------------------------------
+# Split AC into channel specific flows
+# ---------------------------------------------------------
+def _derive_channel_context(self, description: str, ac: str, channels):
 
-TENANT_ID = "YOUR_TENANT_ID"
-CLIENT_ID = "YOUR_CLIENT_ID"
-CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+    logger.info("🧠 Deriving channel specific flows from story")
 
-SITE_HOST = "corpoffice.sharepoint.com"
-SITE_PATH = "/sites/ops_home"
+    prompt = f"""
+You are a mortgage workflow analyst.
 
-TARGET_FILE_NAME = "sample.pdf"   # <<< FILE TO DOWNLOAD
+Goal:
+Split the story into channel specific workflows.
 
+Channel definitions:
+RTL → loan officer + borrower actions
+WHL → broker submission workflow
+DTC → self service borrower portal workflow
+CL1 → correspondent purchase workflow
 
-# ================= TOKEN =================
-def get_access_token():
-    token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+Rules:
+- One story may contain multiple workflows
+- Assign each workflow to the MOST appropriate channel
+- If uncertain → keep minimal text
+- NEVER duplicate the full story to all channels
 
-    data = {
-        "client_id": CLIENT_ID,
-        "scope": "https://graph.microsoft.com/.default",
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "client_credentials",
-    }
+TEXT:
+DESCRIPTION:
+{description}
 
-    res = requests.post(token_url, data=data)
-    return res.json()["access_token"]
+AC:
+{ac}
 
+Return STRICT JSON ONLY:
 
-# ================= SITE =================
-def get_site_id(token):
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://graph.microsoft.com/v1.0/sites/{SITE_HOST}:{SITE_PATH}"
-    res = requests.get(url, headers=headers)
+{{
+  "RTL": "...only RTL related flow...",
+  "WHL": "...only WHL related flow...",
+  "DTC": "...only DTC related flow...",
+  "CL1": "...only CL1 related flow..."
+}}
+"""
 
-    if res.status_code != 200:
-        print(res.text)
-        exit("❌ Site access denied")
+    resp = self.openai.chat.completions.create(
+        model=self.model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0
+    )
 
-    return res.json()["id"]
+    content = resp.choices[0].message.content.strip()
 
-
-# ================= DRIVE =================
-def get_documents_drive(token, site_id):
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives"
-    res = requests.get(url, headers=headers)
-
-    for drive in res.json()["value"]:
-        if drive["name"] == "Documents":
-            return drive["id"]
-
-    exit("❌ Documents library not found")
-
-
-# ================= FIND FILE =================
-def find_file(token, drive_id, filename):
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root/search(q='{filename}')"
-
-    res = requests.get(url, headers=headers)
-
-    if res.status_code != 200:
-        print(res.text)
-        exit("❌ Search failed")
-
-    results = res.json()["value"]
-
-    for f in results:
-        if f["name"].lower() == filename.lower():
-            print("✅ Found file:", f["name"])
-            return f["id"]
-
-    exit("❌ File not found")
-
-
-# ================= DOWNLOAD =================
-def download_file(token, drive_id, file_id, filename):
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{file_id}/content"
-
-    res = requests.get(url, headers=headers)
-
-    if res.status_code == 200:
-        with open(filename, "wb") as f:
-            f.write(res.content)
-        print("✅ Downloaded:", filename)
-    else:
-        print(res.text)
-        exit("❌ Download failed")
-
-
-# ================= MAIN =================
-if __name__ == "__main__":
-
-    token = get_access_token()
-    print("Token OK")
-
-    site_id = get_site_id(token)
-    print("Site OK")
-
-    drive_id = get_documents_drive(token, site_id)
-    print("Drive OK")
-
-    file_id = find_file(token, drive_id, TARGET_FILE_NAME)
-
-    download_file(token, drive_id, file_id, TARGET_FILE_NAME)
+    try:
+        return json.loads(content)
+    except Exception:
+        logger.warning("⚠️ Flow derivation failed → fallback to full story")
+        return {ch: description + "\n" + ac for ch in channels}
