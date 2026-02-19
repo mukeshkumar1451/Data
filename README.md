@@ -1,215 +1,231 @@
-# agents/ado_intelligence_agent.py
+
 import logging
 import os
 import re
-import base64
+from typing import Dict
 
-from openai import AzureOpenAI
-
-from ado.ado_client import fetch_from_ado
-from utils.html_image_processor import process_html_and_download_images
-from utils.channel_detector import detect_channels
-from utils.state_debugger import dump_state_to_txt
+from openpyxl import load_workbook
 from config.config import get
+from utils.product_mapper import resolve_product_code
+from utils.loan_domain_normalizer import normalize_full_setup
 
 logger = logging.getLogger(__name__)
 
 
-class ADOIntelligenceAgent:
-    """
-    Responsibilities:
-    1. Fetch User Story from ADO
-    2. Clean Description HTML + download images
-    3. OCR images (Vision AI)
-    4. Inject UI text into story context
-    5. Detect Channels
-    6. Prepare state for downstream agents
-    """
+class ExcelExportAgent:
 
-    # ---------------------------------------------------------
-    # INIT — Azure Vision Client
-    # ---------------------------------------------------------
     def __init__(self):
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-        )
-        self.vision_model = get("CHAT_MODEL")  # GPT-4o (vision capable)
+        self.template_path = get("EXCEL_TEMPLATE_PATH")
+        self.output_dir = get("EXCEL_OUTPUT_DIR")
 
     # ---------------------------------------------------------
-    # Encode image → base64
+    # Parse raw LLM text into structured testcase
     # ---------------------------------------------------------
-    def _encode_image(self, path: str) -> str:
-        with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode()
+    def _parse_llm_output(self, llm_text: str) -> Dict:
+        scenario = ""
+        script = ""
+        requirement = ""
+        steps = []
+        step_counter = 1
 
-    # ---------------------------------------------------------
-    # OCR image using GPT-4o
-    # ---------------------------------------------------------
-    def _extract_image_text(self, image_path: str) -> str:
-        try:
-            logger.info(f"🖼 Reading image for OCR: {image_path}")
+        GENERIC_WORDS = ["action", "verify", "check", "navigate", "enter", "select"]
 
-            base64_img = self._encode_image(image_path)
+        for raw in llm_text.splitlines():
+            line = raw.strip()
 
-            resp = self.openai.chat.completions.create(
-                model=self.vision_model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": """
-Extract all visible UI labels, field names, buttons, sections, validation messages.
-Return only raw UI text lines.
-Do not summarize.
-"""
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{base64_img}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                temperature=0
-            )
+            if not line:
+                continue
 
-            text = resp.choices[0].message.content.strip()
+            # ---------------- headers ----------------
+            if line.lower().startswith("scenario:") and not scenario:
+                scenario = line.split(":", 1)[1].strip()
+                continue
 
-            logger.info(f"🧠 OCR Extracted: {text[:150]}...")
+            if line.lower().startswith("script:") and not script:
+                script = line.split(":", 1)[1].strip()
+                continue
 
-            return text
+            if line.lower().startswith("requirement:") and not requirement:
+                requirement = line.split(":", 1)[1].strip()
+                continue
 
-        except Exception as e:
-            logger.warning(f"⚠️ OCR failed for {image_path}: {e}")
-            return ""
+            # ---------------- steps ----------------
+            if re.match(r"^step\s*\d+", line.lower()):
 
-    # ---------------------------------------------------------
-    # Replace [IMAGE: path] → Inject OCR text
-    # ---------------------------------------------------------
-    def _inject_image_text(self, enriched_text: str) -> str:
+                # remove "Step 01"
+                cleaned = re.sub(r"^step\s*\d+\s*", "", line, flags=re.IGNORECASE).strip()
 
-        pattern = r"\[IMAGE:\s*(.*?)\]"
+                # split pipe or legacy format
+                if "|" in cleaned:
+                    parts = [p.strip() for p in cleaned.split("|")]
+                else:
+                    parts = [cleaned]
 
-        def replace(match):
-            path = match.group(1)
+                # remove empties
+                parts = [p for p in parts if p]
 
-            if not os.path.exists(path):
-                return match.group(0)
+                if not parts:
+                    continue
 
-            ocr_text = self._extract_image_text(path)
+                # ---------------- intelligent column mapping ----------------
+                if len(parts) >= 4:
 
-            if not ocr_text:
-                return match.group(0)
+                    first = parts[0].lower()
 
-            return f"\n[SCREEN CONTENT]\n{ocr_text}\n"
+                    # LLM inserted verb column → shift left
+                    if first in GENERIC_WORDS:
+                        desc = parts[1]
+                        screen = parts[2] if len(parts) > 2 else "NA"
+                        data = parts[3] if len(parts) > 3 else "NA"
+                        expected = parts[4] if len(parts) > 4 else "Verify system behavior"
+                    else:
+                        desc = parts[0]
+                        screen = parts[1] if len(parts) > 1 else "NA"
+                        data = parts[2] if len(parts) > 2 else "NA"
+                        expected = parts[3] if len(parts) > 3 else "Verify system behavior"
 
-        return re.sub(pattern, replace, enriched_text)
+                elif len(parts) == 3:
+                    desc, screen, data = parts
+                    expected = "Verify system behavior"
 
-    # ---------------------------------------------------------
-    # Channel Precondition Templates
-    # ---------------------------------------------------------
-    def _build_preconditions(self):
+                elif len(parts) == 2:
+                    desc, screen = parts
+                    data = "NA"
+                    expected = "Verify system behavior"
+
+                else:
+                    desc = parts[0]
+                    screen = "NA"
+                    data = "NA"
+                    expected = "Verify system behavior"
+
+                steps.append({
+                    "step_no": f"Step {step_counter:02d}",
+                    "desc": desc,
+                    "screen": screen,
+                    "data": data,
+                    "expected": expected,
+                })
+
+                step_counter += 1
+
         return {
-            "RTL": """Create a loan from Customer Portal as per pre-conditions below:
-1. Channel: RTL
-2. Loan Purpose:
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:""",
-
-            "WHL": """Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: WHL
-2. Loan Purpose:
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:""",
-
-            "DTC": """Create a loan from Ignite Portal as per pre-conditions below:
-1. Channel: DTC
-2. Loan Purpose: Refinance
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:""",
-
-            "CL1": """Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: CL1
-2. Loan Purpose:
-3. Loan Type:
-4. Product Code:
-5. Loan Stage:"""
+            "scenario": scenario,
+            "script": script,
+            "requirement": requirement,
+            "steps": steps
         }
 
     # ---------------------------------------------------------
-    # MAIN ENTRY — LANGGRAPH
+    # Convert inferred setup -> Template precondition
+    # ---------------------------------------------------------
+    def _format_precondition(self, channel: str, setup_text: str) -> str:
+
+        if not setup_text:
+            logger.warning(f"⚠️ No setup found for {channel}, using fallback")
+            return f"Channel: {channel}"
+
+        # 🔥 USE NORMALIZED STRUCTURE
+        data = normalize_full_setup(channel, setup_text)
+
+        loan_purpose = data["loan_purpose"]
+        loan_type = data["loan_type"]
+        loan_stage = data["loan_stage"]
+
+        product_code = resolve_product_code(
+            loan_type=loan_type,
+            channel=channel
+        )
+
+        portal_map = {
+            "RTL": "Customer Portal",
+            "WHL": "Broker Portal",
+            "CL1": "Broker Portal",
+            "DTC": "Ignite Portal"
+        }
+
+        portal = portal_map.get(channel, "Portal")
+
+        formatted = f"""Create a loan from {portal} as per pre-conditions below:
+1. Channel: {channel}
+2. Loan Purpose: {loan_purpose}
+3. Loan Type: {loan_type}
+4. Product Code: {product_code}
+5. Loan Stage: {loan_stage}"""
+
+        return formatted
+
+    # ---------------------------------------------------------
+    def _write_testcase(self, ws, start_row, tc_id, tc_data, precondition):
+        row = start_row
+
+        for idx, step in enumerate(tc_data["steps"]):
+            ws.cell(row, 1).value = tc_id if idx == 0 else ""
+            ws.cell(row, 2).value = tc_data["script"] if idx == 0 else ""
+            ws.cell(row, 3).value = "NA" if idx == 0 else ""
+            ws.cell(row, 4).value = tc_data["scenario"] if idx == 0 else ""
+            ws.cell(row, 5).value = precondition if idx == 0 else ""
+
+            ws.cell(row, 6).value = step["step_no"]
+            ws.cell(row, 7).value = step["desc"]
+            ws.cell(row, 8).value = step["screen"]
+            ws.cell(row, 9).value = step["data"]
+            ws.cell(row, 10).value = step["expected"]
+
+            ws.cell(row, 11).value = tc_data["requirement"] if idx == 0 else ""
+
+            row += 1
+
+        return row
+
+    # ---------------------------------------------------------
+    # LangGraph entry
     # ---------------------------------------------------------
     def run(self, state: dict) -> dict:
-        logger.info("🚀 ADO Intelligence Agent started")
+        logger.info("📄 Excel Export Agent started")
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        wb = load_workbook(self.template_path)
+
+        for ch in ["RTL", "WHL", "DTC", "CL1"]:
+            if ch not in wb.sheetnames:
+                wb.create_sheet(ch)
+
+        sheets = {name: wb[name] for name in wb.sheetnames}
+        row_tracker = {ch: 2 for ch in ["RTL", "WHL", "DTC", "CL1"]}
+        tc_counter = {ch: 1 for ch in ["RTL", "WHL", "DTC", "CL1"]}
 
         user_story_id = state["user_story_id"]
+        setup_map = state.get("channel_setup", {})
+        llm_outputs = state["llm_outputs"]
 
-        # Step 1 — Fetch ADO
-        story = fetch_from_ado(user_story_id)
+        logger.info(f"Incoming setup_map keys: {list(setup_map.keys())}")
 
-        # Step 2 — Download images
-        logger.info("🧹 Processing Description HTML + Images...")
-        description_enriched = process_html_and_download_images(
-            story["description"], user_story_id, "description"
+        for channel, llm_text in llm_outputs.items():
+
+            tc_data = self._parse_llm_output(llm_text)
+            ws = sheets[channel]
+            row = row_tracker[channel]
+            tc_id = f"US_{user_story_id}_TC_{tc_counter[channel]:02d}"
+
+            setup_text = setup_map.get(channel, "")
+            precondition = self._format_precondition(channel, setup_text)
+
+            logger.info(f"\nFormatted precondition for {channel}:\n{precondition}\n")
+
+            new_row = self._write_testcase(ws, row, tc_id, tc_data, precondition)
+
+            row_tracker[channel] = new_row
+            tc_counter[channel] += 1
+
+        output_file = os.path.join(
+            self.output_dir,
+            f"Indiv_US_{user_story_id}_Test Scripts_v1.0.xlsx"
         )
 
-        logger.info("🧠 Injecting OCR text into Description...")
-        description_enriched = self._inject_image_text(description_enriched)
+        wb.save(output_file)
+        logger.info(f" Excel generated: {output_file}")
 
-        logger.info("🧹 Processing Acceptance Criteria HTML + Images...")
-        ac_enriched = process_html_and_download_images(
-            story["acceptance_criteria"], user_story_id, "ac"
-        )
-
-        logger.info("🧠 Injecting OCR text into Acceptance Criteria...")
-        ac_enriched = self._inject_image_text(ac_enriched)
-
-        # Step 3 — Detect Channels
-        channels = detect_channels(ac_enriched)
-        logger.info(f"✅ Channels detected: {channels}")
-
-        # Step 4 — Preconditions
-        preconditions = self._build_preconditions()
-
-        # Debug print
-        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
-        print(f"User Story ID: {user_story_id}")
-        print("TITLE:", story["title"])
-        print("\nCHANNELS:", channels)
-        print("\n=====================================================\n")
-
-        # Dump debug state (IMPORTANT — verify OCR worked)
-        dump_state_to_txt({
-            "user_story_id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
-            "channels": channels
-        })
-
-        # -------------------------------------------------
-        # Update shared state
-        # -------------------------------------------------
-        state["user_story"] = story["title"]
-        state["description"] = description_enriched
-        state["acceptance_criteria"] = ac_enriched
-        state["channels"] = channels
-        state["preconditions"] = preconditions
-
-        state["story"] = {
-            "id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
-        }
-
+        # DO NOT REBUILD STATE
+        state["excel_output"] = output_file
         return state
