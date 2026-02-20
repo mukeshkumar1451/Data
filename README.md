@@ -1,189 +1,147 @@
-import os
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
-
-def get(key, cast=str):
-    val=os.getenv(key)
-    
-    return cast(val) if val and cast != str else val
-
-	---------------------------------------------
-	# ado_client.py - Fetches work item data from Azure DevOps using the REST API.
-import os
 import requests
-from dotenv import load_dotenv
+from collections import defaultdict
+from urllib.parse import quote
 
 
-load_dotenv()
 
-ORG = os.getenv("ADO_ORG")
-PROJECT = os.getenv("ADO_PROJECT")
-PAT = os.getenv("ADO_PAT")
+# ================= CREDENTIALS =================
+TENANT_ID = ''
+CLIENT_ID = ''
+CLIENT_SECRET = ''
 
-def fetch_from_ado(work_item_id: str):
-    url = f"https://dev.azure.com/{ORG}/{PROJECT}/_apis/wit/workitems/{work_item_id}?api-version=7.1"
+# ================= SHAREPOINT CONFIG =================
+SITE = "https://corpofficeapps.sharepoint.com"
+SITE_PATH = "/sites/Ops_Home/nationalops"
 
-    response = requests.get(
-        url,
-        auth=("", PAT)
-    )
-    response.raise_for_status()
+# Folder extracted from your URL
+START_FOLDER = "Documents/Strategic Initiatives Team Folder/Cognizant UAT Results"
 
-    data = response.json()["fields"]
 
-    # Debug log to inspect the fetched data
-   # print(f"Fetched data from ADO: {data}")
+# ================= TOKEN =================
+def get_token():
+    token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
 
-    # Validate required fields
-    required_fields = ["System.Title", "System.Description", "Microsoft.VSTS.Common.AcceptanceCriteria"]
-    missing_fields = [field for field in required_fields if field not in data]
-    if missing_fields:
-        raise KeyError(f"Missing required fields in ADO response: {missing_fields}")
-
-    return {
-        "id": work_item_id,
-        "title": data.get("System.Title", ""),
-        "description": data.get("System.Description", ""),
-        "acceptance_criteria": data.get("Microsoft.VSTS.Common.AcceptanceCriteria", "")
+    data = {
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "grant_type": "client_credentials",
+        "scope": f"{SITE}/.default"
     }
 
-------------------------------------------
-# run_agent.py
+    res = requests.post(token_url, data=data)
+    if res.status_code != 200:
+        raise Exception("Token failed: " + res.text)
 
-import logging
-
-from graph.graph_builder import build_graph
-
-logging.basicConfig(level=logging.INFO)
+    return res.json()["access_token"]
 
 
-def run(user_story_id: str):
-    app = build_graph()
+# ================= GLOBAL COUNTER =================
+file_counts = defaultdict(int)
+visited = set()
 
-    initial_state = {        "user_story_id": user_story_id
+
+# ================= SCAN FUNCTION =================
+
+
+def scan_folder(token, folder_relative_url):
+
+    if folder_relative_url in visited:
+        return
+    visited.add(folder_relative_url)
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json;odata=nometadata"
     }
 
-    final_state = app.invoke(initial_state)
+    # Full server relative path
+    full_path = f"{SITE_PATH}/{folder_relative_url}"
+    encoded = quote(full_path)
 
-    print("\n Excel Generated at:")
-    print(final_state["excel_output"])
+    url = f"{SITE}{SITE_PATH}/_api/web/GetFolderByServerRelativePath(decodedurl='{encoded}')?$expand=Folders,Files"
 
+    res = requests.get(url, headers=headers)
 
-if __name__ == "__main__":
-    # Example run
-    run("718521")
-----------------------------------------------------
-# utils/html_image_processor.py
+    if res.status_code != 200:
+        print("❌ Cannot access:", folder_relative_url)
+        print(res.text)
+        return
 
-import os
-import re
-import requests
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
+    data = res.json()
 
-load_dotenv()
-ADO_PAT = os.getenv("ADO_PAT")
+    # -------- FILES --------
+    for file in data.get("Files", []):
+        name = file["Name"]
+        ext = name.split(".")[-1].lower() if "." in name else "noext"
+        file_counts[ext] += 1
 
+    # -------- SUBFOLDERS --------
+    for folder in data.get("Folders", []):
+        name = folder["Name"]
 
-# ---------------------------------------------------------
-# Download ADO image
-# ---------------------------------------------------------
-def _download_ado_image(url: str, save_path: str) -> str:
-    try:
-        response = requests.get(url, auth=("", ADO_PAT))
-        response.raise_for_status()
-
-        with open(save_path, "wb") as f:
-            f.write(response.content)
-
-        return save_path
-    except Exception as e:
-        return f"[Image download failed: {e}]"
-
-
-# ---------------------------------------------------------
-# Clean extracted text (VERY IMPORTANT FOR LLM)
-# ---------------------------------------------------------
-def _normalize_text(text: str) -> str:
-    if not text:
-        return ""
-
-    #  Fix broken words: sh ould -> should
-    text = re.sub(r'(\w)\s{2,}(\w)', r'\1\2', text)
-
-    #  Remove excessive spaces
-    text = re.sub(r'[ \t]+', ' ', text)
-
-    #  Join broken lines but keep paragraphs
-    text = re.sub(r'\n(?=[a-z])', ' ', text)
-    text = re.sub(r'\n{2,}', '\n', text)
-
-    #  Remove dot noise produced by ADO formatting
-    text = re.sub(r'\.\s*\.\s*\.\s*', ' ', text)
-
-    #  Remove space before punctuation
-    text = re.sub(r'\s+([.,!?])', r'\1', text)
-
-    #  Normalize colon spacing (important for extractors)
-    text = re.sub(r'\s*:\s*', ': ', text)
-
-    return text.strip()
-
-
-# ---------------------------------------------------------
-# MAIN FUNCTION
-# ---------------------------------------------------------
-def process_html_and_download_images(html: str, story_id: str, section: str) -> str:
-    """
-    Extract readable text + download images from ADO HTML
-
-    section = 'description' or 'ac'
-    """
-
-    if not html:
-        return ""
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    # remove unwanted tags
-    for tag in soup(["script", "style"]):
-        tag.decompose()
-
-    # -------------------------------------------------
-    # IMAGE DOWNLOAD
-    # -------------------------------------------------
-    images = soup.find_all("img")
-
-    img_folder = os.path.join("downloads", story_id, section)
-    os.makedirs(img_folder, exist_ok=True)
-
-    image_references = []
-
-    for idx, img in enumerate(images, start=1):
-        src = img.get("src")
-        if not src:
+        if name.lower() == "forms":
             continue
 
-        save_path = os.path.join(img_folder, f"image_{idx}.png")
-        downloaded_path = _download_ado_image(src, save_path)
+        new_path = f"{folder_relative_url}/{name}"
+        scan_folder(token, new_path)
 
-        #image_references.append(f"[IMAGE DOWNLOADED: {downloaded_path}]")
 
-    # -------------------------------------------------
-    # TEXT EXTRACTION
-    # -------------------------------------------------
-    raw_text = soup.get_text(separator="\n")
+    if folder_relative_url in visited:
+        return
+    visited.add(folder_relative_url)
 
-    clean_text = _normalize_text(raw_text)
+    encoded_path = quote(f"{SITE_PATH}/{folder_relative_url}")
 
-    # -------------------------------------------------
-    # APPEND IMAGE REFERENCES
-    # -------------------------------------------------
-    if image_references:
-        final_text = clean_text + "\n\n" + "\n".join(image_references)
-    else:
-        final_text = clean_text
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json;odata=verbose"
+    }
 
-    return final_text
+    url = f"{SITE}{SITE_PATH}/_api/web/GetFolderByServerRelativeUrl('{encoded_path}')?$expand=Folders,Files"
+
+    res = requests.get(url, headers=headers)
+
+    if res.status_code != 200:
+        print("❌ Cannot access:", folder_relative_url)
+        print(res.text)
+        return
+
+    data = res.json()["d"]
+
+    # ---------- FILES ----------
+    for file in data["Files"]["results"]:
+        name = file["Name"]
+        ext = name.split(".")[-1].lower() if "." in name else "noext"
+        file_counts[ext] += 1
+
+    # ---------- SUBFOLDERS ----------
+    for folder in data["Folders"]["results"]:
+        name = folder["Name"]
+
+        # Skip system folder
+        if name.lower() == "forms":
+            continue
+
+        new_path = f"{folder_relative_url}/{name}"
+        scan_folder(token, new_path)
+
+
+# ================= MAIN =================
+if __name__ == "__main__":
+
+    print("Connecting to SharePoint...")
+    token = get_token()
+    print("✅ Connected\n")
+
+    print("Scanning folders...\n")
+    scan_folder(token, START_FOLDER)
+
+    print("\n========== FILE TYPE COUNT ==========")
+    total = 0
+
+    for ext, count in sorted(file_counts.items()):
+        print(f"{ext.upper():10} : {count}")
+        total += count
+
+    print("-------------------------------------")
+    print("TOTAL FILES :", total)
