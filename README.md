@@ -1,96 +1,66 @@
-from azure.search.documents.indexes import SearchIndexClient
-from azure.search.documents.indexes.models import (
-    SearchIndex,
-    SimpleField,
-    SearchableField,
-    SearchField,
-    SearchFieldDataType,
-    VectorSearch,
-    HnswAlgorithmConfiguration,
-    VectorSearchProfile,
-)
-from azure.core.credentials import AzureKeyCredential
-from config import get
+Total files found: 27
+Already processed: 0
 
 
-def ensure_index():
+Processing: data/excels\Indiv_US_36164_Test Scripts_v1.0.xlsx
+Scanning file: data/excels\Indiv_US_36164_Test Scripts_v1.0.xlsx
+  Processing sheet 'DTC'
+  Processing sheet 'RTL'
+  Processing sheet 'WHL'
+  Processing sheet 'CL1'
+Extracted 34 steps from data/excels\Indiv_US_36164_Test Scripts_v1.0.xlsx        
 
-    endpoint = f"https://{get('AZURE_SEARCH_SERVICE_NAME')}.search.windows.net"
-    credential = AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-    index_name = get("AZURE_SEARCH_INDEX")
-
-    client = SearchIndexClient(endpoint, credential)
-
-    existing = [i.name for i in client.list_indexes()]
-    if index_name in existing:
-        print(f"Index '{index_name}' already exists ✔")
-        return
-
-    print(f"Creating index '{index_name}'...")
-
-    fields = [
-        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
-
-        SearchableField(name="content", type=SearchFieldDataType.String),
-
-        SearchField(
-            name="embedding",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
-            searchable=True,
-            vector_search_dimensions=3072,
-            vector_search_profile_name="vector-profile",
-        ),
-
-        SearchableField(name="metadata", type=SearchFieldDataType.String),
-        SimpleField(name="doc_id", type=SearchFieldDataType.String, filterable=True),
-    ]
-
-    vector_search = VectorSearch(
-        algorithms=[HnswAlgorithmConfiguration(name="hnsw-config")],
-        profiles=[VectorSearchProfile(name="vector-profile", algorithm_configuration_name="hnsw-config")],
-    )
-
-    index = SearchIndex(name=index_name, fields=fields, vector_search=vector_search)
-
-    client.create_index(index)
-
-    print("Index created successfully 🚀")
---------------------------------------------------
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-
-from llama_index.vector_stores.azureaisearch import AzureAISearchVectorStore
-from llama_index.core import StorageContext, VectorStoreIndex
-
-from config import get
-from ingestion.ensure_index import ensure_index
-import settings
-
-
-def build_index(documents):
-
-    # 1️⃣ ensure vector index exists
+Uploading 34 steps to vector DB...
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\Embedding\main_ingest.py", line 30, in <module>
+    build_index(docs)
+    ~~~~~~~~~~~^^^^^^
+  File "C:\Users\h84609n\Desktop\Embedding\ingestion\build_index.py", line 15, in build_index
     ensure_index()
-
-    endpoint = f"https://{get('AZURE_SEARCH_SERVICE_NAME')}.search.windows.net"
-    index_name = get("AZURE_SEARCH_INDEX")
-    credential = AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-
-    search_client = SearchClient(endpoint, index_name, credential)
-
-    vector_store = AzureAISearchVectorStore(
-        search_or_index_client=search_client,
-        id_field_key="id",
-        chunk_field_key="content",
-        embedding_field_key="embedding",
-        metadata_string_field_key="metadata",
-        doc_id_field_key="doc_id",
+    ~~~~~~~~~~~~^^
+  File "C:\Users\h84609n\Desktop\Embedding\ingestion\ensure_index.py", line 24, in ensure_index
+    existing = [i.name for i in client.list_indexes()]
+                                ~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\paging.py", line 136, in __next__
+    return next(self._page_iterator)
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\paging.py", line 82, in __next__
+    self._response = self._get_next(self.continuation_token)
+                     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\search\documents\indexes\_generated\operations\_indexes_operations.py", line 492, in get_next
+    pipeline_response: PipelineResponse = self._client._pipeline.run(  # pylint: 
+disable=protected-access
+                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        _request, stream=_stream, **kwargs
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     )
-
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
-
-    VectorStoreIndex.from_documents(
-        documents,
-        storage_context=storage_context,
-        show_progress=True,
-    )
+    ^
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 242, in run
+    return first_node.send(pipeline_request)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  [Previous line repeated 2 more times]
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\policies\_redirect.py", line 205, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\policies\_retry.py", line 567, in send
+    raise err
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\policies\_retry.py", line 545, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 98, in send
+    response = self.next.send(request)
+  [Previous line repeated 2 more times]
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\_base.py", line 130, in send
+    self._sender.send(request.http_request, **request.context.options),
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\azure\core\pipeline\transport\_requests_basic.py", line 422, in send
+    raise error
+azure.core.exceptions.ServiceRequestError: HTTPSConnection(host='https', port=443): Failed to resolve 'https' ([Errno 11001] getaddrinfo failed)
+(.venv) PS C:\Users\h84609n\Desktop\Embedding> 
