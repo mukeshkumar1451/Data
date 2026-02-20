@@ -39,14 +39,14 @@ class RetrievalIntelligenceAgent:
     def _embed(self, text: str) -> List[float]:
         emb = self.openai.embeddings.create(
             model=self.embed_model,
-            input=text
+            input=text[:8000]  # token safety
         )
         return emb.data[0].embedding
 
     # =========================================================
     # HYBRID VECTOR SEARCH
     # =========================================================
-    def _vector_retrieve(self, query_text: str, channel: str, ktype: str, topk: int):
+    def _vector_retrieve(self, query_text: str, channel: str, topk: int):
 
         vector_query = VectorizedQuery(
             vector=self._embed(query_text),
@@ -85,15 +85,11 @@ Content:
 """
 
         prompt = f"""
-You are a QA expert.
+Rank relevance to this workflow:
 
-User Story:
 {query_text}
 
-Rank the below testcases from MOST relevant to LEAST relevant.
-Return ONLY the TestCaseId list.
-Do NOT explain.
-
+Return ordered TestCaseId only.
 {combined}
 """
 
@@ -106,46 +102,27 @@ Do NOT explain.
         ranking = resp.choices[0].message.content.strip().splitlines()
         id_map = {d["testCaseId"]: d for d in docs if d.get("testCaseId")}
 
-        ordered = [id_map[x] for x in ranking if x in id_map]
-
-        return ordered[:10]
+        return [id_map[x] for x in ranking if x in id_map][:10]
 
     # =========================================================
     # SETUP INFERENCE (CHANNEL AWARE RAG)
     # =========================================================
-    def _infer_setup(self, channel: str, query_text: str, knowledge_docs: List[Dict]):
+    def _infer_setup(self, channel: str, channel_text: str, knowledge_docs: List[Dict]):
 
-        knowledge_context = ""
-        for d in knowledge_docs[:8]:
-            knowledge_context += f"\n---\n{d.get('content','')}\n"
+        knowledge_context = "\n".join(d.get("content","") for d in knowledge_docs[:6])
 
         prompt = f"""
-You are a Mortgage Product SME.
+You are a mortgage domain expert.
 
-Each channel represents a DIFFERENT business workflow.
+Infer a REALISTIC loan setup for THIS channel workflow only.
 
-Retail (RTL) = loan officer + borrower interaction
-Wholesale (WHL) = broker originated
-DTC = borrower self-service digital flow
-CL1 = correspondent purchase after origination
+Channel: {channel}
 
-You MUST infer a setup NATURAL to THAT workflow only.
+Workflow Meaning:
+{channel_text}
 
-CHANNEL:
-{channel}
-
-CHANNEL WORKFLOW:
-{query_text}
-
-SYSTEM KNOWLEDGE:
+System Knowledge:
 {knowledge_context}
-
-Rules:
-• DO NOT reuse same loan setup across channels
-• Prefer production-realistic loan
-• Choose stage where this workflow logically occurs
-• Broker channels rarely behave like retail
-• Correspondent rarely originates new loans
 
 Return ONLY:
 
@@ -169,16 +146,15 @@ Existing Conditions:
     # =========================================================
     def _build_channel_context(self, channel_text: str, channel: str):
 
-        logger.info(f"🔎 Hybrid retrieval for {channel} using channel specific workflow")
+        logger.info(f"🔎 Retrieval for {channel} using channel workflow")
 
-        tests = self._vector_retrieve(channel_text, channel, "testcase", 40)
+        tests = self._vector_retrieve(channel_text, channel, 40)
         reranked_tests = self._rerank_testcases(channel_text, tests)
 
-        setup = self._infer_setup(channel, channel_text, tests)
+        setup = self._infer_setup(channel, channel_text, reranked_tests)
 
         logger.info(f"\n Inferred Setup for {channel}:\n{setup}\n")
 
-        # Ensure compatibility with downstream agents by adding empty lists for removed keys
         return {
             "tests": reranked_tests,
             "setup": setup,
@@ -196,22 +172,17 @@ Existing Conditions:
 
         retrieved_docs = {}
 
-        # channel specific story produced by ADO agent
-        channel_contexts = state.get("channel_context", {})
+        # 🔥 CORRECT KEY
+        channel_contexts = state.get("channel_context_map", {})
 
         for channel in state["channels"]:
 
-            # 🔥 KEY FIX — channel specific retrieval
-            channel_text = channel_contexts.get(channel)
+            channel_text = channel_contexts.get(channel, "").strip()
 
-            if not channel_text or len(channel_text.strip()) < 30:
-                logger.warning(f"⚠️ No specific context for {channel}, falling back to full story")
-
-                channel_text = f"""
-User Story: {state['user_story']}
-Description: {state['description']}
-Acceptance Criteria: {state['acceptance_criteria']}
-"""
+            # smarter fallback (not full story)
+            if len(channel_text) < 20:
+                logger.warning(f"⚠️ Weak context for {channel}, using title only")
+                channel_text = state["user_story"]
 
             retrieved_docs[channel] = self._build_channel_context(channel_text, channel)
 
