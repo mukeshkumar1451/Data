@@ -1,31 +1,27 @@
 Reading Excel files...
-Total steps extracted: 0
-Uploading to Azure AI Search via LlamaIndex...
+Processing: data/excels\Indiv_US_36164_Test Scripts_v1.0.xlsx
+Processing: data/excels\Indiv_US_658373_Test Logs_v1.0.xlsx
 Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\Embedding\main_ingest.py", line 17, in <module>
-    build_index(all_docs)
-    ~~~~~~~~~~~^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\Embedding\ingestion\build_index.py", line 9, in 
-build_index
-    vector_store = AzureAISearchVectorStore(
-        service_name=get("AZURE_SEARCH_SERVICE_NAME"),
-        index_name=get("AZURE_SEARCH_INDEX"),
-        api_key=get("AZURE_SEARCH_KEY"),
-    )
-TypeError: AzureAISearchVectorStore.__init__() missing 6 required positional arguments: 'search_or_index_client', 'id_field_key', 'chunk_field_key', 'embedding_field_key', 'metadata_string_field_key', and 'doc_id_field_key'
-(.venv) PS C:\Users\h84609n\Desktop\Embedding> py main_ingest.py
-Reading Excel files...
-Total steps extracted: 0
-Uploading to Azure AI Search via LlamaIndex...
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\pandas\core\indexes\base.py", line 3812, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7088, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7096, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'Test Case ID / Test Script ID'
+
+The above exception was the direct cause of the following exception:
+
 Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\Embedding\main_ingest.py", line 17, in <module> 
-    build_index(all_docs)
-    ~~~~~~~~~~~^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\Embedding\ingestion\build_index.py", line 9, in 
-build_index
-    vector_store = AzureAISearchVectorStore(
-        service_name=get("AZURE_SEARCH_SERVICE_NAME"),
-        index_name=get("AZURE_SEARCH_INDEX"),
-        api_key=get("AZURE_SEARCH_KEY"),
-    )
-TypeError: AzureAISearchVectorStore.__init__() missing 6 required positional arguments: 'search_or_index_client', 'id_field_key', 'chunk_field_key', 'embedding_field_key', 'metadata_string_field_key', and 'doc_id_field_key'
+  File "C:\Users\h84609n\Desktop\Embedding\main_ingest.py", line 11, in <module> 
+    docs = excel_to_documents(file)
+  File "C:\Users\h84609n\Desktop\Embedding\ingestion\excel_to_documents.py", line 26, in excel_to_documents
+    df[COL_TC] = df[COL_TC].ffill()
+                 ~~^^^^^^^^
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\pandas\core\frame.py", line 4113, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "C:\Users\h84609n\Desktop\Embedding\.venv\Lib\site-packages\pandas\core\indexes\base.py", line 3819, in get_loc
+    raise KeyError(key) from err
+KeyError: 'Test Case ID / Test Script ID'
+(.venv) PS C:\Users\h84609n\Desktop\Embedding> 
