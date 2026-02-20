@@ -1,13 +1,1 @@
-Index created successfully 🚀
-Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\Embedding\main_ingest.py", line 30, in <module> 
-    build_index(docs)
-    ~~~~~~~~~~~^^^^^^
-  File "C:\Users\h84609n\Desktop\Embedding\ingestion\build_index.py", line 23, in build_index
-    vector_store = AzureAISearchVectorStore(
-        search_or_index_client=search_client,
-    ...<3 lines>...
-        doc_id_field_key="doc_id",
-    )
-TypeError: AzureAISearchVectorStore.__init__() missing 1 required positional argument: 'metadata_string_field_key'
-(.venv) PS C:\Users\h84609n\Desktop\Embedding> 
+https://corpofficeapps.sharepoint.com/sites/Ops_Home/nationalops/Shared%20Documents/Forms/AllItems.aspx?FolderCTID=0x01200019F06ED82C4FFA4697E74A78679F937A&View=%7B1A181371%2D7685%2D4A4C%2DA247%2D19B60F2A276E%7D&id=%2Fsites%2FOps%5FHome%2Fnationalops%2FShared%20Documents%2FStrategic%20Initiatives%20Team%20Folder%2FCognizant%20UAT%20Results&viewid=1a181371%2D7685%2D4a4c%2Da247%2D19b60f2a276e
