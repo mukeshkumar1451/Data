@@ -1,6 +1,35 @@
-Channel Behavior Constraints:
-{channel_rules}
+def build_channel_rules(channel: str) -> str:
 
-STRICT RULE:
-You MUST NOT create steps violating channel behavior.
-If a field does not exist in this channel → do not test it.
+    rules = {
+        "RTL": """
+Retail channel rules:
+- Loan officer + borrower interaction only
+- NO broker entities exist
+- NO correspondent purchase flow
+- Broker compensation fields must NOT appear
+- Validate consumer disclosure behavior only
+""",
+
+        "WHL": """
+Wholesale channel rules:
+- Broker originated loan
+- Broker compensation and license validations apply
+- Submission package and broker docs expected
+""",
+
+        "DTC": """
+DTC channel rules:
+- Pure self-service borrower workflow
+- No loan officer and no broker interaction
+- Automated disclosure generation expected
+""",
+
+        "CL1": """
+Correspondent channel rules:
+- Loan already originated externally
+- Purchase advice and acquisition validations apply
+- No borrower application workflow
+"""
+    }
+
+    return rules.get(channel, "")
