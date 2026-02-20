@@ -6,4 +6,4 @@ Traceback (most recent call last):
     ~~~~~~~~~~~~~~~~~~~~^^
   File "C:\Users\h84609n\Desktop\sharepointconnection\.venv\Lib\site-packages\requests\models.py", line 1026, in raise_for_status
     raise HTTPError(http_error_msg, response=self)
-requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://graph.microsoft.com/v1.0/sites/corpofficeapps.sharepoint.com:/sites/Ops_Home:/drive/root:/nationalops/Strategic%20Initiatives%20Team%20Folder/Cognizant%20UAT%20Results/Documents.doc:/content
+requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://graph.microsoft.com/v1.0/sites/corpofficeapps.sharepoint.com:/sites/Ops_Home/nationalops:/drive/root:/Strategic%20Initiatives%20Team%20Folder/Cognizant%20UAT%20Results/Documents.doc:/content
