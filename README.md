@@ -1,107 +1,155 @@
 import requests
-
+from collections import defaultdict
 
 TENANT_ID = ''
 CLIENT_ID = ''
 CLIENT_SECRET = ''
-#https://corpoffice.sharepoint.com/sites/Ops_Home"
-SITE_HOST = "corpoffice.sharepoint.com"
-SITE_PATH = "/sites/Ops_Home"  # <<< PATH TO SEARCH IN
 
- 
+SITE_HOST = "corpoffice.sharepoint.com"
+SITE_PATH = "/sites/Ops_Home"
+
+START_FOLDER = "Shared Documents"   # change if needed
+
+
+# ================= ERROR EXPLAINER =================
+def explain_error(res, step=""):
+    try:
+        data = res.json()
+        code = data.get("error", {}).get("code", "")
+        msg = data.get("error", {}).get("message", "")
+    except:
+        code = "unknown"
+        msg = res.text
+
+    print("\n=========== GRAPH ERROR ===========")
+    print("STEP :", step)
+    print("HTTP :", res.status_code)
+    print("CODE :", code)
+    print("MSG  :", msg)
+    print("===================================\n")
+
+    if res.status_code == 401:
+        print("🔐 Authentication failed → wrong tenant/client/secret")
+
+    elif res.status_code == 403:
+        if "Access denied" in msg:
+            print("🚫 Sites.Selected permission NOT granted to site")
+        else:
+            print("🚫 Permission denied")
+
+    elif res.status_code == 404:
+        print("📂 Site or folder path incorrect")
+
+    print()
 
 
 # ================= TOKEN =================
 def get_access_token():
-    token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+    url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
 
     data = {
         "client_id": CLIENT_ID,
         "scope": "https://graph.microsoft.com/.default",
         "client_secret": CLIENT_SECRET,
-        "grant_type": "client_credentials",
+        "grant_type": "client_credentials"
     }
 
-    res = requests.post(token_url, data=data)
+    res = requests.post(url, data=data)
+
+    if res.status_code != 200:
+        explain_error(res, "TOKEN")
+        exit()
+
+    print("✅ Token acquired")
     return res.json()["access_token"]
 
 
 # ================= SITE =================
 def get_site_id(token):
     headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://{SITE_HOST}:{SITE_PATH}"
+
+    url = f"https://graph.microsoft.com/v1.0/sites/{SITE_HOST}:{SITE_PATH}"
+
     res = requests.get(url, headers=headers)
 
     if res.status_code != 200:
-        print(res.text)
-        exit("❌ Site access denied")
+        explain_error(res, "SITE ACCESS")
+        exit()
 
+    print("✅ Site access granted")
     return res.json()["id"]
 
 
 # ================= DRIVE =================
-def get_documents_drive(token, site_id):
+def get_drive_id(token, site_id):
     headers = {"Authorization": f"Bearer {token}"}
     url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives"
-    res = requests.get(url, headers=headers)
-
-    for drive in res.json()["value"]:
-        if drive["name"] == "Documents":
-            return drive["id"]
-
-    exit("❌ Documents library not found")
-
-
-# ================= FIND FILE =================
-def find_file(token, drive_id, filename):
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root/search(q='{filename}')"
 
     res = requests.get(url, headers=headers)
 
     if res.status_code != 200:
-        print(res.text)
-        exit("❌ Search failed")
+        explain_error(res, "GET DRIVES")
+        exit()
 
-    results = res.json()["value"]
+    for d in res.json()["value"]:
+        if d["name"] in ["Documents", "Shared Documents"]:
+            print("✅ Found document library:", d["name"])
+            return d["id"]
 
-    for f in results:
-        if f["name"].lower() == filename.lower():
-            print("✅ Found file:", f["name"])
-            return f["id"]
-
-    exit("❌ File not found")
+    exit("❌ No document library found")
 
 
-# ================= READ FILE =================
-def read_file(token, drive_id, file_id):
+# ================= COUNTER =================
+file_counts = defaultdict(int)
+
+
+# ================= RECURSIVE SCAN =================
+def scan_folder(token, drive_id, folder_path="root"):
     headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{file_id}/content"
+
+    if folder_path == "root":
+        url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root/children"
+    else:
+        url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{folder_path}:/children"
 
     res = requests.get(url, headers=headers)
 
-    if res.status_code == 200:
-        print("✅ File content read successfully")
-        return res.text
-    else:
-        print(res.text)
-        exit("❌ Failed to read file")
+    if res.status_code != 200:
+        explain_error(res, f"SCAN {folder_path}")
+        return
+
+    items = res.json().get("value", [])
+
+    for item in items:
+
+        # FILE
+        if "file" in item:
+            name = item["name"]
+            ext = name.split(".")[-1].lower() if "." in name else "noext"
+            file_counts[ext] += 1
+
+        # FOLDER
+        if "folder" in item:
+            new_path = item["parentReference"]["path"].split("root:")[-1].strip("/")
+            new_path = f"{new_path}/{item['name']}" if new_path else item["name"]
+            scan_folder(token, drive_id, new_path)
 
 
 # ================= MAIN =================
 if __name__ == "__main__":
 
     token = get_access_token()
-    print("Token OK")
-
     site_id = get_site_id(token)
-    print("Site OK")
+    drive_id = get_drive_id(token, site_id)
 
-    drive_id = get_documents_drive(token, site_id)
-    print("Drive OK")
+    print("\nScanning SharePoint via Graph...\n")
+    scan_folder(token, drive_id)
 
-    file_id = find_file(token, drive_id, TARGET_FILE_NAME)
+    print("\n========= FILE TYPE COUNT =========")
+    total = 0
+    for ext, count in sorted(file_counts.items()):
+        print(f"{ext.upper():10} : {count}")
+        total += count
 
-    file_content = read_file(token, drive_id, file_id)
-    print("File Content:")
-    print(file_content)
+    print("-----------------------------------")
+    print("TOTAL FILES :", total)
