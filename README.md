@@ -1,166 +1,223 @@
 import logging
-import json
+from typing import Dict, List
+
+from azure.search.documents import SearchClient
+from azure.search.documents.models import VectorizedQuery
+from azure.core.credentials import AzureKeyCredential
 from openai import AzureOpenAI
 
-from ado.ado_client import fetch_from_ado
-from utils.html_image_processor import process_html_and_download_images
-from utils.channel_detector import detect_channels
-from utils.state_debugger import dump_state_to_txt
 from config.config import get
 
 logger = logging.getLogger(__name__)
 
 
-class ADOIntelligenceAgent:
-    """
-    Responsibilities:
-    1. Fetch User Story from ADO
-    2. Clean Description HTML + download images
-    3. Clean Acceptance Criteria HTML + download images
-    4. Detect Channels
-    5. 🔥 Split story into channel-specific meaning
-    6. Prepare state for retrieval agent
-    """
+class RetrievalIntelligenceAgent:
 
+    # =========================================================
+    # INIT
+    # =========================================================
     def __init__(self):
+
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
             api_version=get("AZURE_OPENAI_API_VERSION"),
         )
-        self.model = get("CHAT_MODEL")
 
-    # ---------------------------------------------------------
-    # Channel Context Derivation (MOST IMPORTANT PART)
-    # ---------------------------------------------------------
-    def _derive_channel_context(self, description: str, ac: str, channels):
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
 
-        logger.info("🧠 Deriving channel specific flows from story")
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
+        )
 
-        prompt = f"""
-You are a mortgage workflow analyst.
+    # =========================================================
+    # EMBEDDING
+    # =========================================================
+    def _embed(self, text: str) -> List[float]:
+        emb = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text
+        )
+        return emb.data[0].embedding
 
-Your job:
-Split the story into workflow meaning for each mortgage channel.
+    # =========================================================
+    # HYBRID VECTOR SEARCH
+    # =========================================================
+    def _vector_retrieve(self, query_text: str, channel: str, ktype: str, topk: int):
 
-Channel definitions:
-RTL = Loan officer + borrower interaction
-WHL = Broker submits package / broker compliance
-DTC = Borrower self-service portal behavior
-CL1 = Correspondent purchase / post-closing workflow
+        vector_query = VectorizedQuery(
+            vector=self._embed(query_text),
+            fields="embedding",
+            k_nearest_neighbors=topk
+        )
 
-Rules:
-• A story may contain mixed workflows
-• Extract only relevant sentences per channel
-• DO NOT copy entire story to every channel
-• If nothing relevant → return empty string
-• Be conservative (precision > recall)
+        filter_query = f"channels/any(c: c eq '{channel}')"
 
-DESCRIPTION:
-{description}
+        results = self.search_client.search(
+            search_text=query_text,
+            vector_queries=[vector_query],
+            filter=filter_query,
+            select=["testCaseId", "content"],
+            top=topk
+        )
 
-AC:
-{ac}
+        return list(results)
 
-Return STRICT JSON:
+    # =========================================================
+    # RERANK TESTCASES
+    # =========================================================
+    def _rerank_testcases(self, query_text: str, docs: List[Dict]):
 
-{{
-"RTL": "...",
-"WHL": "...",
-"DTC": "...",
-"CL1": "..."
-}}
+        if not docs:
+            return []
+
+        combined = ""
+        for idx, d in enumerate(docs, start=1):
+            combined += f"""
+Document {idx}
+TestCaseId: {d.get('testCaseId')}
+Content:
+{d.get('content')}
+---------------------
 """
 
-        try:
-            resp = self.openai.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0
-            )
+        prompt = f"""
+You are a QA expert.
 
-            content = resp.choices[0].message.content.strip()
-            parsed = json.loads(content)
+User Story:
+{query_text}
 
-            # ensure all channels exist
-            for ch in channels:
-                parsed.setdefault(ch, "")
+Rank the below testcases from MOST relevant to LEAST relevant.
+Return ONLY the TestCaseId list.
+Do NOT explain.
 
-            logger.info(f"✅ Channel context derived: {parsed}")
-            return parsed
+{combined}
+"""
 
-        except Exception as e:
-            logger.warning(f"⚠️ LLM context split failed → fallback rule mode: {e}")
-
-            # fallback: give full story but still safe
-            full_text = description + "\n" + ac
-            return {ch: full_text for ch in channels}
-
-    # ---------------------------------------------------------
-    # MAIN ENTRY
-    # ---------------------------------------------------------
-    def run(self, state: dict) -> dict:
-        logger.info("🚀 ADO Intelligence Agent started")
-
-        user_story_id = state["user_story_id"]
-
-        # 1️⃣ Fetch
-        story = fetch_from_ado(user_story_id)
-
-        # 2️⃣ Clean HTML
-        logger.info("🧹 Processing Description HTML + Images...")
-        description_enriched = process_html_and_download_images(
-            story["description"], user_story_id, "description"
+        resp = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
         )
 
-        logger.info("🧹 Processing Acceptance Criteria HTML + Images...")
-        ac_enriched = process_html_and_download_images(
-            story["acceptance_criteria"], user_story_id, "ac"
+        ranking = resp.choices[0].message.content.strip().splitlines()
+        id_map = {d["testCaseId"]: d for d in docs if d.get("testCaseId")}
+
+        ordered = [id_map[x] for x in ranking if x in id_map]
+
+        return ordered[:10]
+
+    # =========================================================
+    # SETUP INFERENCE (CHANNEL AWARE RAG)
+    # =========================================================
+    def _infer_setup(self, channel: str, query_text: str, knowledge_docs: List[Dict]):
+
+        knowledge_context = ""
+        for d in knowledge_docs[:8]:
+            knowledge_context += f"\n---\n{d.get('content','')}\n"
+
+        prompt = f"""
+You are a Mortgage Product SME.
+
+Each channel represents a DIFFERENT business workflow.
+
+Retail (RTL) = loan officer + borrower interaction
+Wholesale (WHL) = broker originated
+DTC = borrower self-service digital flow
+CL1 = correspondent purchase after origination
+
+You MUST infer a setup NATURAL to THAT workflow only.
+
+CHANNEL:
+{channel}
+
+CHANNEL WORKFLOW:
+{query_text}
+
+SYSTEM KNOWLEDGE:
+{knowledge_context}
+
+Rules:
+• DO NOT reuse same loan setup across channels
+• Prefer production-realistic loan
+• Choose stage where this workflow logically occurs
+• Broker channels rarely behave like retail
+• Correspondent rarely originates new loans
+
+Return ONLY:
+
+Loan Purpose:
+Loan Type:
+Product:
+Loan Stage:
+Existing Conditions:
+"""
+
+        resp = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
         )
 
-        # 3️⃣ Detect channels
-        channels = detect_channels(ac_enriched)
-        logger.info(f"✅ Channels detected: {channels}")
+        return resp.choices[0].message.content.strip()
 
-        # 🔥 4️⃣ NEW — derive channel context
-        channel_context_map = self._derive_channel_context(
-            description_enriched,
-            ac_enriched,
-            channels
-        )
+    # =========================================================
+    # BUILD CONTEXT PER CHANNEL
+    # =========================================================
+    def _build_channel_context(self, channel_text: str, channel: str):
 
-        # Debug output
-        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
-        print(f"User Story ID: {user_story_id}")
-        print("TITLE:", story["title"])
-        logger.info(f"CHANNEL CONTEXT MAP:\n{json.dumps(channel_context_map, indent=2)}")
-        print("\n=====================================================\n")
+        logger.info(f"🔎 Hybrid retrieval for {channel} using channel specific workflow")
 
-        dump_state_to_txt({
-            "user_story_id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
-            "channels": channels,
-            "channel_context_map": channel_context_map
-        })
+        tests = self._vector_retrieve(channel_text, channel, "testcase", 40)
+        reranked_tests = self._rerank_testcases(channel_text, tests)
 
-        # -------------------------------------------------
-        # STATE MUTATION
-        # -------------------------------------------------
-        state["user_story"] = story["title"]
-        state["description"] = description_enriched
-        state["acceptance_criteria"] = ac_enriched
-        state["channels"] = channels
+        setup = self._infer_setup(channel, channel_text, tests)
 
-        # 🔥 NEW DATA FOR RETRIEVAL AGENT
-        state["channel_context_map"] = channel_context_map
+        logger.info(f"\n Inferred Setup for {channel}:\n{setup}\n")
 
-        state["story"] = {
-            "id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
+        # Ensure compatibility with downstream agents by adding empty lists for removed keys
+        return {
+            "tests": reranked_tests,
+            "setup": setup,
+            "flow": [],
+            "rules": [],
+            "guidelines": []
         }
+
+    # =========================================================
+    # LANGGRAPH ENTRY
+    # =========================================================
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("🚀 Retrieval Intelligence Agent (Channel Aware RAG)")
+
+        retrieved_docs = {}
+
+        # channel specific story produced by ADO agent
+        channel_contexts = state.get("channel_context", {})
+
+        for channel in state["channels"]:
+
+            # 🔥 KEY FIX — channel specific retrieval
+            channel_text = channel_contexts.get(channel)
+
+            if not channel_text or len(channel_text.strip()) < 30:
+                logger.warning(f"⚠️ No specific context for {channel}, falling back to full story")
+
+                channel_text = f"""
+User Story: {state['user_story']}
+Description: {state['description']}
+Acceptance Criteria: {state['acceptance_criteria']}
+"""
+
+            retrieved_docs[channel] = self._build_channel_context(channel_text, channel)
+
+        state["retrieved_docs"] = retrieved_docs
+        state["channel_setup"] = {ch: retrieved_docs[ch]["setup"] for ch in retrieved_docs}
+
+        logger.info(f"\n final channel setups: {state['channel_setup']} \n")
 
         return state
