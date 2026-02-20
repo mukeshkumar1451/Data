@@ -1,150 +1,55 @@
-# main.py
-import glob
-import logging
+llama-index
+llama-index-vector-stores-azureaisearch
+llama-index-embeddings-azure-openai
+pandas
+openpyxl
+python-dotenv
+azure-search-documents
+---------------------------------------
+# Azure OpenAI
+AZURE_OPENAI_KEY=xxxx
+AZURE_OPENAI_ENDPOINT=https://xxxx.openai.azure.com/
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
+EMBEDDING_MODEL=text-embedding-3-large
+EMBEDDING_DEPLOYMENT=embedding
+
+# Azure AI Search
+AZURE_SEARCH_SERVICE_NAME=your-search-name
+AZURE_SEARCH_KEY=xxxxx
+AZURE_SEARCH_INDEX=qa-teststeps-index
+----------------------------------------------
 import os
+from dotenv import load_dotenv
 
-from config import get
-from index_manager import ensure_index
+load_dotenv()
 
-from excel_reader import read_excel
-from vector_uploader import (
-    upload,
-    flush_batch
-)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
-logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------
-# File Type Detection
-# ---------------------------------------------------
-def is_test_script(file_name: str):
-    name = file_name.upper()
-    return "TEST SCRIPT" in name or "TEST SCRIPTS" in name
-
-
-
-# ---------------------------------------------------
-# Main Runner
-# ---------------------------------------------------
-def main():
-    logger.info("🚀 Starting Vector Upload")
-
-    ensure_index()
-
-    input_dir = get("INPUT_DIR")
-
-    for file in glob.glob(f"{input_dir}/*"):
-        file_name = os.path.basename(file)
-
-        logger.info(f"📄 Processing file: {file_name}")
-
-        try:
-            # ---------------- EXCEL ----------------
-            if file.lower().endswith(".xlsx"):
-
-                if is_test_script(file_name):
-                    logger.info("📘 Detected TEST SCRIPT Excel")
-                    for tc, channel_groups in read_excel(file):
-                        upload(tc, channel_groups)
-                        
-                
-
-            
-        except Exception as e:
-            logger.exception(f"❌ Error processing {file_name}: {str(e)}")
-
-    flush_batch()
-
-    logger.info("🎉 Upload completed successfully")
-
-
-if __name__ == "__main__":
-    main()
----------------------------------------------------------------------
-# index_manager.py
-from azure.search.documents.indexes import SearchIndexClient
-from azure.search.documents.indexes.models import (
-    SearchIndex,
-    SimpleField,
-    SearchableField,
-    SearchField,
-    SearchFieldDataType,
-    VectorSearch,
-    VectorSearchProfile,
-    HnswAlgorithmConfiguration
-)
-from azure.core.credentials import AzureKeyCredential
+def get(key: str):
+    value = os.getenv(key)
+    if not value:
+        raise ValueError(f"Missing environment variable: {key}")
+    return value
+-------------------------------------
+from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
+from llama_index.core import Settings
 from config import get
 
-
-def ensure_index():
-    client = SearchIndexClient(
-        endpoint=get("AZURE_SEARCH_ENDPOINT"),
-        credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-    )
-
-    index_name = get("AZURE_SEARCH_INDEX")
-
-    existing = [i.name for i in client.list_indexes()]
-    if index_name in existing:
-        return
-
-    fields = [
-
-        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
-
-        SimpleField(name="testCaseId", type=SearchFieldDataType.String, filterable=True),
-
-        SimpleField(
-            name="channels",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.String),
-            filterable=True
-        ),
-
-
-        SearchableField(name="content", type=SearchFieldDataType.String),
-
-        SearchField(
-            name="embedding",
-            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
-            searchable=True,
-            vector_search_dimensions=int(get("EMBEDDING_DIM")),
-            vector_search_profile_name="vector-profile"
-        ),
-    ]
-
-    vector_search = VectorSearch(
-        profiles=[VectorSearchProfile(
-            name="vector-profile",
-            algorithm_configuration_name="hnsw-config"
-        )],
-        algorithms=[HnswAlgorithmConfiguration(name="hnsw-config")]
-    )
-
-    index = SearchIndex(
-        name=index_name,
-        fields=fields,
-        vector_search=vector_search
-    )
-
-    client.create_index(index)
------------------------------------------------------------------------------------------------
-# excel_reader.py
+Settings.embed_model = AzureOpenAIEmbedding(
+    model=get("EMBEDDING_MODEL"),
+    deployment_name=get("EMBEDDING_DEPLOYMENT"),
+    api_key=get("AZURE_OPENAI_KEY"),
+    azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+    api_version=get("AZURE_OPENAI_API_VERSION"),
+)
+------------------------------------------
 import pandas as pd
-from collections import defaultdict
+from llama_index.core import Document
 
+COL_TC = "Test Case ID / Test Script ID"
 
-def read_excel(file_path):
+def excel_to_documents(file_path):
+
     xls = pd.ExcelFile(file_path)
-
-    COL_TC = "Test Case ID / Test Script ID"
-    tc_map = defaultdict(list)
+    documents = []
 
     for sheet in xls.sheet_names:
         channel = sheet.strip()
@@ -152,125 +57,80 @@ def read_excel(file_path):
         df = pd.read_excel(xls, sheet_name=sheet)
         df.columns = df.columns.str.strip()
 
+        # forward fill TC ID
         df[COL_TC] = df[COL_TC].ffill()
 
-        grouped = df.groupby(COL_TC)
+        for _, row in df.iterrows():
 
-        for tc, group in grouped:
-            tc_map[tc].append((channel, group))
-
-    for tc, channel_groups in tc_map.items():
-        yield tc, channel_groups
--------------------------------------------------------------------------
-# vector_uploader.py
-import uuid
-import logging
-from collections import OrderedDict
-from openai import AzureOpenAI
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-from config import get
-
-
-logger = logging.getLogger(__name__)
-
-openai_client = AzureOpenAI(
-    api_key=get("AZURE_OPENAI_KEY"),
-    api_version=get("AZURE_OPENAI_API_VERSION"),
-    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
-)
-
-search_client = SearchClient(
-    endpoint=get("AZURE_SEARCH_ENDPOINT"),
-    index_name=get("AZURE_SEARCH_INDEX"),
-    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
-)
-
-BATCH_SIZE = 50
-pending_docs = []
-pending_texts = []
-
-
-def upload(tc, channel_groups):
-    global pending_docs, pending_texts
-
-    channels = [c for c, _ in channel_groups]
-
-    step_map = OrderedDict()
-
-    for _, group in channel_groups:
-        for _, row in group.iterrows():
-            step_no = str(row.get("Test Step No.", "")).strip()
-            if not step_no.startswith("Step"):
+            step = str(row.get("Test Step No.", "")).strip()
+            if not step.startswith("Step"):
                 continue
 
-            if step_no not in step_map:
-                step_map[step_no] = {
-                    "description": row.get("Test Step Description", ""),
-                    "screen": row.get("Screen Name", ""),
-                    "data": row.get("Test Data", ""),
-                    "expected": row.get("Expected Results", "")
-                }
+            action = str(row.get("Test Step Description", ""))
+            expected = str(row.get("Expected Results", ""))
+            screen = str(row.get("Screen Name", ""))
+            data = str(row.get("Test Data", ""))
 
-    content = f"\nTestCase: {tc}\n\n=========== TEST STEPS ===========\n"
-
-    for step_no, d in step_map.items():
-        content += f"""
-{step_no}
-Description: {d['description']}
-Screen: {d['screen']}
-Data: {d['data']}
-Expected: {d['expected']}
+            # Semantic embedding text
+            text = f"""
+User performs: {action}
+On screen: {screen}
+Using data: {data}
+System should: {expected}
 """
 
-    pending_texts.append(content)
+            metadata = {
+                "channel": channel,
+                "testCaseId": str(row[COL_TC]),
+                "stepNo": step,
+                "screen": screen,
+            }
 
-    pending_docs.append({
-        "id": str(uuid.uuid4()),
-        "testCaseId": tc,
-        "channels": channels,
-        "content": content,
-        "embedding": None
-    })
+            documents.append(Document(text=text, metadata=metadata))
 
-    if len(pending_docs) >= BATCH_SIZE:
-        flush_batch()
-
-
-
-
-def flush_batch():
-    global pending_docs, pending_texts
-
-    if not pending_docs:
-        return
-
-    logger.info(f"🚀 Uploading batch of {len(pending_docs)}")
-
-    embeddings = openai_client.embeddings.create(
-        model=get("EMBEDDING_MODEL"),
-        input=pending_texts
-    ).data
-
-    for doc, emb in zip(pending_docs, embeddings):
-        doc["embedding"] = emb.embedding
-
-    results = search_client.upload_documents(pending_docs)
-
-    for r in results:
-        if not r.succeeded:
-            logger.error(f"Failed: {r.key} | {r.error_message}")
-
-    pending_docs.clear()
-    pending_texts.clear()
+    return documents
+--------------------------------------------------------
+from llama_index.vector_stores.azureaisearch import AzureAISearchVectorStore
+from llama_index.core import StorageContext, VectorStoreIndex
+from config import get
+import settings  # loads embedding model
 
 
-		
-	
+def build_index(documents):
 
+    vector_store = AzureAISearchVectorStore(
+        service_name=get("AZURE_SEARCH_SERVICE_NAME"),
+        index_name=get("AZURE_SEARCH_INDEX"),
+        api_key=get("AZURE_SEARCH_KEY"),
+    )
 
+    storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
+    index = VectorStoreIndex.from_documents(
+        documents,
+        storage_context=storage_context,
+        show_progress=True
+    )
 
+    return index
+---------------------------------------------------
+import glob
+from ingestion.excel_to_documents import excel_to_documents
+from ingestion.build_index import build_index
 
+all_docs = []
 
+print("Reading Excel files...")
 
+for file in glob.glob("data/excels/*.xlsx"):
+    print("Processing:", file)
+    docs = excel_to_documents(file)
+    all_docs.extend(docs)
+
+print(f"Total steps extracted: {len(all_docs)}")
+
+print("Uploading to Azure AI Search via LlamaIndex...")
+build_index(all_docs)
+
+print("DONE — Vector DB ready 🚀")
+-------------------------------------------
