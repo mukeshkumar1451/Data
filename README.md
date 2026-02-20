@@ -1,66 +1,12 @@
-import json
-import os
-
-PROGRESS_FILE = "ingestion_progress.json"
-
-
-def load_progress():
-    if not os.path.exists(PROGRESS_FILE):
-        return set()
-
-    with open(PROGRESS_FILE, "r") as f:
-        return set(json.load(f))
-
-
-def mark_done(file):
-    processed = load_progress()
-    processed.add(file)
-
-    with open(PROGRESS_FILE, "w") as f:
-        json.dump(list(processed), f, indent=2)
-        ------------------------
------------------
-import glob
-from ingestion.excel_to_documents import excel_to_documents
-from ingestion.build_index import build_index
-from ingestion.progress_tracker import load_progress, mark_done
-
-files = glob.glob("data/excels/**/*.xlsx", recursive=True)
-
-processed = load_progress()
-
-print(f"Total files found: {len(files)}")
-print(f"Already processed: {len(processed)}\n")
-
-for file in files:
-
-    if file in processed:
-        print(f"Skipping (already indexed): {file}")
-        continue
-
-    print(f"\nProcessing: {file}")
-
-    docs = excel_to_documents(file)
-
-    if not docs:
-        print("No valid test steps found")
-        mark_done(file)
-        continue
-
-    print(f"Uploading {len(docs)} steps to vector DB...")
-
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\Embedding\main_ingest.py", line 30, in <module> 
     build_index(docs)
-
-    mark_done(file)
-
-    print("Completed:", file)
-
-print("\nALL FILES INDEXED SUCCESSFULLY 🚀")
-
-
-        
-
-
-        
-
-        
+    ~~~~~~~~~~~^^^^^^
+  File "C:\Users\h84609n\Desktop\Embedding\ingestion\build_index.py", line 9, in 
+build_index
+    vector_store = AzureAISearchVectorStore(
+        service_name=get("AZURE_SEARCH_SERVICE_NAME"),
+        index_name=get("AZURE_SEARCH_INDEX"),
+        api_key=get("AZURE_SEARCH_KEY"),
+    )
+TypeError: AzureAISearchVectorStore.__init__() missing 6 required positional arguments: 'search_or_index_client', 'id_field_key', 'chunk_field_key', 'embedding_field_key', 'metadata_string_field_key', and 'doc_id_field_key'
