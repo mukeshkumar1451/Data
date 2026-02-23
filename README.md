@@ -1,16 +1,17 @@
 import requests
-import sys
+import jwt
 from urllib.parse import urlparse
 
 # ================= AZURE APP =================
-
+TENANT_ID = "YOUR_TENANT_ID"
+CLIENT_ID = "YOUR_CLIENT_ID"
+CLIENT_SECRET = "YOUR_CLIENT_SECRET"
 
 # ================= SITES TO VERIFY =================
 SITES_TO_TEST = [
     "https://corpofficeapps.sharepoint.com/sites/Ops_Home",
     "https://corpofficeapps.sharepoint.com/sites/AnotherSite"
 ]
-
 
 # =========================================================
 # GET ACCESS TOKEN
@@ -30,34 +31,28 @@ def get_access_token():
 
     print("✅ Token acquired")
     return res.json()["access_token"]
-import jwt
 
+
+# =========================================================
+# INSPECT TOKEN
+# =========================================================
 def inspect_token(token):
     decoded = jwt.decode(token, options={"verify_signature": False})
     print("\n======= TOKEN CLAIMS =======\n")
-    for key, value in decoded.items():
-        print(key, ":", value)
-
-def validate_token(token):
-    url = "https://graph.microsoft.com/v1.0/organization"
-    headers = {"Authorization": f"Bearer {token}"}
-    res = requests.get(url, headers=headers)
-
-    print("Status:", res.status_code)
-    print(res.text)
+    print("aud:", decoded.get("aud"))
+    print("roles:", decoded.get("roles"))
+    print("appid:", decoded.get("appid"))
+    print("tid:", decoded.get("tid"))
 
 
 # =========================================================
-# VERIFY SINGLE SITE ACCESS
+# VERIFY SITE ACCESS
 # =========================================================
 def verify_site_access(token, site_url):
 
-    from urllib.parse import urlparse
-
     parsed = urlparse(site_url)
-
-    host = parsed.netloc  # corpofficeapps.sharepoint.com
-    site_path = parsed.path.strip("/")  # sites/Ops_Home
+    host = parsed.netloc
+    site_path = parsed.path.strip("/")
 
     graph_url = f"https://graph.microsoft.com/v1.0/sites/{host}:/{site_path}"
 
@@ -75,41 +70,9 @@ def verify_site_access(token, site_url):
     elif res.status_code == 403:
         print("❌ ACCESS NOT GRANTED (Sites.Selected not assigned)")
     elif res.status_code == 401:
-        print("🔐 Token valid but Graph rejected it (check admin consent)")
+        print("🔐 401 Unauthorized → Token/Permission issue")
     else:
         print("⚠ Unexpected issue")
-
-
-    parsed = urlparse(site_url)
-    host = parsed.netloc
-    site_path = parsed.path.strip("/")
-
-    graph_url = f"https://graph.microsoft.com/v1.0/sites/{host}:/{site_path}:/"
-
-    headers = {"Authorization": f"Bearer {token}"}
-    res = requests.get(graph_url, headers=headers)
-
-    print("\n-------------------------------------------")
-    print("Testing:", site_url)
-
-    if res.status_code == 200:
-        print("✔ ACCESS GRANTED")
-        site_id = res.json()["id"]
-        print("Site ID:", site_id)
-        return True
-
-    if res.status_code == 403:
-        print("❌ ACCESS NOT GRANTED (Sites.Selected not assigned to this site)")
-        return False
-
-    if res.status_code == 401:
-        print("🔐 GRAPH RESPONSE (401)")
-        print(res.text)
-        return False
-
-    print("⚠ Unexpected error:", res.status_code)
-    print(res.text)
-    return False
 
 
 # =========================================================
@@ -118,6 +81,7 @@ def verify_site_access(token, site_url):
 if __name__ == "__main__":
 
     token = get_access_token()
+    inspect_token(token)
 
     print("\nChecking Sites.Selected permissions...\n")
 
