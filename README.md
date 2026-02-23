@@ -1,46 +1,53 @@
-def process_html_and_download_images(html: str, story_id: str, section: str):
+# utils/channel_detector.py
+import re
+import logging
 
-    if not html:
-        return ""
+logger = logging.getLogger(__name__)
 
-    soup = BeautifulSoup(html, "html.parser")
+ALL_CHANNELS = ["RTL", "WHL", "DTC", "CL1"]
 
-    for tag in soup(["script", "style"]):
-        tag.decompose()
 
-    images = soup.find_all("img")
+# -------------------------------------------------
+# Behavioral Channel Detection
+# -------------------------------------------------
+def detect_channels(text: str) -> list:
 
-    img_folder = os.path.join("downloads", story_id, section)
-    os.makedirs(img_folder, exist_ok=True)
+    logger.info("Behavioral channel detection started...")
 
-    all_ocr_text = []
+    t = text.upper()
 
-    for idx, img in enumerate(images, start=1):
-        src = img.get("src")
-        if not src:
-            continue
+    # ---------------------------
+    # 1. Persona Detection (strongest signal)
+    # ---------------------------
+    if "NON-BROKER USER IN H2O" in t or "INTERNAL USER" in t:
+        logger.info("Detected INTERNAL H2O user → WHL")
+        return ["WHL"]
 
-        save_path = os.path.join(img_folder, f"image_{idx}.png")
-        downloaded_path = _download_ado_image(src, save_path)
+    if "BROKER PORTAL" in t or "BROKER LO" in t:
+        logger.info("Detected Broker persona → WHL")
+        return ["WHL"]
 
-        if downloaded_path:
-            ocr_text = extract_text_from_image(downloaded_path)
+    if "CUSTOMER PORTAL" in t or "BORROWER" in t:
+        logger.info("Detected Borrower persona → RTL")
+        return ["RTL"]
 
-            if ocr_text and len(ocr_text.strip()) > 10:
-                cleaned_ocr = clean_ocr_text(ocr_text)
+    if "IGNITE" in t or "DIRECT TO CONSUMER" in t:
+        logger.info("Detected Ignite flow → DTC")
+        return ["DTC"]
 
-                if cleaned_ocr:
-                    all_ocr_text.append(str(cleaned_ocr))
+    if "CORRESPONDENT" in t or "CL1" in t:
+        logger.info("Detected Correspondent → CL1")
+        return ["CL1"]
 
-    raw_text = soup.get_text(separator="\n")
-    clean_text = _normalize_text(raw_text)
+    # ---------------------------
+    # 2. Feature based detection
+    # ---------------------------
+    if "BUSINESS UNIT" in t or "CREATE LOAN ON BEHALF OF" in t:
+        logger.info("Detected internal operations feature → WHL")
+        return ["WHL"]
 
-    if all_ocr_text:
-        combined_ocr = "\n".join(
-            [str(x) for x in all_ocr_text if x]
-        )
-        final_text = clean_text + "\n\n" + combined_ocr
-    else:
-        final_text = clean_text
-
-    return final_text
+    # ---------------------------
+    # Fallback
+    # ---------------------------
+    logger.info("No strong signal → using ALL channels")
+    return ALL_CHANNELS
