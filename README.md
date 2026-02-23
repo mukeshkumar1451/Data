@@ -1,120 +1,241 @@
 import logging
-from typing import Dict
+from typing import Dict, List
 
-from langchain_openai import AzureChatOpenAI
-from langchain_core.prompts import PromptTemplate
+from azure.search.documents import SearchClient
+from azure.search.documents.models import VectorizedQuery
+from azure.core.credentials import AzureKeyCredential
+from openai import AzureOpenAI
 
 from config.config import get
-from state.rag_state import RAGState
 
 logger = logging.getLogger(__name__)
 
 
-class LLMTestcaseGeneratorAgent:
-    """
-    Stable Production Version
-    - No channel_specific_context
-    - Full AC used
-    - Channel filtering handled via:
-        • Azure Search filtering
-        • channel_rules
-    """
+class RetrievalIntelligenceAgent:
 
+    # =========================================================
+    # INIT
+    # =========================================================
     def __init__(self):
 
-        prompt_path = get("PROMPT_TEMPLATE_PATH")
-
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            prompt_text = f.read()
-
-        # 🔥 REMOVE channel_specific_context
-        self.prompt = PromptTemplate(
-            input_variables=[
-                "user_story_id",
-                "user_story",
-                "description",
-                "ac",
-                "historical_context",
-                "precondition",
-                "channel_rules",
-                "retrieved_docs",
-                "channel"
-            ],
-            template=prompt_text,
-        )
-
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+        self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0.2,
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
         )
 
-        self.chain = self.prompt | self.llm
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
 
-    # ---------------------------------------------------------
-    # Convert retrieved docs into RAG text
-    # ---------------------------------------------------------
-    def _build_retrieved_text(self, docs: Dict) -> str:
-
-        text = ""
-
-        # Only inject top few tests (avoid overpowering story)
-        for d in docs.get("tests", [])[:5]:
-            content = d.get("content", "")
-            text += "\n--- Historical Test ---\n"
-            text += content[:1200]  # limit size
-
-        return text[:6000]  # token safety
-
-    # ---------------------------------------------------------
-    # Generate testcase per channel
-    # ---------------------------------------------------------
-    def _generate_for_channel(self, state: RAGState, channel: str, docs: Dict) -> str:
-
-        logger.info(f"🤖 Generating testcase for channel: {channel}")
-
-        retrieved_text = self._build_retrieved_text(docs)
-
-        precondition = state.get("channel_setup", {}).get(channel, "")
-        channel_rules = state.get("channel_rules", {}).get(channel, "")
-
-        result = self.chain.invoke(
-            {
-                "user_story_id": state["user_story_id"],
-                "user_story": state["user_story"],
-                "description": state["description"],
-                "ac": state["acceptance_criteria"],
-                "historical_context": "",   # optional
-                "retrieved_docs": retrieved_text,
-                "precondition": precondition,
-                "channel_rules": channel_rules,
-                "channel": channel
-            }
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
         )
 
-        return result.content
+    # =========================================================
+    # EMBEDDING
+    # =========================================================
+    def _embed(self, text: str) -> List[float]:
 
-    # ---------------------------------------------------------
-    # LangGraph Entry
-    # ---------------------------------------------------------
-    def run(self, state: RAGState) -> RAGState:
+        # prevent very large embedding input
+        safe_text = text[:8000]
 
-        logger.info("🚀 LLM Testcase Generator Agent started")
+        emb = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=safe_text
+        )
 
-        llm_outputs = {}
+        return emb.data[0].embedding
 
-        for channel, docs in state["retrieved_docs"].items():
+    # =========================================================
+    # HYBRID VECTOR SEARCH (CHANNEL FILTERED)
+    # =========================================================
+    def _vector_retrieve(self, query_text: str, channel: str, topk: int):
 
-            if not docs:
-                logger.warning(f"No docs for {channel}")
-                continue
+        logger.info(f"🔎 Running vector retrieval for {channel}")
 
-            llm_text = self._generate_for_channel(state, channel, docs)
-            llm_outputs[channel] = llm_text
+        vector_query = VectorizedQuery(
+            vector=self._embed(query_text),
+            fields="embedding",
+            k_nearest_neighbors=topk
+        )
 
-        state["llm_outputs"] = llm_outputs
+        filter_query = f"channels/any(c: c eq '{channel}')"
 
-        logger.info("✅ LLM generation completed")
+        results = list(self.search_client.search(
+            search_text=query_text,
+            vector_queries=[vector_query],
+            filter=filter_query,
+            select=["testCaseId", "content"],
+            top=topk
+        ))
+
+        logger.info(f"📊 Channel {channel} → Retrieved {len(results)} documents")
+
+        for r in results:
+            logger.info(f"   ↳ {channel} → {r.get('testCaseId')}")
+
+        return results
+
+    # =========================================================
+    # RERANK TESTCASES
+    # =========================================================
+    def _rerank_testcases(self, query_text: str, docs: List[Dict]):
+
+        if not docs:
+            logger.warning("⚠️ No documents to rerank")
+            return []
+
+        combined = ""
+
+        for idx, d in enumerate(docs, start=1):
+            combined += f"""
+Document {idx}
+TestCaseId: {d.get('testCaseId')}
+Content:
+{d.get('content')}
+---------------------
+"""
+
+        prompt = f"""
+You are a senior QA analyst.
+
+Rank the below testcases by relevance to this workflow.
+
+Workflow:
+{query_text}
+
+Return ONLY ordered TestCaseId values.
+Do not explain.
+
+{combined}
+"""
+
+        resp = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+
+        ranking = resp.choices[0].message.content.strip().splitlines()
+
+        id_map = {d["testCaseId"]: d for d in docs if d.get("testCaseId")}
+
+        ordered = [id_map[x] for x in ranking if x in id_map]
+
+        logger.info(f"✅ Reranked {len(ordered)} testcases")
+
+        return ordered[:10]
+
+    # =========================================================
+    # CHANNEL AWARE SETUP INFERENCE
+    # =========================================================
+    def _infer_setup(self, channel: str, channel_text: str, knowledge_docs: List[Dict]):
+
+        knowledge_context = "\n".join(
+            d.get("content", "") for d in knowledge_docs[:6]
+        )
+
+        prompt = f"""
+You are a mortgage domain SME.
+
+Each channel represents a DIFFERENT workflow:
+
+RTL → Loan officer + borrower interaction
+WHL → Broker originated workflow
+DTC → Borrower self-service digital workflow
+CL1 → Correspondent purchase workflow
+
+Infer a REALISTIC loan setup NATURAL to THIS channel.
+
+CHANNEL:
+{channel}
+
+WORKFLOW CONTEXT:
+{channel_text}
+
+SYSTEM KNOWLEDGE:
+{knowledge_context}
+
+Rules:
+• DO NOT reuse same setup across channels
+• Broker ≠ Retail
+• Correspondent ≠ Origination
+• Choose realistic lifecycle stage
+
+Return ONLY:
+
+Loan Purpose:
+Loan Type:
+Product:
+Loan Stage:
+Existing Conditions:
+"""
+
+        resp = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+
+        setup = resp.choices[0].message.content.strip()
+
+        logger.info(f"\n📌 Inferred Setup for {channel}:\n{setup}\n")
+
+        return setup
+
+    # =========================================================
+    # BUILD CHANNEL CONTEXT
+    # =========================================================
+    def _build_channel_context(self, channel_text: str, channel: str):
+
+        logger.info(f"🔎 Building retrieval context for {channel}")
+        logger.info(f"   Query text length: {len(channel_text)}")
+
+        tests = self._vector_retrieve(channel_text, channel, 40)
+
+        reranked_tests = self._rerank_testcases(channel_text, tests)
+
+        setup = self._infer_setup(channel, channel_text, reranked_tests)
+
+        return {
+            "tests": reranked_tests,
+            "setup": setup,
+            "flow": [],
+            "rules": [],
+            "guidelines": []
+        }
+
+    # =========================================================
+    # LANGGRAPH ENTRY
+    # =========================================================
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("🚀 Retrieval Intelligence Agent (Channel Aware RAG Mode)")
+
+        retrieved_docs = {}
+
+        # Channel specific context from ADO agent
+        channel_contexts = state.get("channel_context_map", {})
+
+        for channel in state["channels"]:
+
+            channel_text = channel_contexts.get(channel, "").strip()
+
+            # Smart fallback
+            if len(channel_text) < 20:
+                logger.warning(f"⚠️ Weak context for {channel}, using story title fallback")
+                channel_text = state["user_story"]
+
+            retrieved_docs[channel] = self._build_channel_context(channel_text, channel)
+
+        state["retrieved_docs"] = retrieved_docs
+        state["channel_setup"] = {
+            ch: retrieved_docs[ch]["setup"]
+            for ch in retrieved_docs
+        }
+
+        logger.info(f"\n✅ Final Channel Setups Generated\n")
+
         return state
