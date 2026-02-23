@@ -1,14 +1,28 @@
-✅ Token acquired
+def verify_site_access(token, site_url):
 
-Checking Sites.Selected permissions...
+    from urllib.parse import urlparse
 
+    parsed = urlparse(site_url)
 
--------------------------------------------
-Testing: https://corpofficeapps.sharepoint.com/sites/Ops_Home
-🔐 GRAPH RESPONSE (401)
-{"error":{"code":"generalException","message":"General exception while processing","innerError":{"date":"2026-02-23T09:16:21","request-id":"14efb89a-2b3c-42c9-9834-0b51f5ec7c2a","client-request-id":"14efb89a-2b3c-42c9-9834-0b51f5ec7c2a"}}}
+    host = parsed.netloc  # corpofficeapps.sharepoint.com
+    site_path = parsed.path.strip("/")  # sites/Ops_Home
 
--------------------------------------------
-Testing: https://corpofficeapps.sharepoint.com/sites/AnotherSite      
-🔐 GRAPH RESPONSE (401)
-{"error":{"code":"generalException","message":"General exception while processing","innerError":{"date":"2026-02-23T09:16:22","request-id":"74f5d25d-d724-4d77-bfd7-d4f3aa70d051","client-request-id":"74f5d25d-d724-4d77-bfd7-d4f3aa70d051"}}}
+    graph_url = f"https://graph.microsoft.com/v1.0/sites/{host}:/{site_path}"
+
+    headers = {"Authorization": f"Bearer {token}"}
+    res = requests.get(graph_url, headers=headers)
+
+    print("\n-------------------------------------------")
+    print("Testing:", site_url)
+    print("Graph URL:", graph_url)
+    print("Status:", res.status_code)
+    print("Response:", res.text)
+
+    if res.status_code == 200:
+        print("✔ ACCESS GRANTED")
+    elif res.status_code == 403:
+        print("❌ ACCESS NOT GRANTED (Sites.Selected not assigned)")
+    elif res.status_code == 401:
+        print("🔐 Token valid but Graph rejected it (check admin consent)")
+    else:
+        print("⚠ Unexpected issue")
