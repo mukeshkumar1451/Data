@@ -1,85 +1,138 @@
-Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
-    run("718521")
-    ~~~^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run        
-    final_state = app.invoke(initial_state)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3071, in invoke
-    for chunk in self.stream(
-                 ~~~~~~~~~~~^
-        input,
-        ^^^^^^
-    ...<10 lines>...
-        **kwargs,
-        ^^^^^^^^^
-    ):
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2646, in stream
-    for _ in runner.tick(
-             ~~~~~~~~~~~^
-        [t for t in loop.tasks.values() if not t.writes],
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<2 lines>...
-        schedule_task=loop.accept_push,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ):
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 167, in tick
-    run_with_retry(
-    ~~~~~~~~~~~~~~^
-        t,
-        ^^
-    ...<10 lines>...
-        },
-        ^^
-    )
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 42, in run_with_retry
-    return task.proc.invoke(task.input, config)
-           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
-    input = context.run(step.invoke, input, config, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
-    ret = self.func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\agents\llm_testcase_generator_agent.py", line 132, in run
-    llm_text = self._generate_for_channel(state, channel, docs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\agents\llm_testcase_generator_agent.py", line 103, in _generate_for_channel
-    result = self.chain.invoke(
-        {
-    ...<7 lines>...
-        }
-    )
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 3155, in invoke
-    input_ = context.run(step.invoke, input_, config, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 223, in invoke
-    return self._call_with_config(
-           ~~~~~~~~~~~~~~~~~~~~~~^
-        self._format_prompt_with_error_handling,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<3 lines>...
-        serialized=self._serialized,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 2060, in _call_with_config
-    context.run(
-    ~~~~~~~~~~~^
-        call_func_with_variable_args,  # type: ignore[arg-type]
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<4 lines>...
-        **kwargs,
-        ^^^^^^^^^
-    ),
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\config.py", line 452, in call_func_with_variable_args
-    return func(input, **kwargs)  # type: ignore[call-arg]
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 196, in _format_prompt_with_error_handling
-    inner_input_ = self._validate_input(inner_input)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 190, in _validate_input
-    raise KeyError(
-        create_message(message=msg, error_code=ErrorCode.INVALID_PROMPT_INPUT)   
-    )
-KeyError: "Input to PromptTemplate is missing variables {'retrieved_docs', 'channel_specific_context', 'channel'}.  Expected: ['channel', 'channel_rules', 'channel_specific_context', 'historical_context', 'precondition', 'retrieved_docs', 'user_story', 'user_story_id'] Received: ['user_story_id', 'user_story', 'description', 'ac', 'historical_context', 'precondition', 'channel_rules']\nNote: if you intended {retrieved_docs} to be part of the string and not a variable, please escape it with double curly braces like: '{{retrieved_docs}}'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT 
-"
-During task with name 'llm_agent' and id 'dbdbed90-f523-7f1a-1678-2301e1bdbae1'  
-(.venv) PS C:\Users\h84609n\Desktop\AgenticAI> 
+import logging
+from typing import Dict, List
+
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
+
+from config.config import get
+from state.rag_state import RAGState
+
+logger = logging.getLogger(__name__)
+
+
+class LLMTestcaseGeneratorAgent:
+    """
+    LangChain-based LLM agent.
+
+    Responsibilities:
+      • Load prompt from .txt file
+      • Inject dynamic variables
+      • Call Azure GPT
+      • Generate raw testcase text per channel
+    """
+
+    def __init__(self):
+
+        # ---------------- Load prompt from file ----------------
+        prompt_path = get("PROMPT_TEMPLATE_PATH")
+
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
+
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "user_story_id",
+                "user_story",
+                "description",
+                "ac",
+                "historical_context",
+                "qa_style_rules",
+                "precondition"
+            ],
+            template=prompt_text,
+        )
+
+        # ---------------- Azure GPT via LangChain ----------------
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
+            temperature=0.2,
+        )
+
+        self.chain = self.prompt | self.llm
+
+    # ---------------------------------------------------------
+    # Convert retrieved docs into historical context
+    # ---------------------------------------------------------
+    def _build_context(self, docs: Dict) -> str:
+
+       context = "\n===== SYSTEM FLOW =====\n"
+       for d in docs["flow"]:
+        context += d["content"] + "\n"
+
+       context += "\n===== BUSINESS RULES =====\n"
+       for d in docs["rules"]:
+        context += d["content"] + "\n"
+        
+       context += "\n===== TEST WRITING GUIDELINES =====\n"
+       for d in docs["guidelines"]:
+        context += d["content"] + "\n"
+        
+       for d in docs["tests"]:
+        context += f"\nTestCase: {d.get('testCaseId')}\n{d['content']}\n"
+
+       return context
+
+
+    # ---------------------------------------------------------
+    # Generate testcase for one channel
+    # ---------------------------------------------------------
+    def _generate_for_channel(
+        self, state: RAGState, channel: str, docs: List[Dict]
+    ) -> str:
+
+        user_story = state["user_story"]
+        description = state["description"]
+        ac = state["acceptance_criteria"]
+        
+
+        historical_context = self._build_context(docs)
+        precondition = state.get("channel_setup", {}).get(channel, "")
+        logger.info(f"\n Precondition for {channel}:\n{precondition}\n")
+
+        logger.info(f"🤖 Generating testcase for channel: {channel}")
+
+        # Safeguard for missing 'channel_rules'
+        channel_rules = state.get("channel_rules", {})
+        if channel not in channel_rules:
+            logger.warning(f"Missing 'channel_rules' for channel: {channel}")
+            channel_rules[channel] = ""  # Default to an empty string or appropriate fallback value
+
+        result = self.chain.invoke(
+            {
+                "user_story_id": state["user_story_id"],
+                "user_story": user_story,
+                "description": description,
+                "ac": ac,
+                "historical_context": historical_context,
+                "precondition": precondition,
+                "channel_rules": channel_rules[channel]
+            }
+        )
+
+        logger.info(f" LLM output received for {channel}")
+
+        return result.content
+
+    # ---------------------------------------------------------
+    # LangGraph Node Entry
+    # ---------------------------------------------------------
+    def run(self, state: RAGState) -> RAGState:
+        logger.info(" LLM Testcase Generator Agent started")
+
+        llm_outputs = {}
+
+        for channel, docs in state["retrieved_docs"].items():
+            if not docs:
+                logger.warning(f" No docs for channel {channel}")
+                continue
+
+            llm_text = self._generate_for_channel(state, channel, docs)
+            llm_outputs[channel] = llm_text
+
+        state["llm_outputs"] = llm_outputs
+
+        logger.info(" LLM generation completed for all channels")
+        return state
