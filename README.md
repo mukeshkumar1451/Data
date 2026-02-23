@@ -1,7 +1,12 @@
-def validate_token(token):
-    url = "https://graph.microsoft.com/v1.0/organization"
-    headers = {"Authorization": f"Bearer {token}"}
-    res = requests.get(url, headers=headers)
+✅ Token acquired
 
-    print("Status:", res.status_code)
-    print(res.text)
+Checking Sites.Selected permissions...
+
+
+-------------------------------------------
+Testing: https://corpofficeapps.sharepoint.com/sites/Ops_Home
+🔐 Authentication issue (check client secret / tenant)
+
+-------------------------------------------
+Testing: https://corpofficeapps.sharepoint.com/sites/AnotherSite      
+🔐 Authentication issue (check client secret / tenant)
