@@ -1,178 +1,63 @@
-=========== ADO INTELLIGENCE AGENT OUTPUT ===========
+import re
 
-User Story ID:
-718521
 
------------ TITLE -----------
-Modernized Audit additions - DIS > Generate Disclosures Fields
+def clean_ocr_text(text: str) -> str:
+    if not text:
+        return ""
 
------------ ENRICHED DESCRIPTION -----------
-Business would like to add the following fields to Modernized Audit. 
- 
-DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
- 
- 
-Intent to Proceed -  
- 
- 
-Mortgage Broker Fee/Compensation Agreement -  
- 
-*Appears to be privilege restrictedMortgage Broker License Type -  
- 
-*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
-**Also appears to be privilege restricted
+    # Fix common OCR mistakes
+    replacements = {
+        "Ceypass": "Bypass",
+        "Oi": "Of",
+        "Olnpm": "HPML",
+        "D allow": "Allow",
+        "4 Electronic Deli": "Electronic Delivery",
+        "¥": "",
+        "|": "",
+        "v]": "",
+    }
 
-Generate Disclosure
-Intent to Proceed
+    for wrong, correct in replacements.items():
+        text = text.replace(wrong, correct)
 
-D allow appraisal order
+    # Remove excessive spaces
+    text = re.sub(r"[ \t]+", " ", text)
 
-Ceypass compliance Check
-ignore 3rd Party Fee Check
-Oi title Fees Verified after LA Increase
+    # Remove duplicate blank lines
+    text = re.sub(r"\n{2,}", "\n", text)
+------------------------------------------------------------
+all_ocr_text = []
 
-A ignore Fee Quote Data validations
+for idx, img in enumerate(images, start=1):
+    src = img.get("src")
+    if not src:
+        continue
 
-Higher Priced Mortgage Loan: [Select... ¥]
-4 Electronic Deli
-yes
+    save_path = os.path.join(img_folder, f"image_{idx}.png")
+    downloaded_path = _download_ado_image(src, save_path)
 
-No
+    if downloaded_path:
+        ocr_text = extract_text_from_image(downloaded_path)
 
-Send via: [esign
+        if ocr_text and len(ocr_text.strip()) > 10:
+            cleaned_ocr = clean_ocr_text(ocr_text)
+            all_ocr_text.append(cleaned_ocr)
 
-Olnpm pv override
+raw_text = soup.get_text(separator="\n")
+clean_text = _normalize_text(raw_text)
 
-| Generate Disclosure
+# 🔥 Remove duplicate lines between HTML and OCR
+if all_ocr_text:
+    combined_ocr = "\n".join(all_ocr_text)
 
-| intent to Proceed
+    # Remove OCR lines already present in HTML
+    for line in combined_ocr.split("\n"):
+        if line.strip() and line.strip() in clean_text:
+            combined_ocr = combined_ocr.replace(line, "")
 
-have consented to receive disclosures electronically. Otherwise. disclosures will be sent via Mail.
+    final_text = clean_text + "\n\n" + combined_ocr.strip()
+else:
+    final_text = clean_text
 
-Mortgage Broker Fee/Compensation Agreement
-
-Do you want to include Mortgage Broker Fee/Compensation Agreement in the
-Newrez LE Package?
-
-Select... v]
-
-NOTE: This form may not be suitable for every transaction or broker Mi scec._| reviewed to ensure it meets your
-license/registration’s disclosure requirements prior to including in the f Yes
-
-Manage Additional Broker Disclosures
-
-Manage Broker Disclosures
-
-No
-
-This functionality provides the ability to:
-© Append additional disclosures to the Newrez LE Package
-
-Mortgage Broker Fee/Compensation Agreement
-
-Do you want to include Mortgage Broker Fee/Compensation Agreement inthe [¥es___]
-Newrez LE Package?
-Under which license will you originate this loan? Select... ¥]
-
-NOTE: This form may not be suitable for every transaction or broker Aisces.. | reviews
-license/registration’s disclosure requirements prior to including in the Fp,
-
-DRE
-Manage Additional Broker Disclosures RML
-
-This functionality F
-© Append addi
-
-gn Cocin
-
-Manage Broker Disclosures
-
-Disclosures to be appended to Newrez LE Package: 0
-
------------ CHANNELS -----------
-['RTL', 'WHL', 'DTC', 'CL1']
-
------------ ENRICHED ACCEPTANCE CRITERIA -----------
-Business would like to add the following fields to Modernized Audit. 
- 
-DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
- 
- 
-Intent to Proceed -  
- 
- 
-Mortgage Broker Fee/Compensation Agreement -  
- 
-*Appears to be privilege restrictedMortgage Broker License Type -  
- 
-*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
-**Also appears to be privilege restricted
-
-Generate Disclosure
-Intent to Proceed
-
-D allow appraisal order
-
-Ceypass compliance Check
-ignore 3rd Party Fee Check
-Oi title Fees Verified after LA Increase
-
-A ignore Fee Quote Data validations
-
-Higher Priced Mortgage Loan: [Select... ¥]
-4 Electronic Deli
-yes
-
-No
-
-Send via: [esign
-
-Olnpm pv override
-
-| Generate Disclosure
-
-| intent to Proceed
-
-have consented to receive disclosures electronically. Otherwise. disclosures will be sent via Mail.
-
-Mortgage Broker Fee/Compensation Agreement
-
-Do you want to include Mortgage Broker Fee/Compensation Agreement in the
-Newrez LE Package?
-
-Select... v]
-
-NOTE: This form may not be suitable for every transaction or broker Mi scec._| reviewed to ensure it meets your
-license/registration’s disclosure requirements prior to including in the f Yes
-
-Manage Additional Broker Disclosures
-
-Manage Broker Disclosures
-
-No
-
-This functionality provides the ability to:
-© Append additional disclosures to the Newrez LE Package
-
-Mortgage Broker Fee/Compensation Agreement
-
-Do you want to include Mortgage Broker Fee/Compensation Agreement inthe [¥es___]
-Newrez LE Package?
-Under which license will you originate this loan? Select... ¥]
-
-NOTE: This form may not be suitable for every transaction or broker Aisces.. | reviews
-license/registration’s disclosure requirements prior to including in the Fp,
-
-DRE
-Manage Additional Broker Disclosures RML
-
-This functionality F
-© Append addi
-
-gn Cocin
-
-Manage Broker Disclosures
-
-Disclosures to be appended to Newrez LE Package: 0
-
------------ PRECONDITIONS -----------
+return final_text
+    return text.strip()
