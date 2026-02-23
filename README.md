@@ -1,45 +1,171 @@
+import logging
+import json
+from openai import AzureOpenAI
 
-=========== ADO INTELLIGENCE AGENT OUTPUT ===========
+from ado.ado_client import fetch_from_ado
+from utils.html_image_processor import process_html_and_download_images
+from utils.channel_detector import detect_channels
+from utils.state_debugger import dump_state_to_txt
+from config.config import get
+from utils.channel_rules import build_channel_rules
 
-User Story ID:
-718521
+logger = logging.getLogger(__name__)
 
------------ TITLE -----------
-Modernized Audit additions - DIS > Generate Disclosures Fields
 
------------ ENRICHED DESCRIPTION -----------
-Business would like to add the following fields to Modernized Audit. 
- 
-DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
- 
- 
-Intent to Proceed -  
- 
- 
-Mortgage Broker Fee/Compensation Agreement -  
- 
-*Appears to be privilege restrictedMortgage Broker License Type -  
- 
-*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
-**Also appears to be privilege restricted
+class ADOIntelligenceAgent:
+    """
+    Responsibilities:
+    1. Fetch User Story from ADO
+    2. Clean Description HTML + download images
+    3. Clean Acceptance Criteria HTML + download images
+    4. Detect Channels
+    5. 🔥 Split story into channel-specific meaning
+    6. Prepare state for retrieval agent
+    """
 
------------ CHANNELS -----------
-['RTL', 'WHL', 'DTC', 'CL1']
+    def __init__(self):
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+        )
+        self.model = get("CHAT_MODEL")
 
------------ ENRICHED ACCEPTANCE CRITERIA -----------
-Business would like to add the following fields to Modernized Audit. 
- 
-DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
- 
- 
-Intent to Proceed -  
- 
- 
-Mortgage Broker Fee/Compensation Agreement -  
- 
-*Appears to be privilege restrictedMortgage Broker License Type -  
- 
-*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
-**Also appears to be privilege restricted
+    # ---------------------------------------------------------
+    # Channel Context Derivation (MOST IMPORTANT PART)
+    # ---------------------------------------------------------
+    def _derive_channel_context(self, description: str, ac: str, channels):
 
------------ PRECONDITIONS -----------
+        logger.info("🧠 Deriving channel specific flows from story")
+
+        prompt = f"""
+You are a mortgage workflow analyst.
+
+Your job:
+Split the story into workflow meaning for each mortgage channel.
+
+Channel definitions:
+RTL = Loan officer + borrower interaction
+WHL = Broker submits package / broker compliance
+DTC = Borrower self-service portal behavior
+CL1 = Correspondent purchase / post-closing workflow
+
+Rules:
+• A story may contain mixed workflows
+• Extract only relevant sentences per channel
+• DO NOT copy entire story to every channel
+• If nothing relevant → return empty string
+• Be conservative (precision > recall)
+
+DESCRIPTION:
+{description}
+
+AC:
+{ac}
+
+Return STRICT JSON:
+
+{{
+"RTL": "...",
+"WHL": "...",
+"DTC": "...",
+"CL1": "..."
+}}
+"""
+
+        try:
+            resp = self.openai.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
+
+            content = resp.choices[0].message.content.strip()
+            parsed = json.loads(content)
+
+            # ensure all channels exist
+            for ch in channels:
+                parsed.setdefault(ch, "")
+
+            logger.info(f"✅ Channel context derived: {parsed}")
+            return parsed
+
+        except Exception as e:
+            logger.warning(f"⚠️ LLM context split failed → fallback rule mode: {e}")
+
+            # fallback: give full story but still safe
+            full_text = description + "\n" + ac
+            return {ch: full_text for ch in channels}
+
+    # ---------------------------------------------------------
+    # MAIN ENTRY
+    # ---------------------------------------------------------
+    def run(self, state: dict) -> dict:
+        logger.info("🚀 ADO Intelligence Agent started")
+
+        user_story_id = state["user_story_id"]
+
+        # 1️⃣ Fetch
+        story = fetch_from_ado(user_story_id)
+
+        # 2️⃣ Clean HTML
+        logger.info("🧹 Processing Description HTML + Images...")
+        description_enriched = process_html_and_download_images(
+            story["description"], user_story_id, "description"
+        )
+
+        logger.info("🧹 Processing Acceptance Criteria HTML + Images...")
+        ac_enriched = process_html_and_download_images(
+            story["acceptance_criteria"], user_story_id, "ac"
+        )
+
+        # 3️⃣ Detect channels
+        channels = detect_channels(ac_enriched)
+        channel_rules_map ={
+            ch: build_channel_rules(ch) for ch in channels
+        }
+        logger.info(f"✅ Channels detected: {channels}")
+
+        # 🔥 4️⃣ NEW — derive channel context
+        channel_context_map = self._derive_channel_context(
+            description_enriched,
+            ac_enriched,
+            channels
+        )
+
+        # Debug output
+        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
+        print(f"User Story ID: {user_story_id}")
+        print("TITLE:", story["title"])
+       # logger.info(f"CHANNEL CONTEXT MAP:\n{json.dumps(channel_context_map, indent=2)}")
+        print("\n=====================================================\n")
+
+        dump_state_to_txt({
+            "user_story_id": user_story_id,
+            "title": story["title"],
+            "description": description_enriched,
+            "acceptance_criteria": ac_enriched,
+            "channels": channels,
+            "channel_context_map": channel_context_map
+        })
+
+        # -------------------------------------------------
+        # STATE MUTATION
+        # -------------------------------------------------
+        state["user_story"] = story["title"]
+        state["description"] = description_enriched
+        state["acceptance_criteria"] = ac_enriched
+        state["channels"] = channels
+        state["channel_rules_map"] = channel_rules_map
+
+        # 🔥 NEW DATA FOR RETRIEVAL AGENT
+        state["channel_context_map"] = channel_context_map
+
+        state["story"] = {
+            "id": user_story_id,
+            "title": story["title"],
+            "description": description_enriched,
+            "acceptance_criteria": ac_enriched,
+        }
+
+        return state
