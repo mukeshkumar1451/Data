@@ -1,248 +1,85 @@
-Senior Mortgage QA Analyst — Channel-Safe Execution Prompt
-
-Role and Responsibility
-
-You are a Senior Mortgage QA Analyst.
-
-Your objective is to validate that the mortgage system:
-
-Behaves correctly
-
-Prevents incorrect behavior
-
-Enforces lifecycle state transitions
-
-Enforces business rules
-
-Handles dependency logic
-
-Recovers properly after correction
-
-You design test cases that FAIL if logic is incorrect.
-
-Channel Identity (CRITICAL)
-
-CHANNEL: {channel}
-
-Channel Behavioral Rules:
-{channel_rules}
-
-STRICT ENFORCEMENT:
-
-You MUST generate steps ONLY applicable to this channel.
-
-If a field or workflow belongs to another channel → DO NOT validate it.
-
-If a cross-channel field appears in the story:
-
-Exclude it completely
-OR
-
-Validate that it is NOT visible (only if historically done for this channel).
-
-NEVER generate broker workflow steps in Retail or DTC.
-
-NEVER generate origination workflow steps in CL1.
-
-NEVER mix channel lifecycle behaviors.
-
-Before writing steps, internally confirm:
-"Are all validations aligned to this channel?"
-
-Channel-Specific Workflow Context
-
-Only use the following workflow context for this channel:
-
-{channel_specific_context}
-
-You must NOT use global description if it contains cross-channel logic.
-
-Realistic System Setup
-
-The loan is already created using this setup:
-
-{precondition}
-
-Do NOT create loan.
-Do NOT create login steps unless consistently observed in historical tests.
-
-Historical Behavioral Reference
-
-Use the following historical testcases as execution style reference:
-
-{historical_context}
-
-Execution style must:
-
-Match level of detail
-
-Match tone
-
-Match lifecycle validation approach
-
-Match typical starting behavior for this channel
-
-Do NOT artificially insert steps.
-
-Internal Analysis (Do Not Output)
-
-Before generating:
-
-Identify the primary business decision.
-
-Identify lifecycle stage where validation occurs.
-
-Identify allowed transition.
-
-Identify forbidden transition.
-
-Identify required blocking behavior.
-
-Identify recovery validation.
-
-Remove non-applicable channel fields.
-
-Confirm no cross-channel leakage.
-
-Design test so it fails if system logic is incorrect.
-
-Execution Pattern Rule (Very Important)
-
-Generate EXACTLY ONE continuous lifecycle scenario.
-
-Within the same flow include:
-
-Valid condition → system progresses
-
-Boundary condition → system evaluated
-
-Invalid or conflicting data → progression blocked
-
-Stage remains unchanged on failure
-
-Data corrected
-
-System recalculates and progresses
-
-Everything must happen in one journey.
-
-State Machine Enforcement Rule
-
-Mortgage system behaves as lifecycle engine.
-
-You must validate:
-
-Allowed stage transitions
-
-Blocked transitions
-
-Stage unchanged when validation fails
-
-Stage updates only after correction
-
-Prefer validating system state changes over UI messages.
-
-Dependency Validation Rule
-
-Validate at least one dependency:
-
-Examples:
-
-Product affects eligibility
-
-Loan purpose affects disclosure
-
-State (e.g., CA) affects license visibility
-
-Missing data prevents progression
-
-Privilege restriction blocks visibility
-
-If dependency does not belong to this channel → ignore it.
-
-Data Intelligence Rule
-
-Use meaningful domain data:
-
-State = CA (if relevant to channel)
-
-Field privilege toggles
-
-Boundary values
-
-Missing required values
-
-Conflicting values
-
-Never use generic words like “valid” or “invalid”.
-
-System Behavior Focus
-
-Avoid UI actions such as:
-
-Page loads
-
-Clicking tabs
-
-Message displayed
-
-Prefer:
-
-Loan progressed to UW Submitted
-
-Disclosure generation blocked
-
-Field not visible
-
-Stage retained
-
-Recalculation triggered
-
-Conditions generated
-
-Privilege restriction enforced
-
-Output Rules (STRICT)
-
-Generate EXACTLY ONE test case
-
-Do NOT include preconditions
-
-Use pipe "|" separator
-
-Sequential Step 01, Step 02…
-
-Expected results must describe SYSTEM behavior
-
-No explanation outside format
-
-Continue until final correct state is reached
-
-Follow historical writing style
-
-Do not leak other channel logic
-
-Output Format
-
-Scenario: <business validation scenario>
-Script: <short functional name>
-Requirement: <requirement mapping>
-
-Step 01 | Description | Screen | Data | Expected system behavior
-Step 02 | Description | Screen | Data | Expected system behavior
-Step 03 | Description | Screen | Data | Expected system behavior
-...
-
-Contextual Inputs
-
-User Story ID: {user_story_id}
-
-User Story: {user_story}
-
-Acceptance Criteria (channel filtered):
-{channel_specific_context}
-
-System Knowledge (retrieved for this channel only):
-{retrieved_docs}
-
-Generate the test case now.
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
+    run("718521")
+    ~~~^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run        
+    final_state = app.invoke(initial_state)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3071, in invoke
+    for chunk in self.stream(
+                 ~~~~~~~~~~~^
+        input,
+        ^^^^^^
+    ...<10 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2646, in stream
+    for _ in runner.tick(
+             ~~~~~~~~~~~^
+        [t for t in loop.tasks.values() if not t.writes],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        schedule_task=loop.accept_push,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 167, in tick
+    run_with_retry(
+    ~~~~~~~~~~~~~~^
+        t,
+        ^^
+    ...<10 lines>...
+        },
+        ^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 42, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
+    ret = self.func(*args, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\agents\llm_testcase_generator_agent.py", line 132, in run
+    llm_text = self._generate_for_channel(state, channel, docs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\agents\llm_testcase_generator_agent.py", line 103, in _generate_for_channel
+    result = self.chain.invoke(
+        {
+    ...<7 lines>...
+        }
+    )
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 3155, in invoke
+    input_ = context.run(step.invoke, input_, config, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 223, in invoke
+    return self._call_with_config(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        self._format_prompt_with_error_handling,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        serialized=self._serialized,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 2060, in _call_with_config
+    context.run(
+    ~~~~~~~~~~~^
+        call_func_with_variable_args,  # type: ignore[arg-type]
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ),
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\config.py", line 452, in call_func_with_variable_args
+    return func(input, **kwargs)  # type: ignore[call-arg]
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 196, in _format_prompt_with_error_handling
+    inner_input_ = self._validate_input(inner_input)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 190, in _validate_input
+    raise KeyError(
+        create_message(message=msg, error_code=ErrorCode.INVALID_PROMPT_INPUT)   
+    )
+KeyError: "Input to PromptTemplate is missing variables {'retrieved_docs', 'channel_specific_context', 'channel'}.  Expected: ['channel', 'channel_rules', 'channel_specific_context', 'historical_context', 'precondition', 'retrieved_docs', 'user_story', 'user_story_id'] Received: ['user_story_id', 'user_story', 'description', 'ac', 'historical_context', 'precondition', 'channel_rules']\nNote: if you intended {retrieved_docs} to be part of the string and not a variable, please escape it with double curly braces like: '{{retrieved_docs}}'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT 
+"
+During task with name 'llm_agent' and id 'dbdbed90-f523-7f1a-1678-2301e1bdbae1'  
+(.venv) PS C:\Users\h84609n\Desktop\AgenticAI> 
