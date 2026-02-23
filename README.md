@@ -1,5 +1,6 @@
+INFO:utils.channel_detector:Behavioral channel detection started...
 Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>   
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
     run("718521")
     ~~~^^^^^^^^^^
   File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run        
@@ -41,27 +42,10 @@ Traceback (most recent call last):
     input = context.run(step.invoke, input, config, **kwargs)
   File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
     ret = self.func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\agents\ado_intelligence_agent.py", line 181, in run
-    description_enriched = process_html_and_download_images(
-        story["description"],
-        user_story_id,
-        "description"
-    )
-  File "C:\Users\h84609n\Desktop\AgenticAI\utils\html_image_processor.py", line 89, in process_html_and_download_images
-    combined_ocr = "\n".join(all_ocr_text)
-TypeError: sequence item 0: expected str instance, NoneType found
-During task with name 'ado_agent' and id 'ccbf2c31-538f-dad8-9eb2-ef88c250e249'  
-(.venv) PS C:\Users\h84609n\Desktop\AgenticAI>
-
-
-
-
-
-
-
-
-
-
-
-
-
+  File "C:\Users\h84609n\Desktop\AgenticAI\agents\ado_intelligence_agent.py", line 196, in run
+    channels = detect_channels(ac_enriched)
+  File "C:\Users\h84609n\Desktop\AgenticAI\utils\channel_detector.py", line 17, in detect_channels
+    t = text.upper()
+        ^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'upper'
+During task with name 'ado_agent' and id '362cbb01-243e-ce15-37ac-a1a0510108e0'
