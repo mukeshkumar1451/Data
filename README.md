@@ -1,4 +1,174 @@
-import logging
+import pytesseract
+import cv2
+import os
+from openai import AzureOpenAI
+from config.config import get
+
+
+# ---------------------------------------------------------
+# OCR EXTRACTION
+# ---------------------------------------------------------
+def extract_text_from_image(image_path: str) -> str:
+    try:
+        image = cv2.imread(image_path)
+
+        if image is None:
+            return ""
+
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
+
+        text = pytesseract.image_to_string(gray)
+
+        return text.strip()
+
+    except Exception as e:
+        return f"OCR_FAILED: {e}"
+
+
+# ---------------------------------------------------------
+# STRUCTURE OCR TEXT INTO UI FIELD FORMAT
+# ---------------------------------------------------------
+def structure_ocr_text(ocr_text: str) -> str:
+    if not ocr_text:
+        return ""
+
+    client = AzureOpenAI(
+        api_key=get("AZURE_OPENAI_KEY"),
+        azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+        api_version=get("AZURE_OPENAI_API_VERSION"),
+    )
+
+    model = get("CHAT_MODEL")
+
+    prompt = f"""
+You are a mortgage UI analyst.
+
+Convert this OCR extracted UI text into structured field documentation.
+
+For each field identify:
+- Field Name
+- UI Section
+- UI Location (if inferable)
+- Description
+- Dropdown Options (if any)
+- Restrictions (if any)
+- Visibility Logic (if any)
+
+Be precise.
+Do not hallucinate.
+
+OCR TEXT:
+{ocr_text}
+"""
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+
+        return resp.choices[0].message.content.strip()
+
+    except Exception as e:
+        return f"STRUCTURE_FAILED: {e}"
+--===------------------------------------------------------------
+import os
+import re
+import requests
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+
+from utils.image_ocr_processor import extract_text_from_image, structure_ocr_text
+
+load_dotenv()
+ADO_PAT = os.getenv("ADO_PAT")
+
+
+# ---------------------------------------------------------
+# DOWNLOAD ADO IMAGE
+# ---------------------------------------------------------
+def _download_ado_image(url: str, save_path: str) -> str:
+    try:
+        response = requests.get(url, auth=("", ADO_PAT))
+        response.raise_for_status()
+
+        with open(save_path, "wb") as f:
+            f.write(response.content)
+
+        return save_path
+    except Exception as e:
+        return ""
+
+
+# ---------------------------------------------------------
+# CLEAN TEXT
+# ---------------------------------------------------------
+def _normalize_text(text: str) -> str:
+    if not text:
+        return ""
+
+    text = re.sub(r'(\w)\s{2,}(\w)', r'\1\2', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n(?=[a-z])', ' ', text)
+    text = re.sub(r'\n{2,}', '\n', text)
+    text = re.sub(r'\.\s*\.\s*\.\s*', ' ', text)
+    text = re.sub(r'\s+([.,!?])', r'\1', text)
+    text = re.sub(r'\s*:\s*', ': ', text)
+
+    return text.strip()
+
+
+# ---------------------------------------------------------
+# MAIN PROCESSOR
+# ---------------------------------------------------------
+def process_html_and_download_images(html: str, story_id: str, section: str) -> str:
+
+    if not html:
+        return ""
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+
+    images = soup.find_all("img")
+
+    img_folder = os.path.join("downloads", story_id, section)
+    os.makedirs(img_folder, exist_ok=True)
+
+    structured_blocks = []
+
+    # -------------------------------------------------
+    # DOWNLOAD + OCR + STRUCTURE
+    # -------------------------------------------------
+    for idx, img in enumerate(images, start=1):
+        src = img.get("src")
+        if not src:
+            continue
+
+        save_path = os.path.join(img_folder, f"image_{idx}.png")
+        downloaded_path = _download_ado_image(src, save_path)
+
+        if downloaded_path:
+            ocr_text = extract_text_from_image(downloaded_path)
+            structured_text = structure_ocr_text(ocr_text)
+
+            if structured_text:
+                structured_blocks.append(structured_text)
+
+    raw_text = soup.get_text(separator="\n")
+    clean_text = _normalize_text(raw_text)
+
+    if structured_blocks:
+        final_text = clean_text + "\n\n=== EXTRACTED FROM IMAGES ===\n\n" + "\n\n".join(structured_blocks)
+    else:
+        final_text = clean_text
+
+    return final_text
+    ------------------------------------------------------------------
+ import logging
 import json
 from openai import AzureOpenAI
 
@@ -17,12 +187,17 @@ class ADOIntelligenceAgent:
     Responsibilities:
     1. Fetch User Story from ADO
     2. Clean Description HTML + download images
-    3. Clean Acceptance Criteria HTML + download images
-    4. Detect Channels
-    5. 🔥 Split story into channel-specific meaning
-    6. Prepare state for retrieval agent
+    3. Extract OCR text from images
+    4. Structure OCR UI fields
+    5. Detect Channels
+    6. Derive channel-specific workflow context
+    7. Generate structured business summary
+    8. Prepare state for retrieval agent
     """
 
+    # ---------------------------------------------------------
+    # INIT
+    # ---------------------------------------------------------
     def __init__(self):
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
@@ -32,17 +207,16 @@ class ADOIntelligenceAgent:
         self.model = get("CHAT_MODEL")
 
     # ---------------------------------------------------------
-    # Channel Context Derivation (MOST IMPORTANT PART)
+    # CHANNEL CONTEXT DERIVATION
     # ---------------------------------------------------------
     def _derive_channel_context(self, description: str, ac: str, channels):
 
-        logger.info("🧠 Deriving channel specific flows from story")
+        logger.info("🧠 Deriving channel specific flows")
 
         prompt = f"""
 You are a mortgage workflow analyst.
 
-Your job:
-Split the story into workflow meaning for each mortgage channel.
+Split the story into channel-specific meaning.
 
 Channel definitions:
 RTL = Loan officer + borrower interaction
@@ -51,11 +225,10 @@ DTC = Borrower self-service portal behavior
 CL1 = Correspondent purchase / post-closing workflow
 
 Rules:
-• A story may contain mixed workflows
 • Extract only relevant sentences per channel
-• DO NOT copy entire story to every channel
+• Do NOT copy entire story
 • If nothing relevant → return empty string
-• Be conservative (precision > recall)
+• Precision over recall
 
 DESCRIPTION:
 {description}
@@ -83,60 +256,142 @@ Return STRICT JSON:
             content = resp.choices[0].message.content.strip()
             parsed = json.loads(content)
 
-            # ensure all channels exist
             for ch in channels:
                 parsed.setdefault(ch, "")
 
-            logger.info(f"✅ Channel context derived: {parsed}")
             return parsed
 
         except Exception as e:
-            logger.warning(f"⚠️ LLM context split failed → fallback rule mode: {e}")
-
-            
+            logger.warning(f"Channel derivation failed: {e}")
             return {ch: "" for ch in channels}
+
+    # ---------------------------------------------------------
+    # FINAL STRUCTURED SUMMARY
+    # ---------------------------------------------------------
+    def _generate_structured_story_summary(
+        self,
+        story_id: str,
+        title: str,
+        description: str,
+        ac: str,
+        channels: list
+    ) -> str:
+
+        logger.info("📄 Generating structured business summary")
+
+        prompt = f"""
+Generate structured documentation EXACTLY in this format:
+
+User Story {story_id}
+Title: {title}
+
+🔹 Business Requirement
+(2–3 paragraph explanation)
+
+🔹 UI Field Details and Locations
+For each field:
+- Field Name
+- UI Location
+- Description
+- Dropdown Options (if any)
+- Associated Controls (if any)
+- Restrictions (if any)
+- Visibility Logic (if any)
+
+🔹 Channels Impacted
+List channels exactly as provided.
+
+🔹 Acceptance Criteria
+Structured bullets including:
+- Fields required in audit
+- Audit capture expectations
+- Visibility rules
+- Channel consistency requirements
+
+DESCRIPTION:
+{description}
+
+AC:
+{ac}
+
+CHANNELS:
+{channels}
+
+Do not hallucinate.
+Use only provided data.
+"""
+
+        try:
+            resp = self.openai.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
+
+            return resp.choices[0].message.content.strip()
+
+        except Exception as e:
+            logger.error(f"Structured summary generation failed: {e}")
+            return ""
 
     # ---------------------------------------------------------
     # MAIN ENTRY
     # ---------------------------------------------------------
     def run(self, state: dict) -> dict:
+
         logger.info("🚀 ADO Intelligence Agent started")
 
         user_story_id = state["user_story_id"]
 
-        # 1️⃣ Fetch
+        # 1️⃣ Fetch from ADO
         story = fetch_from_ado(user_story_id)
 
-        # 2️⃣ Clean HTML
-        logger.info("🧹 Processing Description HTML + Images...")
+        # 2️⃣ Process Description (HTML + Images + OCR)
+        logger.info("🧹 Processing Description...")
         description_enriched = process_html_and_download_images(
-            story["description"], user_story_id, "description"
+            story["description"],
+            user_story_id,
+            "description"
         )
 
-        logger.info("🧹 Processing Acceptance Criteria HTML + Images...")
+        # 3️⃣ Process Acceptance Criteria
+        logger.info("🧹 Processing Acceptance Criteria...")
         ac_enriched = process_html_and_download_images(
-            story["acceptance_criteria"], user_story_id, "ac"
+            story["acceptance_criteria"],
+            user_story_id,
+            "ac"
         )
 
-        # 3️⃣ Detect channels
+        # 4️⃣ Detect Channels
         channels = detect_channels(ac_enriched)
-        channel_rules_map ={
-            ch: build_channel_rules(ch) for ch in channels
-        }
         logger.info(f"✅ Channels detected: {channels}")
 
-        # 🔥 4️⃣ NEW — derive channel context
+        channel_rules_map = {
+            ch: build_channel_rules(ch) for ch in channels
+        }
+
+        # 5️⃣ Derive Channel Context
         channel_context_map = self._derive_channel_context(
             description_enriched,
             ac_enriched,
             channels
         )
 
-        # Debug output
+        # 6️⃣ Generate Final Structured Summary
+        structured_summary = self._generate_structured_story_summary(
+            user_story_id,
+            story["title"],
+            description_enriched,
+            ac_enriched,
+            channels
+        )
+
+        # -------------------------------------------------
+        # DEBUG OUTPUT
+        # -------------------------------------------------
         print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
         print(f"User Story ID: {user_story_id}")
         print("TITLE:", story["title"])
-       # logger.info(f"CHANNEL CONTEXT MAP:\n{json.dumps(channel_context_map, indent=2)}")
         print("\n=====================================================\n")
 
         dump_state_to_txt({
@@ -145,7 +400,8 @@ Return STRICT JSON:
             "description": description_enriched,
             "acceptance_criteria": ac_enriched,
             "channels": channels,
-            "channel_context_map": channel_context_map
+            "channel_context_map": channel_context_map,
+            "structured_summary": structured_summary
         })
 
         # -------------------------------------------------
@@ -156,9 +412,8 @@ Return STRICT JSON:
         state["acceptance_criteria"] = ac_enriched
         state["channels"] = channels
         state["channel_rules_map"] = channel_rules_map
-
-        # 🔥 NEW DATA FOR RETRIEVAL AGENT
         state["channel_context_map"] = channel_context_map
+        state["structured_summary"] = structured_summary
 
         state["story"] = {
             "id": user_story_id,
@@ -167,120 +422,12 @@ Return STRICT JSON:
             "acceptance_criteria": ac_enriched,
         }
 
+        logger.info("✅ ADO Intelligence Agent completed successfully")
+
         return state
-----------------------------------------------
-# utils/html_image_processor.py
+-------------------------------------------------------
+pip install pytesseract pillow opencv-python beautifulsoup4
+        
 
-import os
-import re
-import requests
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
-
-load_dotenv()
-ADO_PAT = os.getenv("ADO_PAT")
-
-
-# ---------------------------------------------------------
-# Download ADO image
-# ---------------------------------------------------------
-def _download_ado_image(url: str, save_path: str) -> str:
-    try:
-        response = requests.get(url, auth=("", ADO_PAT))
-        response.raise_for_status()
-
-        with open(save_path, "wb") as f:
-            f.write(response.content)
-
-        return save_path
-    except Exception as e:
-        return f"[Image download failed: {e}]"
-
-
-# ---------------------------------------------------------
-# Clean extracted text (VERY IMPORTANT FOR LLM)
-# ---------------------------------------------------------
-def _normalize_text(text: str) -> str:
-    if not text:
-        return ""
-
-    #  Fix broken words: sh ould -> should
-    text = re.sub(r'(\w)\s{2,}(\w)', r'\1\2', text)
-
-    #  Remove excessive spaces
-    text = re.sub(r'[ \t]+', ' ', text)
-
-    #  Join broken lines but keep paragraphs
-    text = re.sub(r'\n(?=[a-z])', ' ', text)
-    text = re.sub(r'\n{2,}', '\n', text)
-
-    #  Remove dot noise produced by ADO formatting
-    text = re.sub(r'\.\s*\.\s*\.\s*', ' ', text)
-
-    #  Remove space before punctuation
-    text = re.sub(r'\s+([.,!?])', r'\1', text)
-
-    #  Normalize colon spacing (important for extractors)
-    text = re.sub(r'\s*:\s*', ': ', text)
-
-    return text.strip()
-
-
-# ---------------------------------------------------------
-# MAIN FUNCTION
-# ---------------------------------------------------------
-def process_html_and_download_images(html: str, story_id: str, section: str) -> str:
-    """
-    Extract readable text + download images from ADO HTML
-
-    section = 'description' or 'ac'
-    """
-
-    if not html:
-        return ""
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    # remove unwanted tags
-    for tag in soup(["script", "style"]):
-        tag.decompose()
-
-    # -------------------------------------------------
-    # IMAGE DOWNLOAD
-    # -------------------------------------------------
-    images = soup.find_all("img")
-
-    img_folder = os.path.join("downloads", story_id, section)
-    os.makedirs(img_folder, exist_ok=True)
-
-    image_references = []
-
-    for idx, img in enumerate(images, start=1):
-        src = img.get("src")
-        if not src:
-            continue
-
-        save_path = os.path.join(img_folder, f"image_{idx}.png")
-        downloaded_path = _download_ado_image(src, save_path)
-
-        #image_references.append(f"[IMAGE DOWNLOADED: {downloaded_path}]")
-
-    # -------------------------------------------------
-    # TEXT EXTRACTION
-    # -------------------------------------------------
-    raw_text = soup.get_text(separator="\n")
-
-    clean_text = _normalize_text(raw_text)
-
-    # -------------------------------------------------
-    # APPEND IMAGE REFERENCES
-    # -------------------------------------------------
-    if image_references:
-        final_text = clean_text + "\n\n" + "\n".join(image_references)
-    else:
-        final_text = clean_text
-
-    return final_text
-------------------------------------------------------------
-downloads\718521\ac\image_1.png
-downloads\718521\description\image_1.png
+    
+        
