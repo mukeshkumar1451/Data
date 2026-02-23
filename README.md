@@ -14,6 +14,15 @@ def detect_channels(text: str) -> list:
 
     logger.info("Behavioral channel detection started...")
 
+    # 🔥 Defensive handling
+    if not text:
+        logger.warning("detect_channels received empty or None text → defaulting to ALL channels")
+        return ALL_CHANNELS
+
+    if not isinstance(text, str):
+        logger.warning(f"detect_channels received non-string type: {type(text)} → converting to string")
+        text = str(text)
+
     t = text.upper()
 
     # ---------------------------
