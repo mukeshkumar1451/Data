@@ -282,3 +282,5 @@ def process_html_and_download_images(html: str, story_id: str, section: str) -> 
 
     return final_text
 ------------------------------------------------------------
+downloads\718521\ac\image_1.png
+downloads\718521\description\image_1.png
