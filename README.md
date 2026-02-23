@@ -1,47 +1,23 @@
-def process_html_and_download_images(html: str, story_id: str, section: str) -> str:
+def _build_channel_context(self, full_story: str, channel: str):
 
-    if not html:
-        return ""
+    tests = self._vector_retrieve(full_story, channel, 40)
 
-    soup = BeautifulSoup(html, "html.parser")
+    # 🔥 sanitize BEFORE rerank
+    sanitized_initial = self._sanitize_docs(channel, tests)
 
-    for tag in soup(["script", "style"]):
-        tag.decompose()
+    if not sanitized_initial:
+        logger.warning(f"⚠️ No docs left after sanitization for {channel}")
+        sanitized_initial = tests[:5]  # safe fallback
 
-    images = soup.find_all("img")
+    reranked = self._rerank_testcases(full_story, sanitized_initial)
 
-    img_folder = os.path.join("downloads", story_id, section)
-    os.makedirs(img_folder, exist_ok=True)
+    if not reranked:
+        logger.warning(f"⚠️ No reranked docs for {channel}, using sanitized raw")
+        reranked = sanitized_initial[:5]
 
-    all_ocr_text = []
+    setup = self._infer_setup(channel, full_story, reranked)
 
-    # -------------------------------------------------
-    # DOWNLOAD + OCR (RAW ONLY)
-    # -------------------------------------------------
-    for idx, img in enumerate(images, start=1):
-        src = img.get("src")
-        if not src:
-            continue
-
-        save_path = os.path.join(img_folder, f"image_{idx}.png")
-        downloaded_path = _download_ado_image(src, save_path)
-
-        if downloaded_path:
-            ocr_text = extract_text_from_image(downloaded_path)
-
-            if ocr_text and len(ocr_text.strip()) > 10:
-                all_ocr_text.append(ocr_text.strip())
-
-    raw_text = soup.get_text(separator="\n")
-    clean_text = _normalize_text(raw_text)
-
-    # -------------------------------------------------
-    # MERGE OCR NATURALLY (NO DEBUG MARKERS)
-    # -------------------------------------------------
-    if all_ocr_text:
-        combined_ocr = "\n\n".join(all_ocr_text)
-        final_text = clean_text + "\n\n" + combined_ocr
-    else:
-        final_text = clean_text
-
-    return final_text
+    return {
+        "tests": reranked,
+        "setup": setup
+    }
