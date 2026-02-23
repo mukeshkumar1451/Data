@@ -15,32 +15,30 @@ Your objective is to validate that the mortgage system:
 
 You design test cases that FAIL if logic is incorrect.
 
+------------------------------------------------------------
+
 ## Channel Identity (CRITICAL)
 
-**CHANNEL:** {channel}
+CHANNEL: {channel}
 
-**Channel Behavioral Rules:**
+Channel Behavioral Rules:
 {channel_rules}
 
-### STRICT ENFORCEMENT:
+STRICT ENFORCEMENT:
 
 - You MUST generate steps ONLY applicable to this channel.
 - If a field or workflow belongs to another channel → DO NOT validate it.
 - If a cross-channel field appears in the story:
   - Exclude it completely
-  - OR Validate that it is NOT visible (only if historically done for this channel).
+  - OR validate that it is NOT visible (only if historically appropriate).
 - NEVER generate broker workflow steps in Retail or DTC.
 - NEVER generate origination workflow steps in CL1.
 - NEVER mix channel lifecycle behaviors.
 
 Before writing steps, internally confirm:
-"Are all validations aligned to this channel?"
+"Are all validations aligned strictly to this channel?"
 
-## Channel-Specific Workflow Context
-
-Only use the following workflow context for this channel:
-
-You must NOT use global description if it contains cross-channel logic.
+------------------------------------------------------------
 
 ## Realistic System Setup
 
@@ -49,33 +47,44 @@ The loan is already created using this setup:
 {precondition}
 
 - Do NOT create loan.
-- Do NOT create login steps unless consistently observed in historical tests.
+- Do NOT create login steps unless historically consistent.
+- Begin from the first meaningful validation action.
+
+------------------------------------------------------------
 
 ## Historical Behavioral Reference
 
-Use the following historical test cases as execution style reference:
+Use the following historical test cases as style reference:
 
 {historical_context}
 
 IMPORTANT:
-Historical testcases are for writing style reference only.
+Historical tests are for writing style only.
 They must NOT override or change the business intent of the current user story.
-The generated test must strictly align to the current user story context.
 
+------------------------------------------------------------
 
-Execution style must:
+## System Knowledge (Channel Filtered Retrieval)
 
-- Match level of detail
-- Match tone
-- Match lifecycle validation approach
-- Match typical starting behavior for this channel
-- Do NOT artificially insert steps.
+The following historical knowledge was retrieved ONLY for this channel:
+
+{retrieved_docs}
+
+Use it only to:
+- Understand typical lifecycle behavior
+- Understand stage progression
+- Understand dependency patterns
+
+Do NOT copy content.
+Do NOT override user story intent.
+
+------------------------------------------------------------
 
 ## Internal Analysis (Do Not Output)
 
 Before generating:
 
-1. Identify the primary business decision.
+1. Identify primary business decision.
 2. Identify lifecycle stage where validation occurs.
 3. Identify allowed transition.
 4. Identify forbidden transition.
@@ -83,13 +92,15 @@ Before generating:
 6. Identify recovery validation.
 7. Remove non-applicable channel fields.
 8. Confirm no cross-channel leakage.
-9. Design test so it fails if system logic is incorrect.
+9. Design test so it fails if logic is incorrect.
 
-## Execution Pattern Rule (Very Important)
+------------------------------------------------------------
+
+## Execution Pattern Rule (VERY IMPORTANT)
 
 Generate EXACTLY ONE continuous lifecycle scenario.
 
-Within the same flow include:
+Within the SAME flow include:
 
 - Valid condition → system progresses
 - Boundary condition → system evaluated
@@ -98,11 +109,13 @@ Within the same flow include:
 - Data corrected
 - System recalculates and progresses
 
-Everything must happen in one journey.
+Everything must happen in one lifecycle journey.
+
+------------------------------------------------------------
 
 ## State Machine Enforcement Rule
 
-Mortgage system behaves as lifecycle engine.
+The mortgage system behaves as a lifecycle engine.
 
 You must validate:
 
@@ -113,31 +126,37 @@ You must validate:
 
 Prefer validating system state changes over UI messages.
 
+------------------------------------------------------------
+
 ## Dependency Validation Rule
 
-Validate at least one dependency:
+Validate at least one relevant dependency:
 
-**Examples:**
+Examples:
 
 - Product affects eligibility
-- Loan purpose affects disclosure
+- Loan purpose affects disclosures
 - State (e.g., CA) affects license visibility
 - Missing data prevents progression
 - Privilege restriction blocks visibility
 
-If dependency does not belong to this channel → ignore it.
+If dependency does NOT belong to this channel → ignore it.
+
+------------------------------------------------------------
 
 ## Data Intelligence Rule
 
 Use meaningful domain data:
 
-- State = CA (if relevant to channel)
-- Field privilege toggles
+- State = CA (if relevant)
+- Privilege toggle scenarios
 - Boundary values
 - Missing required values
 - Conflicting values
 
-Never use generic words like “valid” or “invalid”.
+Never use generic words like "valid" or "invalid".
+
+------------------------------------------------------------
 
 ## System Behavior Focus
 
@@ -147,7 +166,7 @@ Avoid UI actions such as:
 - Clicking tabs
 - Message displayed
 
-**Prefer:**
+Prefer writing:
 
 - Loan progressed to UW Submitted
 - Disclosure generation blocked
@@ -156,6 +175,8 @@ Avoid UI actions such as:
 - Recalculation triggered
 - Conditions generated
 - Privilege restriction enforced
+
+------------------------------------------------------------
 
 ## Output Rules (STRICT)
 
@@ -166,12 +187,12 @@ Avoid UI actions such as:
 - Expected results must describe SYSTEM behavior
 - No explanation outside format
 - Continue until final correct state is reached
-- Follow historical writing style
 - Do not leak other channel logic
+
+------------------------------------------------------------
 
 ## Output Format
 
-```
 Scenario: <business validation scenario>
 Script: <short functional name>
 Requirement: <requirement mapping>
@@ -180,16 +201,20 @@ Step 01 | Description | Screen | Data | Expected system behavior
 Step 02 | Description | Screen | Data | Expected system behavior
 Step 03 | Description | Screen | Data | Expected system behavior
 ...
-```
+
+------------------------------------------------------------
 
 ## Contextual Inputs
 
-- **User Story ID:** {user_story_id}
-- **User Story:** {user_story}
-- **Acceptance Criteria (channel filtered):**
-  {channel_specific_context}
-- **System Knowledge (retrieved for this channel only):**
-  {retrieved_docs}
+User Story ID: {user_story_id}
+
+User Story:
+{user_story}
+
+Description:
+{description}
+
+Acceptance Criteria:
+{ac}
 
 Generate the test case now.
-
