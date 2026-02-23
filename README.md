@@ -1,51 +1,46 @@
-INFO:utils.channel_detector:Behavioral channel detection started...
-Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
-    run("718521")
-    ~~~^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run        
-    final_state = app.invoke(initial_state)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3071, in invoke
-    for chunk in self.stream(
-                 ~~~~~~~~~~~^
-        input,
-        ^^^^^^
-    ...<10 lines>...
-        **kwargs,
-        ^^^^^^^^^
-    ):
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2646, in stream
-    for _ in runner.tick(
-             ~~~~~~~~~~~^
-        [t for t in loop.tasks.values() if not t.writes],
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<2 lines>...
-        schedule_task=loop.accept_push,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ):
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 167, in tick
-    run_with_retry(
-    ~~~~~~~~~~~~~~^
-        t,
-        ^^
-    ...<10 lines>...
-        },
-        ^^
-    )
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 42, in run_with_retry
-    return task.proc.invoke(task.input, config)
-           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
-    input = context.run(step.invoke, input, config, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
-    ret = self.func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\agents\ado_intelligence_agent.py", line 196, in run
-    channels = detect_channels(ac_enriched)
-  File "C:\Users\h84609n\Desktop\AgenticAI\utils\channel_detector.py", line 17, in detect_channels
-    t = text.upper()
-        ^^^^^^^^^^
-AttributeError: 'NoneType' object has no attribute 'upper'
-During task with name 'ado_agent' and id '362cbb01-243e-ce15-37ac-a1a0510108e0'
+def process_html_and_download_images(html: str, story_id: str, section: str):
+
+    if not html:
+        return ""
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+
+    images = soup.find_all("img")
+
+    img_folder = os.path.join("downloads", story_id, section)
+    os.makedirs(img_folder, exist_ok=True)
+
+    all_ocr_text = []
+
+    for idx, img in enumerate(images, start=1):
+        src = img.get("src")
+        if not src:
+            continue
+
+        save_path = os.path.join(img_folder, f"image_{idx}.png")
+        downloaded_path = _download_ado_image(src, save_path)
+
+        if downloaded_path:
+            ocr_text = extract_text_from_image(downloaded_path)
+
+            if ocr_text and len(ocr_text.strip()) > 10:
+                cleaned_ocr = clean_ocr_text(ocr_text)
+
+                if cleaned_ocr:
+                    all_ocr_text.append(str(cleaned_ocr))
+
+    raw_text = soup.get_text(separator="\n")
+    clean_text = _normalize_text(raw_text)
+
+    if all_ocr_text:
+        combined_ocr = "\n".join(
+            [str(x) for x in all_ocr_text if x]
+        )
+        final_text = clean_text + "\n\n" + combined_ocr
+    else:
+        final_text = clean_text
+
+    return final_text
