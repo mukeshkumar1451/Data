@@ -38,8 +38,7 @@ class RetrievalIntelligenceAgent:
     # =========================================================
     def _embed(self, text: str) -> List[float]:
 
-        # prevent very large embedding input
-        safe_text = text[:8000]
+        safe_text = text[:8000]  # token safety
 
         emb = self.openai.embeddings.create(
             model=self.embed_model,
@@ -63,13 +62,15 @@ class RetrievalIntelligenceAgent:
 
         filter_query = f"channels/any(c: c eq '{channel}')"
 
-        results = list(self.search_client.search(
-            search_text=query_text,
-            vector_queries=[vector_query],
-            filter=filter_query,
-            select=["testCaseId", "content"],
-            top=topk
-        ))
+        results = list(
+            self.search_client.search(
+                search_text=query_text,
+                vector_queries=[vector_query],
+                filter=filter_query,
+                select=["testCaseId", "content"],
+                top=topk
+            )
+        )
 
         logger.info(f"📊 Channel {channel} → Retrieved {len(results)} documents")
 
@@ -126,15 +127,15 @@ Do not explain.
 
         logger.info(f"✅ Reranked {len(ordered)} testcases")
 
-        return ordered[:10]
+        return ordered[:10]  # limit to top 10
 
     # =========================================================
     # CHANNEL AWARE SETUP INFERENCE
     # =========================================================
-    def _infer_setup(self, channel: str, channel_text: str, knowledge_docs: List[Dict]):
+    def _infer_setup(self, channel: str, query_text: str, knowledge_docs: List[Dict]):
 
         knowledge_context = "\n".join(
-            d.get("content", "") for d in knowledge_docs[:6]
+            d.get("content", "") for d in knowledge_docs[:5]
         )
 
         prompt = f"""
@@ -152,8 +153,8 @@ Infer a REALISTIC loan setup NATURAL to THIS channel.
 CHANNEL:
 {channel}
 
-WORKFLOW CONTEXT:
-{channel_text}
+STORY CONTEXT:
+{query_text}
 
 SYSTEM KNOWLEDGE:
 {knowledge_context}
@@ -188,16 +189,15 @@ Existing Conditions:
     # =========================================================
     # BUILD CHANNEL CONTEXT
     # =========================================================
-    def _build_channel_context(self, channel_text: str, channel: str):
+    def _build_channel_context(self, query_text: str, channel: str):
 
         logger.info(f"🔎 Building retrieval context for {channel}")
-        logger.info(f"   Query text length: {len(channel_text)}")
 
-        tests = self._vector_retrieve(channel_text, channel, 40)
+        tests = self._vector_retrieve(query_text, channel, 40)
 
-        reranked_tests = self._rerank_testcases(channel_text, tests)
+        reranked_tests = self._rerank_testcases(query_text, tests)
 
-        setup = self._infer_setup(channel, channel_text, reranked_tests)
+        setup = self._infer_setup(channel, query_text, reranked_tests)
 
         return {
             "tests": reranked_tests,
@@ -212,23 +212,23 @@ Existing Conditions:
     # =========================================================
     def run(self, state: Dict) -> Dict:
 
-        logger.info("🚀 Retrieval Intelligence Agent (Channel Aware RAG Mode)")
+        logger.info("🚀 Retrieval Intelligence Agent (Stable Mode)")
 
         retrieved_docs = {}
 
-        # Channel specific context from ADO agent
-        channel_contexts = state.get("channel_context_map", {})
+        # 🔥 Use FULL STORY always (no LLM split)
+        query_text = f"""
+User Story: {state['user_story']}
+
+Description:
+{state['description']}
+
+Acceptance Criteria:
+{state['acceptance_criteria']}
+"""
 
         for channel in state["channels"]:
-
-            channel_text = channel_contexts.get(channel, "").strip()
-
-            # Smart fallback
-            if len(channel_text) < 20:
-                logger.warning(f"⚠️ Weak context for {channel}, using story title fallback")
-                channel_text = state["user_story"]
-
-            retrieved_docs[channel] = self._build_channel_context(channel_text, channel)
+            retrieved_docs[channel] = self._build_channel_context(query_text, channel)
 
         state["retrieved_docs"] = retrieved_docs
         state["channel_setup"] = {
@@ -236,6 +236,6 @@ Existing Conditions:
             for ch in retrieved_docs
         }
 
-        logger.info(f"\n✅ Final Channel Setups Generated\n")
+        logger.info("✅ Final Channel Setups Generated")
 
         return state
