@@ -48,11 +48,17 @@ class RetrievalIntelligenceAgent:
         return emb.data[0].embedding
 
     # =========================================================
-    # VECTOR RETRIEVAL (CHANNEL FILTER ONLY)
+    # GENERIC VECTOR RETRIEVAL
     # =========================================================
-    def _vector_retrieve(self, query_text: str, channel: str, topk: int):
+    def _vector_retrieve(
+        self,
+        query_text: str,
+        channel: str,
+        topk: int,
+        doc_type: str = None
+    ):
 
-        logger.info(f"🔎 Running vector retrieval for {channel}")
+        logger.info(f"🔎 Retrieving {doc_type or 'documents'} for {channel}")
 
         vector_query = VectorizedQuery(
             vector=self._embed(query_text),
@@ -60,27 +66,32 @@ class RetrievalIntelligenceAgent:
             k_nearest_neighbors=topk
         )
 
-        filter_query = f"channels/any(c: c eq '{channel}')"
+        if doc_type:
+            filter_query = (
+                f"channels/any(c: c eq '{channel}') "
+                f"and docType eq '{doc_type}'"
+            )
+        else:
+            filter_query = f"channels/any(c: c eq '{channel}')"
 
         results = list(self.search_client.search(
             search_text=query_text,
             vector_queries=[vector_query],
             filter=filter_query,
-            select=["testCaseId", "content"],
+            select=["testCaseId", "content", "docType"],
             top=topk
         ))
 
-        logger.info(f"📊 {channel} → Retrieved {len(results)} documents")
+        logger.info(f"📊 {channel} → Retrieved {len(results)} {doc_type or ''}")
 
         return results
 
     # =========================================================
-    # RERANK WITH STABILITY PROTECTION
+    # RERANK TESTCASES
     # =========================================================
     def _rerank_testcases(self, query_text: str, docs: List[Dict]):
 
         if not docs:
-            logger.warning("⚠️ No documents to rerank")
             return []
 
         combined = ""
@@ -117,20 +128,19 @@ Do not explain.
 
         ordered = [id_map[x] for x in ranking if x in id_map]
 
-        # 🔥 Stability: enforce minimum context
         if len(ordered) < 3:
-            logger.warning("⚠️ Rerank returned < 3 docs → using top 5 raw docs")
+            logger.warning("⚠️ Rerank weak → using top 5 raw docs")
             return docs[:5]
 
         return ordered[:5]
 
     # =========================================================
-    # CHANNEL SANITIZATION (RTL HARD BLOCK)
+    # RTL SANITIZATION
     # =========================================================
     def _sanitize_docs(self, channel: str, docs: List[Dict]):
 
         if channel == "RTL":
-            logger.info("🧹 Sanitizing broker content for RTL")
+            logger.info("🧹 Removing broker content for RTL")
 
             return [
                 d for d in docs
@@ -142,103 +152,45 @@ Do not explain.
         return docs
 
     # =========================================================
-    # SETUP INFERENCE (SANITIZED)
-    # =========================================================
-    def _infer_setup(self, channel: str, channel_text: str, docs: List[Dict]):
-
-        docs = self._sanitize_docs(channel, docs)
-
-        knowledge_context = "\n".join(
-            d.get("content", "") for d in docs[:5]
-        )
-
-        prompt = f"""
-You are a mortgage domain expert.
-
-Channel: {channel}
-
-STRICT CHANNEL RULES:
-
-RTL:
-- NO broker entities exist
-- NO Mortgage Broker Fee Agreement
-- NO Mortgage Broker License Type
-- If mentioned in story → assume NOT applicable
-
-WHL:
-- Broker workflow allowed
-
-DTC:
-- No broker entities
-
-CL1:
-- Correspondent purchase workflow
-- No origination behavior
-
-Workflow:
-{channel_text}
-
-Infer realistic loan setup for THIS channel only.
-
-If the story contains fields not applicable to this channel,
-EXCLUDE them completely.
-
-Return ONLY:
-
-Loan Purpose:
-Loan Type:
-Product:
-Loan Stage:
-Existing Conditions:
-"""
-
-
-        resp = self.openai.chat.completions.create(
-            model=self.chat_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-
-        setup = resp.choices[0].message.content.strip()
-
-        logger.info(f"\n📌 Inferred Setup for {channel}:\n{setup}\n")
-
-        return setup
-
-    # =========================================================
-    # BUILD CONTEXT PER CHANNEL
+    # BUILD CHANNEL CONTEXT
     # =========================================================
     def _build_channel_context(self, full_story: str, channel: str):
 
-        tests = self._vector_retrieve(full_story, channel, 40)
+        # 1️⃣ Retrieve Testcases
+        tests = self._vector_retrieve(
+            full_story,
+            channel,
+            topk=40,
+            doc_type="testcase"
+        )
 
-    # 🔥 sanitize BEFORE rerank
-        sanitized_initial = self._sanitize_docs(channel, tests)
+        tests = self._sanitize_docs(channel, tests)
 
-        if not sanitized_initial:
-            logger.warning(f"⚠️ No docs left after sanitization for {channel}")
-            sanitized_initial = tests[:5]  # safe fallback
+        reranked = self._rerank_testcases(full_story, tests)
 
-        reranked = self._rerank_testcases(full_story, sanitized_initial)
+        # 2️⃣ Retrieve Preconditions (NO LLM)
+        preconditions = self._vector_retrieve(
+            full_story,
+            channel,
+            topk=3,
+            doc_type="precondition"
+        )
 
-        if not reranked:
-            logger.warning(f"⚠️ No reranked docs for {channel}, using sanitized raw")
-            reranked = sanitized_initial[:5]
-
-        setup = self._infer_setup(channel, full_story, reranked)
+        precondition_text = "\n".join(
+            p.get("content", "") for p in preconditions
+        )
 
         return {
             "tests": reranked,
-            "setup": setup
+            "precondition": precondition_text.strip()
         }
-
 
     # =========================================================
     # LANGGRAPH ENTRY
     # =========================================================
     def run(self, state: Dict) -> Dict:
 
-        logger.info("🚀 Retrieval Intelligence Agent (Stable Mode)")
+        logger.info("🚀 Retrieval Intelligence Agent (Deterministic Mode)")
 
         retrieved_docs = {}
 
@@ -249,14 +201,19 @@ Acceptance Criteria: {state['acceptance_criteria']}
 """
 
         for channel in state["channels"]:
-            retrieved_docs[channel] = self._build_channel_context(full_story, channel)
+            retrieved_docs[channel] = self._build_channel_context(
+                full_story,
+                channel
+            )
 
         state["retrieved_docs"] = retrieved_docs
+
+        # 🔥 Setup now comes from retrieved preconditions
         state["channel_setup"] = {
-            ch: retrieved_docs[ch]["setup"]
+            ch: retrieved_docs[ch]["precondition"]
             for ch in retrieved_docs
         }
 
-        logger.info("✅ Retrieval + Setup completed")
+        logger.info("✅ Retrieval completed (No LLM setup inference)")
 
         return state
