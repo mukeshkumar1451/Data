@@ -1,24 +1,139 @@
-# run_agent.py
-
+import os
 import logging
+from openpyxl import load_workbook
+from config.config import get
 
-from graph.graph_builder import build_graph
-
-logging.basicConfig(level=logging.INFO)
-
-
-def run(user_story_id: str):
-    app = build_graph()
-
-    initial_state = {        "user_story_id": user_story_id
-    }
-
-    final_state = app.invoke(initial_state)
-
-    print("\n Excel Generated at:")
-    print(final_state["excel_output"])
+logger = logging.getLogger(__name__)
 
 
-if __name__ == "__main__":
-    # Example run
-    run("718521")
+class ExcelExportAgent:
+
+    def __init__(self):
+        self.template_path = get("EXCEL_TEMPLATE_PATH")
+        self.output_dir = get("EXCEL_OUTPUT_DIR")
+
+    # -------------------------------------------------
+    # STRICT PIPE FORMAT PARSER (NO REGEX)
+    # -------------------------------------------------
+    def _parse_llm_output(self, llm_text: str):
+
+        scenario = ""
+        script = ""
+        requirement = ""
+        steps = []
+
+        lines = llm_text.splitlines()
+
+        for line in lines:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            if line.startswith("Scenario:"):
+                scenario = line.replace("Scenario:", "").strip()
+                continue
+
+            if line.startswith("Script:"):
+                script = line.replace("Script:", "").strip()
+                continue
+
+            if line.startswith("Requirement:"):
+                requirement = line.replace("Requirement:", "").strip()
+                continue
+
+            # STRICT pipe parsing
+            if line.lower().startswith("step") and "|" in line:
+
+                parts = [p.strip() for p in line.split("|")]
+
+                if len(parts) != 5:
+                    continue  # Skip malformed lines
+
+                steps.append({
+                    "step_no": parts[0],
+                    "desc": parts[1],
+                    "screen": parts[2],
+                    "data": parts[3],
+                    "expected": parts[4]
+                })
+
+        return {
+            "scenario": scenario,
+            "script": script,
+            "requirement": requirement,
+            "steps": steps
+        }
+
+    # -------------------------------------------------
+    # MAIN EXECUTION
+    # -------------------------------------------------
+    def run(self, state: dict) -> dict:
+
+        logger.info("Excel Export Agent started")
+
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        wb = load_workbook(self.template_path)
+
+        user_story_id = state["user_story_id"]
+        tc_counter = 1
+
+        for channel, llm_text in state["llm_outputs"].items():
+
+            if channel not in wb.sheetnames:
+                logger.warning(f"Sheet '{channel}' not found in template.")
+                continue
+
+            ws = wb[channel]   # ✅ Write to correct sheet
+            row = 2            # Start below header
+
+            parsed = self._parse_llm_output(llm_text)
+
+            logger.info(f"{channel} -> Parsed {len(parsed['steps'])} steps")
+
+            if not parsed["steps"]:
+                continue
+
+            # ✅ Inject selected precondition from retrieval layer
+            selected_precondition = state,get("selected_preconditions", {})
+            precondition = selected_precondition.get(channel, "")
+
+            tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
+
+            for idx, step in enumerate(parsed["steps"]):
+
+                ws.cell(row, 1).value = tc_id if idx == 0 else ""
+                ws.cell(row, 2).value = f"{user_story_id}-{channel}"
+                ws.cell(row, 3).value = parsed["scenario"] if idx == 0 else ""
+                ws.cell(row, 4).value = parsed["script"] if idx == 0 else ""
+                ws.cell(row, 5).value = precondition if idx == 0 else ""
+
+                ws.cell(row, 6).value = step["step_no"]
+                ws.cell(row, 7).value = step["desc"]
+                ws.cell(row, 8).value = step["screen"]
+                ws.cell(row, 9).value = step["data"]
+                ws.cell(row, 10).value = step["expected"]
+
+                # Leave execution columns blank
+                ws.cell(row, 11).value = ""
+                ws.cell(row, 12).value = ""
+                ws.cell(row, 13).value = ""
+                ws.cell(row, 14).value = ""
+                ws.cell(row, 15).value = parsed["requirement"] if idx == 0 else ""
+
+                row += 1
+
+            tc_counter += 1
+
+        output_file = os.path.join(
+            self.output_dir,
+            f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
+        )
+
+        wb.save(output_file)
+
+        logger.info(f"Excel generated: {output_file}")
+
+        state["excel_output"] = output_file
+        return state
