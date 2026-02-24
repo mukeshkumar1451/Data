@@ -1,57 +1,36 @@
-You are a Senior Mortgage QA Analyst.
 
-CHANNEL: {channel}
+import logging
+from typing import Dict
 
-Follow channel rules strictly:
-{channel_rules}
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from config.config import get
 
-------------------------------------------------------------
-CRITICAL FORMAT INSTRUCTION
+logger = logging.getLogger(__name__)
 
-You MUST generate output in EXACT format below.
 
-If the output deviates from this format,
-you MUST internally regenerate until it matches exactly.
+class LLMTestcaseGeneratorAgent:
 
-You are NOT allowed to use:
-- Markdown
-- #
-- ###
-- **
-- Bullet points
-- Sub numbering
-- Multi-line expected results
-- Notes section
+    def __init__(self):
 
-------------------------------------------------------------
-OUTPUT TEMPLATE (COPY EXACT STRUCTURE)
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
+            temperature=0.2,
+        )
 
-Create a loan from <Portal Name> as per pre-conditions below:
-1. Channel: {channel}
-2. Loan Purpose: <value>
-3. Loan Type: <value>
-4. Product Code: <value>
-5. Loan Stage: <value>
-
-Scenario: <business validation scenario>
-Script: <short functional name>
-Requirement: {user_story_id}
-
-Step 01 | <Action> | <Screen Name> | <Test Data> | <Expected system behavior>
-Step 02 | <Action> | <Screen Name> | <Test Data> | <Expected system behavior>
-Step 03 | <Action> | <Screen Name> | <Test Data> | <Expected system behavior>
-
-------------------------------------------------------------
-STRICT RULES
-
-1. Each step must be ONE SINGLE LINE.
-2. Each step must contain EXACTLY 4 pipe symbols.
-3. Do NOT wrap lines.
-4. Do NOT insert blank lines between steps.
-5. Expected result must be one sentence.
-6. Do not add commentary before or after.
-
-------------------------------------------------------------
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "user_story",
+                "description",
+                "ac",
+                "historical_tests",
+                "channel"
+            ],
+            template="""
+You are a QA automation expert.
 
 User Story:
 {user_story}
@@ -62,4 +41,105 @@ Description:
 Acceptance Criteria:
 {ac}
 
-Generate the test case now.
+Channel:
+{channel}
+
+Historical Testcases:
+{historical_tests}
+
+IMPORTANT:
+
+You MUST generate precondition using EXACT template below.
+Do NOT change wording.
+Do NOT add extra bullets.
+
+If Channel = RTL:
+
+Create a loan from Customer Portal as per pre-conditions below:
+1. Channel: RTL
+2. Loan Purpose:
+3. Loan Type:
+4. Product Code:
+5. Loan Stage:
+
+If Channel = WHL:
+
+Create a loan from Broker Portal as per pre-conditions below:
+1. Channel: Wholesale
+2. Loan Purpose:
+3. Loan Type:
+4. Product Code:
+5. Loan Stage:
+
+If Channel = DTC:
+
+Create a loan from Ignite Portal as per pre-conditions below:
+1. Channel: DTC
+2. Loan Purpose:
+3. Loan Type:
+4. Product Code:
+5. Loan Stage:
+
+If Channel = CL1:
+
+Create a loan from Broker Portal as per pre-conditions below:
+1. Channel: CL1
+2. Loan Purpose:
+3. Loan Type:
+4. Product Code:
+5. Loan Stage:
+
+After precondition, generate structured test steps.
+"""
+        )
+
+        self.chain = self.prompt | self.llm
+
+    # -------------------------------------------------
+    # Build historical context
+    # -------------------------------------------------
+    def _build_historical_text(self, contexts):
+
+        text = ""
+
+        for c in contexts:
+            text += "\n--- Historical Testcase ---\n"
+            text += c["retrieved_steps"][:1000]
+
+        return text[:6000]
+
+    # -------------------------------------------------
+    # Main Entry
+    # -------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("🤖 LLM Generator Running")
+
+        outputs = {}
+
+        for channel, contexts in state["channel_context"].items():
+
+            historical_text = self._build_historical_text(contexts)
+
+            payload = {
+                "user_story": state["user_story"],
+                "description": state["description"],
+                "ac": state["acceptance_criteria"],
+                "historical_tests": historical_text,
+                "channel": channel
+            }
+
+            result = self.chain.invoke(payload)
+
+            outputs[channel] = result.content
+
+            print("\n===== GENERATED OUTPUT =====\n")
+            print(result.content)
+
+        state["llm_outputs"] = outputs
+
+        logger.info("✅ LLM Generation Completed")
+        return state
+        
+-------------------------------
+prompt location file PROMPT_TEMPLATE_PATH=prompts/testcase_prompts.txt
