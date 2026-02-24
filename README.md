@@ -42,13 +42,12 @@ class ExcelExportAgent:
                 requirement = line.replace("Requirement:", "").strip()
                 continue
 
-            # STRICT pipe parsing
             if line.lower().startswith("step") and "|" in line:
 
                 parts = [p.strip() for p in line.split("|")]
 
                 if len(parts) != 5:
-                    continue  # Skip malformed lines
+                    continue
 
                 steps.append({
                     "step_no": parts[0],
@@ -71,24 +70,39 @@ class ExcelExportAgent:
     def run(self, state: dict) -> dict:
 
         logger.info("Excel Export Agent started")
-        
-        logger.info(f"State received: {state.keys()}")
 
         os.makedirs(self.output_dir, exist_ok=True)
 
         wb = load_workbook(self.template_path)
 
-        user_story_id = state["user_story_id"]
-        tc_counter = 1
+        # -------------------------------------------------
+        # 🔥 DELETE UNUSED SHEETS BASED ON CHANNEL DETECTION
+        # -------------------------------------------------
+        detected_channels = state.get("channels", [])
 
+        if detected_channels:
+            for sheet_name in list(wb.sheetnames):
+                if sheet_name not in detected_channels:
+                    wb.remove(wb[sheet_name])
+
+        logger.info(f"Sheets after cleanup: {wb.sheetnames}")
+
+        user_story_id = state["user_story_id"]
+
+        # -------------------------------------------------
+        # PROCESS EACH CHANNEL
+        # -------------------------------------------------
         for channel, llm_text in state["llm_outputs"].items():
 
             if channel not in wb.sheetnames:
-                logger.warning(f"Sheet '{channel}' not found in template.")
+                logger.warning(f"Sheet '{channel}' not found after cleanup.")
                 continue
 
-            ws = wb[channel]   # ✅ Write to correct sheet
-            row = 2            # Start below header
+            ws = wb[channel]
+            row = 2
+
+            # 🔥 Reset counter per channel
+            tc_counter = 1
 
             parsed = self._parse_llm_output(llm_text)
 
@@ -97,18 +111,17 @@ class ExcelExportAgent:
             if not parsed["steps"]:
                 continue
 
-            # ✅ Inject selected precondition from retrieval layer
-            selected_precondition = state.get("selected_preconditions", {})
-            precondition = selected_precondition.get(channel, "")
-            print("Selected Precondition:"   )
-            print(state.get("selected_preconditions"))
+            selected_preconditions = state.get("selected_preconditions", {})
+            precondition = selected_preconditions.get(channel, "")
 
             tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
+
+            start_row = row  # for merging
 
             for idx, step in enumerate(parsed["steps"]):
 
                 ws.cell(row, 1).value = tc_id if idx == 0 else ""
-                ws.cell(row, 2).value = f"{user_story_id}-{channel}"
+                ws.cell(row, 2).value = f"{user_story_id}-{channel}" if idx == 0 else ""
                 ws.cell(row, 3).value = parsed["scenario"] if idx == 0 else ""
                 ws.cell(row, 4).value = parsed["script"] if idx == 0 else ""
                 ws.cell(row, 5).value = precondition if idx == 0 else ""
@@ -119,7 +132,6 @@ class ExcelExportAgent:
                 ws.cell(row, 9).value = step["data"]
                 ws.cell(row, 10).value = step["expected"]
 
-                # Leave execution columns blank
                 ws.cell(row, 11).value = ""
                 ws.cell(row, 12).value = ""
                 ws.cell(row, 13).value = ""
@@ -127,6 +139,15 @@ class ExcelExportAgent:
                 ws.cell(row, 15).value = parsed["requirement"] if idx == 0 else ""
 
                 row += 1
+
+            end_row = row - 1
+
+            # -------------------------------------------------
+            # 🔥 MERGE TEST SCENARIO ID COLUMN (Column 2)
+            # -------------------------------------------------
+            if end_row > start_row:
+                ws.merge_cells(start_row=start_row, start_column=2,
+                               end_row=end_row, end_column=2)
 
             tc_counter += 1
 
