@@ -1,62 +1,44 @@
-# utils/channel_detector.py
-import re
-import logging
+=========== ADO INTELLIGENCE AGENT OUTPUT ===========
 
-logger = logging.getLogger(__name__)
+User Story ID:
+718521
 
-ALL_CHANNELS = ["RTL", "WHL", "DTC", "CL1"]
+----------- TITLE -----------
+Modernized Audit additions - DIS > Generate Disclosures Fields
 
+----------- ENRICHED DESCRIPTION -----------
+Business would like to add the following fields to Modernized Audit. 
+ 
+DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
+ 
+ 
+Intent to Proceed -  
+ 
+ 
+Mortgage Broker Fee/Compensation Agreement -  
+ 
+*Appears to be privilege restrictedMortgage Broker License Type -  
+ 
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
+**Also appears to be privilege restricted
 
-# -------------------------------------------------
-# Behavioral Channel Detection
-# -------------------------------------------------
-def detect_channels(text: str) -> list:
+----------- CHANNELS -----------
+['RTL', 'WHL', 'DTC', 'CL1']
 
-    logger.info("Behavioral channel detection started...")
+----------- ENRICHED ACCEPTANCE CRITERIA -----------
+Business would like to add the following fields to Modernized Audit. 
+ 
+DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
+ 
+ 
+Intent to Proceed -  
+ 
+ 
+Mortgage Broker Fee/Compensation Agreement -  
+ 
+*Appears to be privilege restrictedMortgage Broker License Type -  
+ 
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
+**Also appears to be privilege restricted
 
-    # 🔥 Defensive handling
-    if not text:
-        logger.warning("detect_channels received empty or None text → defaulting to ALL channels")
-        return ALL_CHANNELS
-
-    if not isinstance(text, str):
-        logger.warning(f"detect_channels received non-string type: {type(text)} → converting to string")
-        text = str(text)
-
-    t = text.upper()
-
-    # ---------------------------
-    # 1. Persona Detection (strongest signal)
-    # ---------------------------
-    if "NON-BROKER USER IN H2O" in t or "INTERNAL USER" in t:
-        logger.info("Detected INTERNAL H2O user → WHL")
-        return ["WHL"]
-
-    if "BROKER PORTAL" in t or "BROKER LO" in t:
-        logger.info("Detected Broker persona → WHL")
-        return ["WHL"]
-
-    if "CUSTOMER PORTAL" in t or "BORROWER" in t:
-        logger.info("Detected Borrower persona → RTL")
-        return ["RTL"]
-
-    if "IGNITE" in t or "DIRECT TO CONSUMER" in t:
-        logger.info("Detected Ignite flow → DTC")
-        return ["DTC"]
-
-    if "CORRESPONDENT" in t or "CL1" in t:
-        logger.info("Detected Correspondent → CL1")
-        return ["CL1"]
-
-    # ---------------------------
-    # 2. Feature based detection
-    # ---------------------------
-    if "BUSINESS UNIT" in t or "CREATE LOAN ON BEHALF OF" in t:
-        logger.info("Detected internal operations feature → WHL")
-        return ["WHL"]
-
-    # ---------------------------
-    # Fallback
-    # ---------------------------
-    logger.info("No strong signal → using ALL channels")
-    return ALL_CHANNELS
+----------- PRECONDITIONS -----------
