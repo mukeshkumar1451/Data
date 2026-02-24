@@ -1,39 +1,111 @@
-=========== ADO INTELLIGENCE AGENT OUTPUT ===========
+def _generate_structured_story_summary(
+    self,
+    story_id: str,
+    title: str,
+    description: str,
+    ac: str,
+    channels: list
+):
 
-User Story ID:
-718521
+    prompt = f"""
+You are a mortgage UI documentation analyst.
 
------------ TITLE -----------
-Modernized Audit additions - DIS > Generate Disclosures Fields
+Your task:
+Convert the provided ADO Description + Acceptance Criteria into EXACTLY the following structured format.
 
------------ ENRICHED DESCRIPTION -----------
-Business would like to add the following fields to the Modernized Audit system: 
+IMPORTANT RULES:
+- Do NOT hallucinate.
+- Do NOT rename UI labels.
+- Extract dropdown values exactly as written.
+- Extract checkbox labels exactly as written.
+- Preserve UI wording.
+- Do NOT summarize fields.
+- If visibility rule is mentioned (e.g., SubPropState = CA), include it.
+- If privilege restriction mentioned, include it.
 
-1. **Higher Priced Mortgage Loan (HPML)**: Located in DIS > Generate Disclosures > Generate Disclosure.
-2. **Intent to Proceed**: Located in DIS > Generate Disclosures.
-3. **Mortgage Broker Fee/Compensation Agreement**: Located in DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement. This field appears to be privilege-restricted.
-4. **Mortgage Broker License Type**: Located in DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement. This field appears when SubPropState = CA. Development team to confirm the exact logic. This field also appears to be privilege-restricted.
+Return STRICT JSON:
 
-Additional functionality and considerations:
-- **Generate Disclosure**: Includes options such as 'Allow appraisal order,' 'Bypass compliance check,' 'Ignore 3rd party fee check,' 'Verify title fees after loan amount increase,' 'Ignore fee quote data validations,' and 'HPML PV override.'
-- **Electronic Delivery**: Disclosures can be sent via eSign or mail, depending on user consent.
-- **Mortgage Broker Fee/Compensation Agreement**: Users can choose to include this agreement in the Newrez LE Package. Note that this form may not be suitable for every transaction or broker. It should be reviewed to ensure it meets license/registration disclosure requirements.
-- **Manage Broker Disclosures**: Provides functionality to append additional disclosures to the Newrez LE Package. Disclosures to be appended are currently set to 0.
+{{
+  "document": "FULL FORMATTED DOCUMENT HERE"
+}}
 
------------ CHANNELS -----------
-['RTL', 'WHL', 'DTC', 'CL1']
+FORMAT MUST BE EXACTLY:
 
------------ ENRICHED ACCEPTANCE CRITERIA -----------
-1. Add the following fields to the Modernized Audit system:
-   - Higher Priced Mortgage Loan (HPML): Located in DIS > Generate Disclosures > Generate Disclosure.
-   - Intent to Proceed: Located in DIS > Generate Disclosures.
-   - Mortgage Broker Fee/Compensation Agreement: Located in DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement. Ensure privilege restrictions are applied.
-   - Mortgage Broker License Type: Located in DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement. Ensure this field appears when SubPropState = CA and confirm the logic with the development team. Apply privilege restrictions.
+User Story {story_id}
+Title: {title}
 
-2. Ensure the following functionalities are implemented:
-   - Generate Disclosure options: Allow appraisal order, bypass compliance check, ignore 3rd party fee check, verify title fees after loan amount increase, ignore fee quote data validations, and HPML PV override.
-   - Electronic Delivery: Disclosures should be sent via eSign or mail based on user consent.
-   - Mortgage Broker Fee/Compensation Agreement: Provide the option to include this agreement in the Newrez LE Package. Ensure the form meets license/registration disclosure requirements.
-   - Manage Broker Disclosures: Enable functionality to append additional disclosures to the Newrez LE Package. Disclosures to be appended should be configurable.
+🔹 Business Requirement
 
------------ PRECONDITIONS -----------
+(2–3 paragraph explanation derived only from input text)
+
+🔹 UI Field Details and Locations
+
+For each detected UI field:
+1️⃣ <Field Short Name>
+
+UI Location:
+<If inferable from text>
+
+Field Name:
+<Exact label>
+
+Description:
+<Dropdown or Checkbox description>
+
+Dropdown Options:
+<List each option on new line if applicable>
+
+Associated Controls:
+<If any>
+
+⚠ Note:
+<If privilege restricted>
+
+⚠ Observations:
+<If visibility rule present>
+
+🔹 Channels Impacted
+
+{chr(10).join(channels)}
+
+🔹 Acceptance Criteria
+
+The following fields must be added to Modernized Audit:
+<List field names>
+
+Audit must capture:
+Field value selected
+Timestamp of update
+User performing the action
+
+If visibility rules exist, include them under Acceptance Criteria.
+
+INPUT DESCRIPTION:
+{description}
+
+INPUT ACCEPTANCE CRITERIA:
+{ac}
+"""
+
+    try:
+        resp = self.openai.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+
+        content = resp.choices[0].message.content.strip()
+
+        # Safe JSON extraction
+        import re, json
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+
+        if match:
+            parsed = json.loads(match.group())
+            return parsed.get("document", "")
+
+        return ""
+
+    except Exception as e:
+        logger.error(f"Structured summary generation failed: {e}")
+        return ""
