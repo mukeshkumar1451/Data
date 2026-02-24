@@ -1,164 +1,112 @@
-import os
-import logging
-from openpyxl import load_workbook
-from config.config import get
+import requests
+import jwt
+from urllib.parse import urlparse
 
-logger = logging.getLogger(__name__)
+# ================= AZURE APP =================
 
 
-class ExcelExportAgent:
+# ================= SITES TO VERIFY =================
+SITES_TO_TEST = [
+    "https://corpofficeapps.sharepoint.com/sites/Ops_Home",
+    "https://corpofficeapps.sharepoint.com/sites/nationalops"
+]
 
-    def __init__(self):
-        self.template_path = get("EXCEL_TEMPLATE_PATH")
-        self.output_dir = get("EXCEL_OUTPUT_DIR")
+# =========================================================
+# GET ACCESS TOKEN
+# =========================================================
+def get_access_token():
+    token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
 
-    # -------------------------------------------------
-    # STRICT PIPE FORMAT PARSER (NO REGEX)
-    # -------------------------------------------------
-    def _parse_llm_output(self, llm_text: str):
+    data = {
+        "client_id": CLIENT_ID,
+        "scope": "https://graph.microsoft.com/.default",
+        "client_secret": CLIENT_SECRET,
+        "grant_type": "client_credentials",
+    }
 
-        scenario = ""
-        script = ""
-        requirement = ""
-        steps = []
+    res = requests.post(token_url, data=data)
+    res.raise_for_status()
 
-        lines = llm_text.splitlines()
+    print("✅ Token acquired")
+    return res.json()["access_token"]
 
-        for line in lines:
-            line = line.strip()
 
-            if not line:
-                continue
+# =========================================================
+# INSPECT TOKEN
+# =========================================================
+def inspect_token(token):
+    decoded = jwt.decode(token, options={"verify_signature": False})
+    print("\n======= TOKEN CLAIMS =======\n")
+    print("aud:", decoded.get("aud"))
+    print("roles:", decoded.get("roles"))
+    print("appid:", decoded.get("appid"))
+    print("tid:", decoded.get("tid"))
 
-            if line.startswith("Scenario:"):
-                scenario = line.replace("Scenario:", "").strip()
-                continue
 
-            if line.startswith("Script:"):
-                script = line.replace("Script:", "").strip()
-                continue
+# =========================================================
+# VERIFY SITE ACCESS
+# =========================================================
+def verify_site_access(token, site_url):
 
-            if line.startswith("Requirement:"):
-                requirement = line.replace("Requirement:", "").strip()
-                continue
+    parsed = urlparse(site_url)
+    host = parsed.netloc
+    site_path = parsed.path.strip("/")
 
-            if line.lower().startswith("step") and "|" in line:
+    graph_url = f"https://graph.microsoft.com/v1.0/sites/{host}:/{site_path}"
 
-                parts = [p.strip() for p in line.split("|")]
+    headers = {"Authorization": f"Bearer {token}"}
+    res = requests.get(graph_url, headers=headers)
 
-                if len(parts) != 5:
-                    continue
+    print("\n-------------------------------------------")
+    print("Testing:", site_url)
+    print("Graph URL:", graph_url)
+    print("Status:", res.status_code)
+    print("Response:", res.text)
 
-                steps.append({
-                    "step_no": parts[0],
-                    "desc": parts[1],
-                    "screen": parts[2],
-                    "data": parts[3],
-                    "expected": parts[4]
-                })
+    if res.status_code == 200:
+        print("✔ ACCESS GRANTED")
+    elif res.status_code == 403:
+        print("❌ ACCESS NOT GRANTED (Sites.Selected not assigned)")
+    elif res.status_code == 401:
+        print("🔐 401 Unauthorized → Token/Permission issue")
+    else:
+        print("⚠ Unexpected issue")
 
-        return {
-            "scenario": scenario,
-            "script": script,
-            "requirement": requirement,
-            "steps": steps
-        }
 
-    # -------------------------------------------------
-    # MAIN EXECUTION
-    # -------------------------------------------------
-    def run(self, state: dict) -> dict:
+# =========================================================
+# MAIN
+# =========================================================
+if __name__ == "__main__":
 
-        logger.info("Excel Export Agent started")
+    token = get_access_token()
+    inspect_token(token)
 
-        os.makedirs(self.output_dir, exist_ok=True)
+    print("\nChecking Sites.Selected permissions...\n")
 
-        wb = load_workbook(self.template_path)
+    for site in SITES_TO_TEST:
+        verify_site_access(token, site)
+-----------------------------------------------------
+======= TOKEN CLAIMS =======
 
-        # -------------------------------------------------
-        # 🔥 DELETE UNUSED SHEETS BASED ON CHANNEL DETECTION
-        # -------------------------------------------------
-        detected_channels = state.get("channels", [])
+aud: https://graph.microsoft.com
+roles: ['Sites.Selected']
+appid: c23ec558-0644-496c-9ff0-b2475e086766
+tid: 68c05827-e75e-4060-ae30-f37c77fc1f70
 
-        if detected_channels:
-            for sheet_name in list(wb.sheetnames):
-                if sheet_name not in detected_channels:
-                    wb.remove(wb[sheet_name])
+Checking Sites.Selected permissions...
 
-        logger.info(f"Sheets after cleanup: {wb.sheetnames}")
 
-        user_story_id = state["user_story_id"]
+-------------------------------------------
+Testing: https://corpofficeapps.sharepoint.com/sites/Ops_Home
+Graph URL: https://graph.microsoft.com/v1.0/sites/corpofficeapps.sharepoint.com:/sites/Ops_Home
+Status: 200
+Response: {"@odata.context":"https://graph.microsoft.com/v1.0/$metadata#sites/$entity","createdDateTime":"2018-09-19T19:05:36.62Z","description":"","id":"corpofficeapps.sharepoint.com,bf088619-af20-4ee0-aed9-f59eadef4cc4,5eb9ca1c-4861-4ccb-9370-5c509bfd7680","lastModifiedDateTime":"2026-02-24T18:11:28Z","name":"Ops_Home","webUrl":"https://corpofficeapps.sharepoint.com/sites/Ops_Home","displayName":"Operations Extranet Home","root":{},"siteCollection":{"hostname":"corpofficeapps.sharepoint.com"}}
+✔ ACCESS GRANTED
 
-        # -------------------------------------------------
-        # PROCESS EACH CHANNEL
-        # -------------------------------------------------
-        for channel, llm_text in state["llm_outputs"].items():
-
-            if channel not in wb.sheetnames:
-                logger.warning(f"Sheet '{channel}' not found after cleanup.")
-                continue
-
-            ws = wb[channel]
-            row = 2
-
-            # 🔥 Reset counter per channel
-            tc_counter = 1
-
-            parsed = self._parse_llm_output(llm_text)
-
-            logger.info(f"{channel} -> Parsed {len(parsed['steps'])} steps")
-
-            if not parsed["steps"]:
-                continue
-
-            selected_preconditions = state.get("selected_preconditions", {})
-            precondition = selected_preconditions.get(channel, "")
-
-            tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
-
-            start_row = row  # for merging
-
-            for idx, step in enumerate(parsed["steps"]):
-
-                ws.cell(row, 1).value = tc_id if idx == 0 else ""
-                ws.cell(row, 2).value = f"{user_story_id}-{channel}" if idx == 0 else ""
-                ws.cell(row, 3).value = parsed["scenario"] if idx == 0 else ""
-                ws.cell(row, 4).value = parsed["script"] if idx == 0 else ""
-                ws.cell(row, 5).value = precondition if idx == 0 else ""
-
-                ws.cell(row, 6).value = step["step_no"]
-                ws.cell(row, 7).value = step["desc"]
-                ws.cell(row, 8).value = step["screen"]
-                ws.cell(row, 9).value = step["data"]
-                ws.cell(row, 10).value = step["expected"]
-
-                ws.cell(row, 11).value = ""
-                ws.cell(row, 12).value = ""
-                ws.cell(row, 13).value = ""
-                ws.cell(row, 14).value = ""
-                ws.cell(row, 15).value = parsed["requirement"] if idx == 0 else ""
-
-                row += 1
-
-            end_row = row - 1
-
-            # -------------------------------------------------
-            # 🔥 MERGE TEST SCENARIO ID COLUMN (Column 2)
-            # -------------------------------------------------
-            if end_row > start_row:
-                ws.merge_cells(start_row=start_row, start_column=2,
-                               end_row=end_row, end_column=2)
-
-            tc_counter += 1
-
-        output_file = os.path.join(
-            self.output_dir,
-            f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
-        )
-
-        wb.save(output_file)
-
-        logger.info(f"Excel generated: {output_file}")
-
-        state["excel_output"] = output_file
-        return state
+-------------------------------------------
+Testing: https://corpofficeapps.sharepoint.com/sites/nationalops
+Graph URL: https://graph.microsoft.com/v1.0/sites/corpofficeapps.sharepoint.com:/sites/nationalops
+Status: 404
+Response: {"error":{"code":"itemNotFound","message":"Requested site could not be found","innerError":{"date":"2026-02-24T19:48:00","request-id":"50169a2f-c604-483d-a424-1d26468f27d4","client-request-id":"50169a2f-c604-483d-a424-1d26468f27d4"}}}
+⚠ Unexpected issue
+(.venv) PS C:\Users\h84609n\Desktop\sharepointconnection> 
