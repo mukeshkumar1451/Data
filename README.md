@@ -1,83 +1,97 @@
-You are a Senior Mortgage QA Analyst.
+import logging
+import os
+from typing import Dict
 
-Your job is to generate EXACTLY ONE test case.
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from config.config import get
 
-CHANNEL: {channel}
+logger = logging.getLogger(__name__)
 
-------------------------------------------------------------
-STRICT OUTPUT FORMAT RULES (MANDATORY)
 
-1. Output must follow the template EXACTLY.
-2. Do NOT use markdown.
-3. Do NOT use bullet points.
-4. Do NOT use ** or ###.
-5. Do NOT use multi-line expected results.
-6. Each step must be ONE SINGLE LINE.
-7. Each step must contain EXACTLY 4 pipe symbols "|".
-8. Do NOT insert blank lines between steps.
-9. Do NOT add notes section.
-10. Do NOT explain anything.
+class LLMTestcaseGeneratorAgent:
 
-If format is violated, regenerate internally before responding.
+    def __init__(self):
 
-------------------------------------------------------------
-PRECONDITION TEMPLATE (DO NOT MODIFY WORDING)
+        # Load prompt from file
+        prompt_path = get("PROMPT_TEMPLATE_PATH")
 
-If Channel = RTL:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
 
-Create a loan from Customer Portal as per pre-conditions below:
-1. Channel: RTL
-2. Loan Purpose: <value>
-3. Loan Type: <value>
-4. Product Code: <value>
-5. Loan Stage: <value>
+        # STRICT PIPE FORMAT
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "user_story_id",
+                "user_story",
+                "description",
+                "ac",
+                "channel"
+            ],
+            template=prompt_text,
+        )
 
-If Channel = WHL:
+        # Deterministic output
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
+            temperature=0,  # IMPORTANT: must be 0
+        )
 
-Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: Wholesale
-2. Loan Purpose: <value>
-3. Loan Type: <value>
-4. Product Code: <value>
-5. Loan Stage: <value>
+        self.chain = self.prompt | self.llm
 
-If Channel = DTC:
+        os.makedirs("debug", exist_ok=True)
 
-Create a loan from Ignite Portal as per pre-conditions below:
-1. Channel: DTC
-2. Loan Purpose: <value>
-3. Loan Type: <value>
-4. Product Code: <value>
-5. Loan Stage: <value>
+    # ---------------------------------------------------------
+    # Generate testcase per channel
+    # ---------------------------------------------------------
+    def _generate_for_channel(self, state: Dict, channel: str) -> str:
 
-If Channel = CL1:
+        logger.info(f"🤖 Generating testcase for channel: {channel}")
 
-Create a loan from Broker Portal as per pre-conditions below:
-1. Channel: CL1
-2. Loan Purpose: <value>
-3. Loan Type: <value>
-4. Product Code: <value>
-5. Loan Stage: <value>
+        payload = {
+            "user_story_id": state["user_story_id"],
+            "user_story": state["user_story"],
+            "description": state["description"],
+            "ac": state["acceptance_criteria"],
+            "channel": channel
+        }
 
-------------------------------------------------------------
-TEST CASE FORMAT (STRICT)
+        # Save formatted prompt for debugging
+        formatted_prompt = self.prompt.format(**payload)
+        debug_file = f"debug/llm_prompt_{state['user_story_id']}_{channel}.txt"
 
-Scenario: <Business validation scenario>
-Script: <Short functional name>
-Requirement: <User story ID>
+        with open(debug_file, "w", encoding="utf-8") as f:
+            f.write(formatted_prompt)
 
-Step 01 | <Action> | <Screen Name> | <Test Data> | <Expected system behavior>
-Step 02 | <Action> | <Screen Name> | <Test Data> | <Expected system behavior>
-Step 03 | <Action> | <Screen Name> | <Test Data> | <Expected system behavior>
+        logger.info(f"📄 Prompt written to: {debug_file}")
 
-------------------------------------------------------------
-User Story:
-{user_story}
+        result = self.chain.invoke(payload)
 
-Description:
-{description}
+        return result.content.strip()
 
-Acceptance Criteria:
-{ac}
+    # ---------------------------------------------------------
+    # LangGraph Entry
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
 
-Generate the test case now.
+        logger.info("🚀 LLM Generator Running")
+
+        llm_outputs = {}
+
+        for channel in state.get("channels", []):
+
+            output = self._generate_for_channel(state, channel)
+
+            llm_outputs[channel] = output
+
+            print("\n===== GENERATED OUTPUT =====\n")
+            print(output)
+
+        state["llm_outputs"] = llm_outputs
+
+        logger.info("✅ LLM Generation Completed")
+
+        return state
