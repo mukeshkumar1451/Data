@@ -1,77 +1,27 @@
-import logging
-import os
-from typing import Dict
-
-from langchain_openai import AzureChatOpenAI
-from langchain_core.prompts import PromptTemplate
-from config.config import get
-
-logger = logging.getLogger(__name__)
+from typing import TypedDict, Dict, List
 
 
-class LLMTestcaseGeneratorAgent:
+class RAGState(TypedDict, total=False):
+    user_story_id: str
 
-    def __init__(self):
+    # ADO Agent outputs
+    user_story: str
+    description: str
+    acceptance_criteria: str
+    channels: List[str]
+    preconditions: Dict[str, str]
+    story: Dict
 
-        # Load prompt path from .env
-        prompt_path = get("PROMPT_TEMPLATE_PATH")
+    # Retrieval Agent outputs
+    retrieved_docs: Dict[str, List[Dict]]
 
-        if not os.path.exists(prompt_path):
-            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+    # 🔥 ADD THIS
+    channel_context: Dict[str, List[Dict]]
 
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            prompt_text = f.read()
+    channel_setup: Dict[str, str]
 
-        self.prompt = PromptTemplate(
-            input_variables=[
-                "user_story_id",
-                "user_story",
-                "description",
-                "ac",
-                "channel",
-                "precondition"
-            ],
-            template=prompt_text
-        )
+    # LLM Agent outputs
+    llm_outputs: Dict[str, str]
 
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0  # deterministic
-        )
-
-        self.chain = self.prompt | self.llm
-
-        logger.info("✅ LLM Testcase Generator initialized")
-
-    # ---------------------------------------------------------
-    # LangGraph Entry
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("🤖 LLM Generator Running")
-
-        outputs = {}
-
-        for channel, ctx in state["channel_context"].items():
-
-            payload = {
-                "user_story_id": state["user_story_id"],
-                "user_story": state["user_story"],
-                "description": state["description"],
-                "ac": state["acceptance_criteria"],
-                "channel": channel,
-                "precondition": ctx["precondition"]
-            }
-
-            result = self.chain.invoke(payload)
-
-            outputs[channel] = result.content.strip()
-
-        state["llm_outputs"] = outputs
-
-        logger.info("✅ LLM Generation Completed")
-
-        return state
+    # Excel Agent outputs
+    excel_output: str
