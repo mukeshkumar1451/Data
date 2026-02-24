@@ -1,125 +1,120 @@
-# Senior Mortgage QA Analyst — Channel-Safe Execution Prompt
+import logging
+from typing import Dict
 
-## Role and Responsibility
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
 
-You are a Senior Mortgage QA Analyst.
+from config.config import get
+from state.rag_state import RAGState
 
-Your objective is to validate that the mortgage system:
-
-- Behaves correctly
-- Prevents incorrect behavior
-- Enforces lifecycle state transitions
-- Enforces business rules
-- Handles dependency logic
-- Recovers properly after correction
-
-You design test cases that FAIL if logic is incorrect.
-
-------------------------------------------------------------
-
-## Channel Identity (CRITICAL)
-
-CHANNEL: {channel}
-
-Channel Behavioral Rules:
-{channel_rules}
-
-STRICT ENFORCEMENT:
-
-- You MUST generate steps ONLY applicable to this channel.
-- If a field or workflow belongs to another channel → DO NOT validate it.
-- If a cross-channel field appears in the story:
-  - Completely ignore it.
-  - Do NOT validate it.
-  - Do NOT check visibility.
-  - Do NOT generate any step referencing it.
-- NEVER generate broker workflow steps in Retail or DTC.
-- NEVER generate origination workflow steps in CL1.
-- NEVER mix channel lifecycle behaviors.
--If a field is explicitly marked as "does NOT exist" in channel rules,
-you MUST ignore it completely even if it appears in the user story.
+logger = logging.getLogger(__name__)
 
 
-Before writing steps, internally confirm:
-"Are all validations aligned strictly to this channel?"
+class LLMTestcaseGeneratorAgent:
+    """
+    Stable Production Version
+    - No channel_specific_context
+    - Full AC used
+    - Channel filtering handled via:
+        • Azure Search filtering
+        • channel_rules
+    """
 
-------------------------------------------------------------
+    def __init__(self):
 
-## Realistic System Setup
+        prompt_path = get("PROMPT_TEMPLATE_PATH")
 
-The loan is already created using this setup:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
 
-{precondition}
+        # 🔥 REMOVE channel_specific_context
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "user_story_id",
+                "user_story",
+                "description",
+                "ac",
+                "historical_context",
+                "precondition",
+                "channel_rules",
+                "retrieved_docs",
+                "channel"
+            ],
+            template=prompt_text,
+        )
 
-- Do NOT create loan.
-- Do NOT create login steps unless historically consistent.
-- Begin from the first meaningful validation action.
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
+            temperature=0.2,
+        )
 
-------------------------------------------------------------
+        self.chain = self.prompt | self.llm
 
-## Historical Behavioral Reference
+    # ---------------------------------------------------------
+    # Convert retrieved docs into RAG text
+    # ---------------------------------------------------------
+    def _build_retrieved_text(self, docs: Dict) -> str:
 
-Use the following historical test cases as style reference:
+        text = ""
 
-{historical_context}
+        # Only inject top few tests (avoid overpowering story)
+        for d in docs.get("tests", [])[:5]:
+            content = d.get("content", "")
+            text += "\n--- Historical Test ---\n"
+            text += content[:1200]  # limit size
 
+        return text[:6000]  # token safety
 
-------------------------------------------------------------
+    # ---------------------------------------------------------
+    # Generate testcase per channel
+    # ---------------------------------------------------------
+    def _generate_for_channel(self, state: RAGState, channel: str, docs: Dict) -> str:
 
-## System Knowledge (Channel Filtered Retrieval)
+        logger.info(f"🤖 Generating testcase for channel: {channel}")
 
-The following historical knowledge was retrieved ONLY for this channel:
+        retrieved_text = self._build_retrieved_text(docs)
 
-{retrieved_docs}
+        precondition = state.get("channel_setup", {}).get(channel, "")
+        channel_rules = state.get("channel_rules", {}).get(channel, "")
 
-Use it only to:
-- Understand typical lifecycle behavior
-- Understand stage progression
-- Understand dependency patterns
+        result = self.chain.invoke(
+            {
+                "user_story_id": state["user_story_id"],
+                "user_story": state["user_story"],
+                "description": state["description"],
+                "ac": state["acceptance_criteria"],
+                "historical_context": "",   # optional
+                "retrieved_docs": retrieved_text,
+                "precondition": precondition,
+                "channel_rules": channel_rules,
+                "channel": channel
+            }
+        )
 
+        return result.content
 
+    # ---------------------------------------------------------
+    # LangGraph Entry
+    # ---------------------------------------------------------
+    def run(self, state: RAGState) -> RAGState:
 
-------------------------------------------------------------
+        logger.info("🚀 LLM Testcase Generator Agent started")
 
-## Output Rules (STRICT)
+        llm_outputs = {}
 
-- Generate EXACTLY ONE test case
-- Do NOT include preconditions
-- Use pipe "|" separator
-- Sequential Step 01, Step 02…
-- Expected results must describe SYSTEM behavior
-- No explanation outside format
-- Continue until final correct state is reached
-- Do not leak other channel logic
+        for channel, docs in state["retrieved_docs"].items():
 
-------------------------------------------------------------
+            if not docs:
+                logger.warning(f"No docs for {channel}")
+                continue
 
-## Output Format
+            llm_text = self._generate_for_channel(state, channel, docs)
+            llm_outputs[channel] = llm_text
 
-Scenario: <business validation scenario>
-Script: <short functional name>
-Requirement: <requirement mapping>
+        state["llm_outputs"] = llm_outputs
 
-Step 01 | <Step Action> | <Screen> | <Data> | <Expected system behavior>
-Step 02 | <Step Action> | <Screen> | <Data> | <Expected system behavior>
-Step 03 | <Step Action> | <Screen> | <Data> | <Expected system behavior>
-...
-
-------------------------------------------------------------
-
-## Contextual Inputs
-
-User Story ID: {user_story_id}
-
-User Story:
-{user_story}
-
-Description:
-{description}
-
-Acceptance Criteria:
-{ac}
-
-Generate the test case now.
-IMPORTANT
- - STRICTLY DO NOT include Mortgage broker entities in the Generated test cases for RTL and DTC channel and ONLY include Mortgage broker entities in the Generated test cases for WHL and CL1 channel
+        logger.info("✅ LLM generation completed")
+        return state
