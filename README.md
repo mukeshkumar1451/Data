@@ -1,209 +1,275 @@
+# main.py
+import glob
 import logging
-from typing import Dict, List
+import os
 
-from azure.search.documents import SearchClient
-from azure.search.documents.models import VectorizedQuery
-from azure.core.credentials import AzureKeyCredential
-from openai import AzureOpenAI
+from config import get
+from index_manager import ensure_index
 
-from config.config import get
+from excel_reader import read_excel
+from vector_uploader import (
+    upload,
+    flush_batch
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 logger = logging.getLogger(__name__)
 
 
-class RetrievalIntelligenceAgent:
+# ---------------------------------------------------
+# File Type Detection
+# ---------------------------------------------------
+def is_test_script(file_name: str):
+    name = file_name.upper()
+    return "TEST SCRIPT" in name or "TEST SCRIPTS" in name
 
-    # =========================================================
-    # INIT
-    # =========================================================
-    def __init__(self):
 
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-        )
 
-        self.embed_model = get("EMBEDDING_MODEL")
-        self.chat_model = get("CHAT_MODEL")
+# ---------------------------------------------------
+# Main Runner
+# ---------------------------------------------------
+def main():
+    logger.info("🚀 Starting Vector Upload")
 
-        self.search_client = SearchClient(
-            endpoint=get("AZURE_SEARCH_ENDPOINT"),
-            index_name=get("AZURE_SEARCH_INDEX"),
-            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
-        )
+    ensure_index()
 
-    # =========================================================
-    # EMBEDDING
-    # =========================================================
-    def _embed(self, text: str) -> List[float]:
+    input_dir = get("INPUT_DIR")
 
-        safe_text = text[:8000]
+    for file in glob.glob(f"{input_dir}/*"):
+        file_name = os.path.basename(file)
 
-        emb = self.openai.embeddings.create(
-            model=self.embed_model,
-            input=safe_text
-        )
+        logger.info(f"📄 Processing file: {file_name}")
 
-        return emb.data[0].embedding
+        try:
+            # ---------------- EXCEL ----------------
+            if file.lower().endswith(".xlsx"):
 
-    # =========================================================
-    # VECTOR RETRIEVAL
-    # =========================================================
-    def _vector_retrieve(self, query_text: str, channel: str, topk: int):
+                if is_test_script(file_name):
+                    logger.info("📘 Detected TEST SCRIPT Excel")
+                    for tc, channel_groups in read_excel(file):
+                        upload(tc, channel_groups)
+                        
+                
 
-        logger.info(f"🔎 Running vector retrieval for {channel}")
+            
+        except Exception as e:
+            logger.exception(f"❌ Error processing {file_name}: {str(e)}")
 
-        vector_query = VectorizedQuery(
-            vector=self._embed(query_text),
-            fields="embedding",
-            k_nearest_neighbors=topk
-        )
+    flush_batch()
 
-        filter_query = f"channels/any(c: c eq '{channel}')"
+    logger.info("🎉 Upload completed successfully")
 
-        results = list(self.search_client.search(
-            search_text=query_text,
-            vector_queries=[vector_query],
-            filter=filter_query,
-            select=["testCaseId", "content"],
-            top=topk
-        ))
 
-        logger.info(f"📊 {channel} → Retrieved {len(results)} documents")
+if __name__ == "__main__":
+    main()
+------------------------------------------------------------------------------------
+# excel_reader.py
+import pandas as pd
+from collections import defaultdict
 
-        return results
 
-    # =========================================================
-    # RERANK
-    # =========================================================
-    def _rerank_testcases(self, query_text: str, docs: List[Dict]):
+def read_excel(file_path):
+    xls = pd.ExcelFile(file_path)
 
-        if not docs:
-            logger.warning("⚠️ No documents to rerank")
-            return []
+    COL_TC = "Test Case ID / Test Script ID"
+    tc_map = defaultdict(list)
 
-        combined = ""
-        for idx, d in enumerate(docs, start=1):
-            combined += f"""
-Document {idx}
-TestCaseId: {d.get('testCaseId')}
-Content:
-{d.get('content')}
----------------------
+    for sheet in xls.sheet_names:
+        channel = sheet.strip()
+
+        df = pd.read_excel(xls, sheet_name=sheet)
+        df.columns = df.columns.str.strip()
+
+        df[COL_TC] = df[COL_TC].ffill()
+
+        grouped = df.groupby(COL_TC)
+
+        for tc, group in grouped:
+            tc_map[tc].append((channel, group))
+
+    for tc, channel_groups in tc_map.items():
+        yield tc, channel_groups
+---------------------------------------------------------------------
+# index_manager.py
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchIndex,
+    SimpleField,
+    SearchableField,
+    SearchField,
+    SearchFieldDataType,
+    VectorSearch,
+    VectorSearchProfile,
+    HnswAlgorithmConfiguration
+)
+from azure.core.credentials import AzureKeyCredential
+from config import get
+
+
+def ensure_index():
+    client = SearchIndexClient(
+        endpoint=get("AZURE_SEARCH_ENDPOINT"),
+        credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+    )
+
+    index_name = get("AZURE_SEARCH_INDEX")
+
+    existing = [i.name for i in client.list_indexes()]
+    if index_name in existing:
+        return
+
+    fields = [
+
+        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
+
+        SimpleField(name="testCaseId", type=SearchFieldDataType.String, filterable=True),
+
+        SimpleField(
+            name="channels",
+            type=SearchFieldDataType.Collection(SearchFieldDataType.String),
+            filterable=True
+        ),
+
+
+        SearchableField(name="content", type=SearchFieldDataType.String),
+
+        SearchField(
+            name="embedding",
+            type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+            searchable=True,
+            vector_search_dimensions=int(get("EMBEDDING_DIM")),
+            vector_search_profile_name="vector-profile"
+        ),
+    ]
+
+    vector_search = VectorSearch(
+        profiles=[VectorSearchProfile(
+            name="vector-profile",
+            algorithm_configuration_name="hnsw-config"
+        )],
+        algorithms=[HnswAlgorithmConfiguration(name="hnsw-config")]
+    )
+
+    index = SearchIndex(
+        name=index_name,
+        fields=fields,
+        vector_search=vector_search
+    )
+
+    client.create_index(index)
+----------------------------------------------------------------------
+# vector_uploader.py
+import uuid
+import logging
+from collections import OrderedDict
+from openai import AzureOpenAI
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
+from config import get
+
+
+logger = logging.getLogger(__name__)
+
+openai_client = AzureOpenAI(
+    api_key=get("AZURE_OPENAI_KEY"),
+    api_version=get("AZURE_OPENAI_API_VERSION"),
+    azure_endpoint=get("AZURE_OPENAI_ENDPOINT")
+)
+
+search_client = SearchClient(
+    endpoint=get("AZURE_SEARCH_ENDPOINT"),
+    index_name=get("AZURE_SEARCH_INDEX"),
+    credential=AzureKeyCredential(get("AZURE_SEARCH_KEY"))
+)
+
+BATCH_SIZE = 50
+pending_docs = []
+pending_texts = []
+
+
+def upload(tc, channel_groups):
+    global pending_docs, pending_texts
+
+    channels = [c for c, _ in channel_groups]
+
+    step_map = OrderedDict()
+
+    for _, group in channel_groups:
+        for _, row in group.iterrows():
+            step_no = str(row.get("Test Step No.", "")).strip()
+            if not step_no.startswith("Step"):
+                continue
+
+            if step_no not in step_map:
+                step_map[step_no] = {
+                    "description": row.get("Test Step Description", ""),
+                    "screen": row.get("Screen Name", ""),
+                    "data": row.get("Test Data", ""),
+                    "expected": row.get("Expected Results", "")
+                }
+
+    content = f"\nTestCase: {tc}\n\n=========== TEST STEPS ===========\n"
+
+    for step_no, d in step_map.items():
+        content += f"""
+{step_no}
+Description: {d['description']}
+Screen: {d['screen']}
+Data: {d['data']}
+Expected: {d['expected']}
 """
 
-        prompt = f"""
-You are a QA analyst.
+    pending_texts.append(content)
 
-Rank the below testcases by relevance to this workflow.
+    pending_docs.append({
+        "id": str(uuid.uuid4()),
+        "testCaseId": tc,
+        "channels": channels,
+        "content": content,
+        "embedding": None
+    })
 
-Workflow:
-{query_text}
+    if len(pending_docs) >= BATCH_SIZE:
+        flush_batch()
 
-Return ONLY ordered TestCaseId values.
-Do not explain.
-"""
 
-        resp = self.openai.chat.completions.create(
-            model=self.chat_model,
-            messages=[{"role": "user", "content": prompt + combined}],
-            temperature=0
-        )
 
-        ranking = resp.choices[0].message.content.strip().splitlines()
 
-        id_map = {d["testCaseId"]: d for d in docs if d.get("testCaseId")}
+def flush_batch():
+    global pending_docs, pending_texts
 
-        ordered = [id_map[x] for x in ranking if x in id_map]
+    if not pending_docs:
+        return
 
-        if len(ordered) < 3:
-            logger.warning("⚠️ Rerank weak → using top 5 raw docs")
-            return docs[:5]
+    logger.info(f"🚀 Uploading batch of {len(pending_docs)}")
 
-        return ordered[:5]
+    embeddings = openai_client.embeddings.create(
+        model=get("EMBEDDING_MODEL"),
+        input=pending_texts
+    ).data
 
-    # =========================================================
-    # CHANNEL SANITIZATION
-    # =========================================================
-    def _sanitize_docs(self, channel: str, docs: List[Dict]):
+    for doc, emb in zip(pending_docs, embeddings):
+        doc["embedding"] = emb.embedding
 
-        if channel in ["RTL", "DTC"]:
-            logger.info(f"🧹 Sanitizing broker content for {channel}")
+    results = search_client.upload_documents(pending_docs)
 
-            return [
-                d for d in docs
-                if "Mortgage Broker" not in d.get("content", "")
-                and "Broker License" not in d.get("content", "")
-                and "Broker Fee" not in d.get("content", "")
-            ]
+    for r in results:
+        if not r.succeeded:
+            logger.error(f"Failed: {r.key} | {r.error_message}")
 
-        return docs
+    pending_docs.clear()
+    pending_texts.clear()
 
-    # =========================================================
-    # EXTRACT PRECONDITION FROM CONTENT
-    # =========================================================
-    def _extract_precondition(self, docs: List[Dict]) -> str:
 
-        for d in docs:
-            content = d.get("content", "")
 
-            if "Precondition" in content or "Pre-Condition" in content:
-                return content[:1500]
 
-        return ""
 
-    # =========================================================
-    # BUILD CHANNEL CONTEXT
-    # =========================================================
-    def _build_channel_context(self, full_story: str, channel: str):
 
-        raw_docs = self._vector_retrieve(full_story, channel, 40)
 
-        sanitized = self._sanitize_docs(channel, raw_docs)
 
-        if not sanitized:
-            logger.warning(f"⚠️ No docs after sanitization for {channel}")
-            sanitized = raw_docs[:5]
-
-        reranked = self._rerank_testcases(full_story, sanitized)
-
-        if not reranked:
-            reranked = sanitized[:5]
-
-        # 🔥 Extract precondition directly from retrieved docs
-        precondition = self._extract_precondition(reranked)
-
-        return {
-            "tests": reranked,
-            "precondition": precondition
-        }
-
-    # =========================================================
-    # LANGGRAPH ENTRY
-    # =========================================================
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("🚀 Retrieval Intelligence Agent (Vector-Only Mode)")
-
-        retrieved_docs = {}
-        channel_preconditions = {}
-
-        full_story = f"""
-User Story: {state['user_story']}
-Description: {state['description']}
-Acceptance Criteria: {state['acceptance_criteria']}
-"""
-
-        for channel in state["channels"]:
-            result = self._build_channel_context(full_story, channel)
-
-            retrieved_docs[channel] = result
-            channel_preconditions[channel] = result["precondition"]
-
-        state["retrieved_docs"] = retrieved_docs
-        state["channel_preconditions"] = channel_preconditions
-
-        logger.info("✅ Retrieval completed (No Setup LLM used)")
-
-        return state
+		
+		
