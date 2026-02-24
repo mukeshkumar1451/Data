@@ -1,32 +1,7 @@
-def extract_text_from_image(image_path: str) -> str:
-    try:
-        if not os.path.exists(image_path):
-            print(f"OCR DEBUG: File not found -> {image_path}")
-            return ""
-
-        image = cv2.imread(image_path)
-
-        if image is None:
-            print(f"OCR DEBUG: cv2 could not read image -> {image_path}")
-            return ""
-
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
-
-        text = pytesseract.image_to_string(gray)
-
-        print(f"OCR DEBUG: Extracted text length = {len(text)}")
-
-        return text.strip()
-
-    except Exception as e:
-        print(f"OCR ERROR: {e}")
-        return ""
--------------------------------------------------------------------------
-def process_html_and_download_images(html: str, story_id: str, section: str) -> str:
+def process_html_and_download_images(html: str, story_id: str, section: str):
 
     if not html:
-        return ""
+        return "", ""
 
     soup = BeautifulSoup(html, "html.parser")
 
@@ -40,9 +15,6 @@ def process_html_and_download_images(html: str, story_id: str, section: str) -> 
 
     all_ocr_text = []
 
-    # -------------------------------------------------
-    # DOWNLOAD + OCR (RAW ONLY)
-    # -------------------------------------------------
     for idx, img in enumerate(images, start=1):
         src = img.get("src")
         if not src:
@@ -60,13 +32,6 @@ def process_html_and_download_images(html: str, story_id: str, section: str) -> 
     raw_text = soup.get_text(separator="\n")
     clean_text = _normalize_text(raw_text)
 
-    # -------------------------------------------------
-    # MERGE OCR NATURALLY (NO DEBUG MARKERS)
-    # -------------------------------------------------
-    if all_ocr_text:
-        combined_ocr = "\n\n".join(all_ocr_text)
-        final_text = clean_text + "\n\n" + combined_ocr
-    else:
-        final_text = clean_text
+    combined_ocr = "\n\n".join(all_ocr_text)
 
-    return final_text
+    return clean_text, combined_ocr
