@@ -1,4 +1,3 @@
-
 from typing import TypedDict, Dict, List
 
 
@@ -15,14 +14,14 @@ class RAGState(TypedDict, total=False):
 
     # Retrieval Agent outputs
     retrieved_docs: Dict[str, List[Dict]]
-    
+
+    # 🔥 ADD THIS
+    channel_context: Dict[str, List[Dict]]
+
     channel_setup: Dict[str, str]
-    
- 
 
     # LLM Agent outputs
     llm_outputs: Dict[str, str]
 
     # Excel Agent outputs
     excel_output: str
-
