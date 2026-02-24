@@ -1,50 +1,77 @@
-INFO:agents.excel_export_agent:RTL -> Parsed 12 steps
-Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
-    run("718521")
-    ~~~^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run
-    final_state = app.invoke(initial_state)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3071, in invoke
-    for chunk in self.stream(
-                 ~~~~~~~~~~~^
-        input,
-        ^^^^^^
-    ...<10 lines>...
-        **kwargs,
-        ^^^^^^^^^
-    ):
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2646, in stream
-    for _ in runner.tick(
-             ~~~~~~~~~~~^
-        [t for t in loop.tasks.values() if not t.writes],
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<2 lines>...
-        schedule_task=loop.accept_push,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ):
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 167, in tick
-    run_with_retry(
-    ~~~~~~~~~~~~~~^
-        t,
-        ^^
-    ...<10 lines>...
-        },
-        ^^
-    )
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 42, in run_with_retry
-    return task.proc.invoke(task.input, config)
-           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
-    input = context.run(step.invoke, input, config, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
-    ret = self.func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\agents\excel_export_agent.py", line 100, in run
-    precondition = selected_precondition.get(channel, "")
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'tuple' object has no attribute 'get'
-During task with name 'excel_agent' and id '9bd0f5db-6fee-d478-b149-1c43ffd16254'
-(.venv) PS C:\Users\h84609n\Desktop\AgenticAI> 
+import logging
+import os
+from typing import Dict
+
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from config.config import get
+
+logger = logging.getLogger(__name__)
+
+
+class LLMTestcaseGeneratorAgent:
+
+    def __init__(self):
+
+        # Load prompt path from .env
+        prompt_path = get("PROMPT_TEMPLATE_PATH")
+
+        if not os.path.exists(prompt_path):
+            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
+
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "user_story_id",
+                "user_story",
+                "description",
+                "ac",
+                "channel",
+                "precondition"
+            ],
+            template=prompt_text
+        )
+
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
+            temperature=0  # deterministic
+        )
+
+        self.chain = self.prompt | self.llm
+
+        logger.info("✅ LLM Testcase Generator initialized")
+
+    # ---------------------------------------------------------
+    # LangGraph Entry
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("🤖 LLM Generator Running")
+
+        outputs = {}
+
+        for channel, ctx in state["channel_context"].items():
+
+            payload = {
+                "user_story_id": state["user_story_id"],
+                "user_story": state["user_story"],
+                "description": state["description"],
+                "ac": state["acceptance_criteria"],
+                "channel": channel,
+                "precondition": ctx["precondition"]
+            }
+
+            result = self.chain.invoke(payload)
+
+            outputs[channel] = result.content.strip()
+
+        state["llm_outputs"] = outputs
+
+        logger.info("✅ LLM Generation Completed")
+
+        return state
