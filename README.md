@@ -13,12 +13,16 @@ logger = logging.getLogger(__name__)
 
 class LLMTestcaseGeneratorAgent:
     """
-    Stable Production Version
-    - Full AC used
-    - Channel filtering handled via:
-        • Azure Search filtering
+    Clean Production Version
+    - historical_context removed
+    - channel_specific_context removed
+    - Uses:
+        • user_story
+        • description
+        • ac
+        • retrieved_docs (RAG)
         • channel_rules
-    - Logs FULL formatted prompt sent to LLM
+        • precondition
     """
 
     def __init__(self):
@@ -28,16 +32,16 @@ class LLMTestcaseGeneratorAgent:
         with open(prompt_path, "r", encoding="utf-8") as f:
             prompt_text = f.read()
 
+        # 🔥 historical_context removed
         self.prompt = PromptTemplate(
             input_variables=[
                 "user_story_id",
                 "user_story",
                 "description",
                 "ac",
-                "historical_context",
+                "retrieved_docs",
                 "precondition",
                 "channel_rules",
-                "retrieved_docs",
                 "channel"
             ],
             template=prompt_text,
@@ -56,7 +60,7 @@ class LLMTestcaseGeneratorAgent:
         os.makedirs("debug", exist_ok=True)
 
     # ---------------------------------------------------------
-    # Convert retrieved docs into RAG text
+    # Convert retrieved docs into text (RAG injection)
     # ---------------------------------------------------------
     def _build_retrieved_text(self, docs: Dict) -> str:
 
@@ -64,7 +68,7 @@ class LLMTestcaseGeneratorAgent:
 
         for d in docs.get("tests", [])[:5]:
             content = d.get("content", "")
-            text += "\n--- Historical Test ---\n"
+            text += "\n--- Retrieved Test ---\n"
             text += content[:1200]
 
         return text[:6000]
@@ -86,33 +90,21 @@ class LLMTestcaseGeneratorAgent:
             "user_story": state["user_story"],
             "description": state["description"],
             "ac": state["acceptance_criteria"],
-            "historical_context": "",
             "retrieved_docs": retrieved_text,
             "precondition": precondition,
             "channel_rules": channel_rules,
             "channel": channel
         }
 
-        # ---------------------------------------------------------
-        # 🔥 LOG FINAL FORMATTED PROMPT
-        # ---------------------------------------------------------
+        # Optional debug logging
         formatted_prompt = self.prompt.format(**llm_payload)
-
-        logger.info("\n========== LLM INPUT START ==========\n")
-        logger.info(f"Channel: {channel}")
-        logger.info(f"Prompt Length: {len(formatted_prompt)} characters")
-        logger.info("========== LLM INPUT END ==========\n")
-
-        # Write full prompt to file for deep inspection
         debug_file = f"debug/llm_prompt_{state['user_story_id']}_{channel}.txt"
+
         with open(debug_file, "w", encoding="utf-8") as f:
             f.write(formatted_prompt)
 
-        logger.info(f"📄 Full prompt written to: {debug_file}")
+        logger.info(f"📄 Prompt written to: {debug_file}")
 
-        # ---------------------------------------------------------
-        # LLM CALL
-        # ---------------------------------------------------------
         result = self.chain.invoke(llm_payload)
 
         return result.content
