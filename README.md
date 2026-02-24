@@ -1,228 +1,99 @@
-import logging
-from typing import Dict, List, Tuple
+# Senior Mortgage QA Analyst — Channel-Safe Execution Prompt
 
-from azure.search.documents import SearchClient
-from azure.search.documents.models import VectorizedQuery
-from azure.core.credentials import AzureKeyCredential
-from openai import AzureOpenAI
+## Role and Responsibility
 
-from config.config import get
+You are a Senior Mortgage QA Analyst.
 
-logger = logging.getLogger(__name__)
+Your objective is to validate that the mortgage system:
 
+- Behaves correctly
+- Prevents incorrect behavior
+- Enforces lifecycle state transitions
+- Enforces business rules
+- Handles dependency logic
+- Recovers properly after correction
 
-class RetrievalIntelligenceAgent:
+You design test cases that FAIL if logic is incorrect.
 
-    # =========================================================
-    # INIT
-    # =========================================================
-    def __init__(self):
+------------------------------------------------------------
 
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-        )
+## Channel Identity (CRITICAL)
 
-        self.embed_model = get("EMBEDDING_MODEL")
-        self.chat_model = get("CHAT_MODEL")
+CHANNEL: {channel}
 
-        self.search_client = SearchClient(
-            endpoint=get("AZURE_SEARCH_ENDPOINT"),
-            index_name=get("AZURE_SEARCH_INDEX"),
-            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
-        )
+Channel Behavioral Rules:
+{channel_rules}
 
-    # =========================================================
-    # EMBEDDING
-    # =========================================================
-    def _embed(self, text: str) -> List[float]:
+STRICT ENFORCEMENT:
 
-        safe_text = text[:8000]
+- You MUST generate steps ONLY applicable to this channel.
+- If a field or workflow belongs to another channel → DO NOT validate it.
+- If a cross-channel field appears in the story:
+  - Completely ignore it.
+  - Do NOT validate it.
+  - Do NOT check visibility.
+  - Do NOT generate any step referencing it.
+- NEVER generate broker workflow steps in Retail or DTC.
+- NEVER generate origination workflow steps in CL1.
+- NEVER mix channel lifecycle behaviors.
+-If a field is explicitly marked as "does NOT exist" in channel rules,
+you MUST ignore it completely even if it appears in the user story.
 
-        emb = self.openai.embeddings.create(
-            model=self.embed_model,
-            input=safe_text
-        )
+Before writing steps, internally confirm:
+"Are all validations aligned strictly to this channel?"
 
-        return emb.data[0].embedding
+------------------------------------------------------------
+## System Knowledge (Channel Filtered Retrieval)
 
-    # =========================================================
-    # VECTOR RETRIEVAL (CHANNEL FILTER ONLY)
-    # =========================================================
-    def _vector_retrieve(self, query_text: str, channel: str, topk: int):
+The following historical knowledge was retrieved ONLY for this channel:
 
-        logger.info(f"🔎 Running vector retrieval for {channel}")
+{retrieved_docs}
 
-        vector_query = VectorizedQuery(
-            vector=self._embed(query_text),
-            fields="embedding",
-            k_nearest_neighbors=topk
-        )
+Use it only to:
+- Understand typical lifecycle behavior
+- Understand stage progression
+- Understand dependency patterns
 
-        filter_query = f"channels/any(c: c eq '{channel}')"
+------------------------------------------------------------
+## Output Rules (STRICT)
 
-        results = list(self.search_client.search(
-            search_text=query_text,
-            vector_queries=[vector_query],
-            filter=filter_query,
-            select=["testCaseId", "content"],
-            top=topk
-        ))
+- Generate EXACTLY ONE test case
+- Do NOT include preconditions
+- Use pipe "|" separator
+- Sequential Step 01, Step 02…
+- Expected results must describe SYSTEM behavior
+- No explanation outside format
+- Continue until final correct state is reached
+- Do not leak other channel logic
 
-        logger.info(f"📊 {channel} → Retrieved {len(results)} documents")
+------------------------------------------------------------
+## Output Format
 
-        return results
+Scenario: <business validation scenario>
+Script: <short functional name>
+Requirement: <requirement mapping>
 
-    # =========================================================
-    # SPLIT PRECONDITIONS FROM TESTCASES
-    # =========================================================
-    def _split_preconditions(
-        self, docs: List[Dict]
-    ) -> Tuple[List[Dict], List[Dict]]:
+Step 01 | <Step Action> | <Screen> | <Data> | <Expected system behavior>
+Step 02 | <Step Action> | <Screen> | <Data> | <Expected system behavior>
+Step 03 | <Step Action> | <Screen> | <Data> | <Expected system behavior>
+...
 
-        preconditions = []
-        testcases = []
+------------------------------------------------------------
 
-        for d in docs:
-            content = d.get("content", "").lower()
+## Contextual Inputs
 
-            # Heuristic rules for identifying precondition docs
-            if (
-                "create a loan" in content
-                or "pre-condition" in content
-                or "loan is already created" in content
-                or "assumption" in content
-                or "precondition" in content
-            ):
-                preconditions.append(d)
-            else:
-                testcases.append(d)
+User Story ID: {user_story_id}
 
-        return preconditions, testcases
+User Story:
+{user_story}
 
-    # =========================================================
-    # RTL SANITIZATION (REMOVE BROKER CONTENT)
-    # =========================================================
-    def _sanitize_docs(self, channel: str, docs: List[Dict]):
+Description:
+{description}
 
-        if channel == "RTL":
-            logger.info("🧹 Removing broker-related content for RTL")
+Acceptance Criteria:
+{ac}
 
-            return [
-                d for d in docs
-                if "Mortgage Broker" not in d.get("content", "")
-                and "Broker License" not in d.get("content", "")
-                and "Broker Fee" not in d.get("content", "")
-            ]
-
-        return docs
-
-    # =========================================================
-    # RERANK TESTCASES (WITH SAFETY)
-    # =========================================================
-    def _rerank_testcases(self, query_text: str, docs: List[Dict]):
-
-        if not docs:
-            logger.warning("⚠️ No documents to rerank")
-            return []
-
-        combined = ""
-        for idx, d in enumerate(docs, start=1):
-            combined += f"""
-Document {idx}
-TestCaseId: {d.get('testCaseId')}
-Content:
-{d.get('content')}
----------------------
-"""
-
-        prompt = f"""
-You are a QA analyst.
-
-Rank the below testcases by relevance to this workflow.
-
-Workflow:
-{query_text}
-
-Return ONLY ordered TestCaseId values.
-Do not explain.
-"""
-
-        resp = self.openai.chat.completions.create(
-            model=self.chat_model,
-            messages=[{"role": "user", "content": prompt + combined}],
-            temperature=0
-        )
-
-        ranking = resp.choices[0].message.content.strip().splitlines()
-
-        id_map = {d["testCaseId"]: d for d in docs if d.get("testCaseId")}
-
-        ordered = [id_map[x] for x in ranking if x in id_map]
-
-        if len(ordered) < 3:
-            logger.warning("⚠️ Weak rerank → using top 5 raw docs")
-            return docs[:5]
-
-        return ordered[:5]
-
-    # =========================================================
-    # BUILD CHANNEL CONTEXT
-    # =========================================================
-    def _build_channel_context(self, full_story: str, channel: str):
-
-        # 1️⃣ Retrieve documents
-        docs = self._vector_retrieve(full_story, channel, 40)
-
-        # 2️⃣ Sanitize broker leakage for RTL
-        docs = self._sanitize_docs(channel, docs)
-
-        # 3️⃣ Split preconditions and testcases
-        preconditions, testcases = self._split_preconditions(docs)
-
-        # 4️⃣ Rerank only testcases
-        reranked_tests = self._rerank_testcases(full_story, testcases)
-
-        # 5️⃣ Build precondition text (limit size)
-        precondition_text = "\n\n".join(
-            p.get("content", "")[:1000] for p in preconditions[:2]
-        )
-
-        return {
-            "tests": reranked_tests,
-            "precondition": precondition_text.strip()
-        }
-
-    # =========================================================
-    # LANGGRAPH ENTRY
-    # =========================================================
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("🚀 Retrieval Intelligence Agent (Stable Deterministic Mode)")
-
-        retrieved_docs = {}
-
-        full_story = f"""
-User Story: {state['user_story']}
-Description: {state['description']}
-Acceptance Criteria: {state['acceptance_criteria']}
-"""
-
-        for channel in state["channels"]:
-            retrieved_docs[channel] = self._build_channel_context(
-                full_story,
-                channel
-            )
-
-        state["retrieved_docs"] = retrieved_docs
-
-        # 🔥 Setup now comes from retrieved preconditions
-        state["channel_setup"] = {
-            ch: retrieved_docs[ch]["precondition"]
-            for ch in retrieved_docs
-        }
-
-        logger.info("✅ Retrieval completed successfully")
-
-        return state
+Generate the test case now.
+IMPORTANT
+ - STRICTLY DO NOT include Mortgage broker entities in the Generated test cases for RTL and DTC channel and ONLY include Mortgage broker entities in the Generated test cases for WHL and CL1 channel
+ - ALL the content from Acceptance Criteria should be converted into test steps
