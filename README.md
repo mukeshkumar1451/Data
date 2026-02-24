@@ -41,9 +41,9 @@ Traceback (most recent call last):
     input = context.run(step.invoke, input, config, **kwargs)
   File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
     ret = self.func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\agents\excel_export_agent.py", line 99, in run
-    precondition = state["selected_preconditions"].get(channel, "")
-                   ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
-KeyError: 'selected_preconditions'
-During task with name 'excel_agent' and id '464df063-34ce-99f2-14b3-b529707c15c7'
+  File "C:\Users\h84609n\Desktop\AgenticAI\agents\excel_export_agent.py", line 100, in run
+    precondition = selected_precondition.get(channel, "")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'tuple' object has no attribute 'get'
+During task with name 'excel_agent' and id '005981f0-8f6c-50f2-6fbc-964fac95f957'
 (.venv) PS C:\Users\h84609n\Desktop\AgenticAI> 
