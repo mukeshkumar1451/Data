@@ -1,51 +1,174 @@
 import logging
-import os
-from typing import Dict
+from typing import Dict, List
 
-from langchain_openai import AzureChatOpenAI
-from langchain_core.prompts import PromptTemplate
+from azure.search.documents import SearchClient
+from azure.search.documents.models import VectorizedQuery
+from azure.core.credentials import AzureKeyCredential
+from openai import AzureOpenAI
 
 from config.config import get
-from state.rag_state import RAGState
 
 logger = logging.getLogger(__name__)
 
 
-class LLMTestcaseGeneratorAgent:
-    """
-    Clean Production Version
-    - historical_context removed
-    - channel_specific_context removed
-    - Uses:
-        • user_story
-        • description
-        • ac
-        • retrieved_docs (RAG)
-        • channel_rules
-        • precondition
-    """
+class RetrievalAgent:
 
     def __init__(self):
 
-        prompt_path = get("PROMPT_TEMPLATE_PATH")
-
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            prompt_text = f.read()
-
-        # 🔥 historical_context removed
-        self.prompt = PromptTemplate(
-            input_variables=[
-                "user_story_id",
-                "user_story",
-                "description",
-                "ac",
-                "retrieved_docs",
-                "precondition",
-                "channel_rules",
-                "channel"
-            ],
-            template=prompt_text,
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
         )
+
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
+
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
+        )
+
+    # -------------------------------------------------
+    # Embed Query
+    # -------------------------------------------------
+    def _embed(self, text: str):
+
+        response = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text[:8000]
+        )
+
+        return response.data[0].embedding
+
+    # -------------------------------------------------
+    # Hybrid Search
+    # -------------------------------------------------
+    def _hybrid_search(self, query: str, channel: str, topk: int = 20):
+
+        vector_query = VectorizedQuery(
+            vector=self._embed(query),
+            fields="embedding",
+            k_nearest_neighbors=topk
+        )
+
+        results = list(self.search_client.search(
+            search_text=query,
+            vector_queries=[vector_query],
+            filter=f"channels/any(c: c eq '{channel}')",
+            select=["testCaseId", "content"],
+            top=topk
+        ))
+
+        return results
+
+    # -------------------------------------------------
+    # Extract Precondition + Steps
+    # -------------------------------------------------
+    def _extract_context(self, content: str):
+
+        parts = content.split("=========== TEST STEPS ===========")
+
+        precondition = parts[0].strip()
+        steps = parts[1].strip() if len(parts) > 1 else ""
+
+        return precondition, steps
+
+    # -------------------------------------------------
+    # Rerank using LLM
+    # -------------------------------------------------
+    def _rerank(self, query: str, docs: List[Dict]):
+
+        combined = ""
+
+        for idx, d in enumerate(docs, start=1):
+            combined += f"""
+Document {idx}
+TestCaseId: {d.get('testCaseId')}
+Content:
+{d.get('content')[:1500]}
+---------------------
+"""
+
+        prompt = f"""
+You are a QA analyst.
+
+Rank the testcases by relevance to this workflow.
+
+Workflow:
+{query}
+
+Return ONLY ordered TestCaseId values.
+"""
+
+        resp = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt + combined}],
+            temperature=0
+        )
+
+        ranked_ids = resp.choices[0].message.content.strip().splitlines()
+
+        id_map = {d["testCaseId"]: d for d in docs}
+
+        ordered = [id_map[x] for x in ranked_ids if x in id_map]
+
+        return ordered[:5] if ordered else docs[:5]
+
+    # -------------------------------------------------
+    # Main Entry
+    # -------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("🚀 Retrieval Agent Running")
+
+        full_query = f"""
+User Story: {state['user_story']}
+Description: {state['description']}
+Acceptance Criteria: {state['acceptance_criteria']}
+"""
+
+        channel_context = {}
+
+        for channel in state["channels"]:
+
+            raw_docs = self._hybrid_search(full_query, channel, 30)
+
+            reranked = self._rerank(full_query, raw_docs)
+
+            structured = []
+
+            for d in reranked:
+                pre, steps = self._extract_context(d["content"])
+
+                structured.append({
+                    "testCaseId": d["testCaseId"],
+                    "precondition": pre,
+                    "steps": steps
+                })
+
+            channel_context[channel] = structured
+
+        state["channel_context"] = channel_context
+
+        logger.info("✅ Retrieval Completed")
+
+        return state
+  ============================================================================
+  import logging
+from typing import Dict
+
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from config.config import get
+
+logger = logging.getLogger(__name__)
+
+
+class LLMGeneratorAgent:
+
+    def __init__(self):
 
         self.llm = AzureChatOpenAI(
             azure_deployment=get("CHAT_MODEL"),
@@ -55,79 +178,75 @@ class LLMTestcaseGeneratorAgent:
             temperature=0.2,
         )
 
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "user_story",
+                "description",
+                "ac",
+                "preconditions",
+                "historical_tests"
+            ],
+            template="""
+You are a QA automation expert.
+
+User Story:
+{user_story}
+
+Description:
+{description}
+
+Acceptance Criteria:
+{ac}
+
+Relevant Preconditions:
+{preconditions}
+
+Historical Testcases:
+{historical_tests}
+
+Generate a NEW structured testcase.
+Use preconditions as setup context.
+Do not copy historical steps directly.
+Return structured steps.
+"""
+        )
+
         self.chain = self.prompt | self.llm
 
-        os.makedirs("debug", exist_ok=True)
+    def run(self, state: Dict) -> Dict:
 
-    # ---------------------------------------------------------
-    # Convert retrieved docs into text (RAG injection)
-    # ---------------------------------------------------------
-    def _build_retrieved_text(self, docs: Dict) -> str:
+        logger.info("🤖 LLM Generator Running")
 
-        text = ""
+        outputs = {}
 
-        for d in docs.get("tests", [])[:5]:
-            content = d.get("content", "")
-            text += "\n--- Retrieved Test ---\n"
-            text += content[:1200]
+        for channel, contexts in state["channel_context"].items():
 
-        return text[:6000]
+            preconditions = "\n\n".join(
+                [c["precondition"] for c in contexts]
+            )
 
-    # ---------------------------------------------------------
-    # Generate testcase per channel
-    # ---------------------------------------------------------
-    def _generate_for_channel(self, state: RAGState, channel: str, docs: Dict) -> str:
+            historical_tests = "\n\n".join(
+                [c["steps"][:1200] for c in contexts]
+            )
 
-        logger.info(f"🤖 Generating testcase for channel: {channel}")
+            payload = {
+                "user_story": state["user_story"],
+                "description": state["description"],
+                "ac": state["acceptance_criteria"],
+                "preconditions": preconditions,
+                "historical_tests": historical_tests
+            }
 
-        retrieved_text = self._build_retrieved_text(docs)
+            result = self.chain.invoke(payload)
 
-        precondition = state.get("channel_setup", {}).get(channel, "")
-        channel_rules = state.get("channel_rules", {}).get(channel, "")
+            outputs[channel] = result.content
 
-        llm_payload = {
-            "user_story_id": state["user_story_id"],
-            "user_story": state["user_story"],
-            "description": state["description"],
-            "ac": state["acceptance_criteria"],
-            "retrieved_docs": retrieved_text,
-            "precondition": precondition,
-            "channel_rules": channel_rules,
-            "channel": channel
-        }
+            print("\n===== GENERATED OUTPUT =====\n")
+            print(result.content)
 
-        # Optional debug logging
-        formatted_prompt = self.prompt.format(**llm_payload)
-        debug_file = f"debug/llm_prompt_{state['user_story_id']}_{channel}.txt"
+        state["llm_outputs"] = outputs
 
-        with open(debug_file, "w", encoding="utf-8") as f:
-            f.write(formatted_prompt)
+        logger.info("✅ LLM Generation Completed")
 
-        logger.info(f"📄 Prompt written to: {debug_file}")
-
-        result = self.chain.invoke(llm_payload)
-
-        return result.content
-
-    # ---------------------------------------------------------
-    # LangGraph Entry
-    # ---------------------------------------------------------
-    def run(self, state: RAGState) -> RAGState:
-
-        logger.info("🚀 LLM Testcase Generator Agent started")
-
-        llm_outputs = {}
-
-        for channel, docs in state["retrieved_docs"].items():
-
-            if not docs:
-                logger.warning(f"No docs for {channel}")
-                continue
-
-            llm_text = self._generate_for_channel(state, channel, docs)
-            llm_outputs[channel] = llm_text
-
-        state["llm_outputs"] = llm_outputs
-
-        logger.info("✅ LLM generation completed")
         return state
+        
