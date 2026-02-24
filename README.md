@@ -14,6 +14,7 @@ class RetrievalIntelligenceAgent:
 
     def __init__(self):
 
+        # Azure OpenAI
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
@@ -23,6 +24,7 @@ class RetrievalIntelligenceAgent:
         self.embed_model = get("EMBEDDING_MODEL")
         self.chat_model = get("CHAT_MODEL")
 
+        # Azure AI Search
         self.search_client = SearchClient(
             endpoint=get("AZURE_SEARCH_ENDPOINT"),
             index_name=get("AZURE_SEARCH_INDEX"),
@@ -34,15 +36,15 @@ class RetrievalIntelligenceAgent:
     # ---------------------------------------------------------
     def _embed(self, text: str) -> List[float]:
 
-        emb = self.openai.embeddings.create(
+        response = self.openai.embeddings.create(
             model=self.embed_model,
             input=text[:8000]
         )
 
-        return emb.data[0].embedding
+        return response.data[0].embedding
 
     # ---------------------------------------------------------
-    # Hybrid Search
+    # Hybrid Search (Vector + Keyword)
     # ---------------------------------------------------------
     def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
 
@@ -78,8 +80,9 @@ class RetrievalIntelligenceAgent:
             start = lower.index("pre-condition")
             block = content[start:]
 
-            if "Step 01" in block:
-                block = block.split("Step 01")[0]
+            # Stop at first step occurrence
+            if "step 01" in block.lower():
+                block = block.lower().split("step 01")[0]
 
             return block.strip()
 
@@ -99,7 +102,7 @@ class RetrievalIntelligenceAgent:
 
         prompt = f"""
 Rank the below documents by relevance to this story.
-Return only numbers in order.
+Return only numbers in order separated by space.
 
 Story:
 {story_text}
@@ -108,25 +111,27 @@ Documents:
 {combined}
 """
 
-        resp = self.openai.chat.completions.create(
+        response = self.openai.chat.completions.create(
             model=self.chat_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
 
-        ranking = resp.choices[0].message.content.strip().split()
+        ranking_text = response.choices[0].message.content.strip()
+        ranking_tokens = ranking_text.split()
 
-        ordered = []
-        for r in ranking:
-            if r.isdigit():
-                idx = int(r) - 1
+        ordered_docs = []
+
+        for token in ranking_tokens:
+            if token.isdigit():
+                idx = int(token) - 1
                 if 0 <= idx < len(docs):
-                    ordered.append(docs[idx])
+                    ordered_docs.append(docs[idx])
 
-        return ordered if ordered else docs
+        return ordered_docs if ordered_docs else docs
 
     # ---------------------------------------------------------
-    # Main Entry
+    # Main Execution
     # ---------------------------------------------------------
     def run(self, state: Dict) -> Dict:
 
@@ -139,38 +144,41 @@ Acceptance Criteria: {state['acceptance_criteria']}
 """
 
         channel_context = {}
+        selected_preconditions = {}
 
         for channel in state["channels"]:
 
             docs = self._hybrid_search(full_story, channel)
 
-            reranked = self._rerank(full_story, docs)
+            reranked_docs = self._rerank(full_story, docs)
 
-            # Select Best Precondition
-            selected_precondition = ""
+            best_precondition = ""
             historical_steps = ""
 
-            for d in reranked:
+            for doc in reranked_docs:
 
-                content = d.get("content", "")
+                content = doc.get("content", "")
 
-                if not selected_precondition:
-                    pre = self._extract_precondition(content)
-                    if pre:
-                        selected_precondition = pre
+                if not best_precondition:
+                    extracted = self._extract_precondition(content)
+                    if extracted:
+                        best_precondition = extracted
 
                 historical_steps += "\n" + content[:1000]
 
-                if selected_precondition:
+                if best_precondition:
                     break
 
             channel_context[channel] = {
-                "precondition": selected_precondition,
+                "precondition": best_precondition,
                 "historical_steps": historical_steps[:4000]
             }
 
+            selected_preconditions[channel] = best_precondition
+
+        # 🔥 Store BOTH structured context and flat map
         state["channel_context"] = channel_context
+        state["selected_preconditions"] = selected_preconditions
 
         logger.info("✅ Retrieval Completed")
-
         return state
