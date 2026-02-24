@@ -1,189 +1,199 @@
-(.venv) PS C:\Users\h84609n\Desktop\AgenticAI> py run_agent.py
-C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-INFO:agents.llm_testcase_generator_agent:✅ LLM Testcase Generator initialized
-INFO:agents.ado_intelligence_agent:🚀 ADO Intelligence Agent started
-INFO:agents.ado_intelligence_agent:🧹 Processing Description...
-OCR DEBUG: Extracted text length = 301
-OCR DEBUG: Extracted text length = 44
-OCR DEBUG: Extracted text length = 614
-OCR DEBUG: Extracted text length = 543
-INFO:agents.ado_intelligence_agent:🧹 Processing Acceptance Criteria...
-OCR DEBUG: Extracted text length = 301
-OCR DEBUG: Extracted text length = 44
-OCR DEBUG: Extracted text length = 614
-OCR DEBUG: Extracted text length = 543
-INFO:utils.channel_detector:Behavioral channel detection started...
-INFO:utils.channel_detector:No strong signal → using ALL channels
-INFO:agents.ado_intelligence_agent:✅ Channels detected: ['RTL', 'WHL', 'DTC', 'CL1']
-INFO:agents.ado_intelligence_agent:🧠 Deriving channel specific flows
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-WARNING:agents.ado_intelligence_agent:Channel derivation failed: Expecting value: line 1 column 1 (char 0)
-INFO:agents.ado_intelligence_agent:📄 Generating structured business summary
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+import logging
+from typing import Dict, List
 
-=========== ADO INTELLIGENCE AGENT OUTPUT ===========
+from azure.search.documents import SearchClient
+from azure.search.documents.models import VectorizedQuery
+from azure.core.credentials import AzureKeyCredential
+from openai import AzureOpenAI
+from config.config import get
 
-User Story ID: 718521
-TITLE: Modernized Audit additions - DIS > Generate Disclosures Fields
-
-=====================================================
+logger = logging.getLogger(__name__)
 
 
- State dumped to: debug\ado_agent_718521_output.txt
+class RetrievalIntelligenceAgent:
 
-INFO:agents.ado_intelligence_agent:✅ ADO Intelligence Agent completed successfully
-INFO:agents.retrieval_intelligence_agent:🚀 Retrieval Agent Running
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:azure.core.pipeline.policies.http_logging_policy:Request URL: 'https://uat-c01-ai-productivity-transformation-aisearch.search.windows.net/indexes('mortgage-knowledge-index2')/docs/search.post.search?api-version=REDACTED'
-Request method: 'POST'
-Request headers:
-    'Content-Type': 'application/json'
-    'Content-Length': '73929'
-    'api-key': 'REDACTED'
-    'Accept': 'application/json;odata.metadata=none'
-    'x-ms-client-request-id': '75def7c5-11ae-11f1-baec-7ced8dc28672'
-    'User-Agent': 'azsdk-python-search-documents/11.6.0 Python/3.14.2 (Windows-10-10.0.19045-SP0)'  
-A body is sent with the request
-INFO:azure.core.pipeline.policies.http_logging_policy:Response status: 200
-Response headers:
-    'Transfer-Encoding': 'chunked'
-    'Content-Type': 'application/json; odata.metadata=none; odata.streaming=true; charset=utf-8'    
-    'Content-Encoding': 'REDACTED'
-    'Vary': 'REDACTED'
-    'Strict-Transport-Security': 'REDACTED'
-    'Preference-Applied': 'REDACTED'
-    'OData-Version': 'REDACTED'
-    'request-id': '75def7c5-11ae-11f1-baec-7ced8dc28672'
-    'elapsed-time': 'REDACTED'
-    'Date': 'Tue, 24 Feb 2026 18:27:22 GMT'
-INFO:agents.retrieval_intelligence_agent:RTL → Retrieved 19 docs
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:azure.core.pipeline.policies.http_logging_policy:Request URL: 'https://uat-c01-ai-productivity-transformation-aisearch.search.windows.net/indexes('mortgage-knowledge-index2')/docs/search.post.search?api-version=REDACTED'
-Request method: 'POST'
-Request headers:
-    'Content-Type': 'application/json'
-    'Content-Length': '73929'
-    'api-key': 'REDACTED'
-    'Accept': 'application/json;odata.metadata=none'
-    'x-ms-client-request-id': '77aff5f1-11ae-11f1-9cfc-7ced8dc28672'
-    'User-Agent': 'azsdk-python-search-documents/11.6.0 Python/3.14.2 (Windows-10-10.0.19045-SP0)'  
-A body is sent with the request
-INFO:azure.core.pipeline.policies.http_logging_policy:Response status: 200
-Response headers:
-    'Transfer-Encoding': 'chunked'
-    'Content-Type': 'application/json; odata.metadata=none; odata.streaming=true; charset=utf-8'    
-    'Content-Encoding': 'REDACTED'
-    'Vary': 'REDACTED'
-    'Strict-Transport-Security': 'REDACTED'
-    'Preference-Applied': 'REDACTED'
-    'OData-Version': 'REDACTED'
-    'request-id': '77aff5f1-11ae-11f1-9cfc-7ced8dc28672'
-    'elapsed-time': 'REDACTED'
-    'Date': 'Tue, 24 Feb 2026 18:27:25 GMT'
-INFO:agents.retrieval_intelligence_agent:WHL → Retrieved 20 docs
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:azure.core.pipeline.policies.http_logging_policy:Request URL: 'https://uat-c01-ai-productivity-transformation-aisearch.search.windows.net/indexes('mortgage-knowledge-index2')/docs/search.post.search?api-version=REDACTED'
-Request method: 'POST'
-Request headers:
-    'Content-Type': 'application/json'
-    'Content-Length': '73929'
-    'api-key': 'REDACTED'
-    'Accept': 'application/json;odata.metadata=none'
-    'x-ms-client-request-id': '78ba7894-11ae-11f1-980f-7ced8dc28672'
-    'User-Agent': 'azsdk-python-search-documents/11.6.0 Python/3.14.2 (Windows-10-10.0.19045-SP0)'  
-A body is sent with the request
-INFO:azure.core.pipeline.policies.http_logging_policy:Response status: 200
-Response headers:
-    'Transfer-Encoding': 'chunked'
-    'Content-Type': 'application/json; odata.metadata=none; odata.streaming=true; charset=utf-8'    
-    'Content-Encoding': 'REDACTED'
-    'Vary': 'REDACTED'
-    'Strict-Transport-Security': 'REDACTED'
-    'Preference-Applied': 'REDACTED'
-    'OData-Version': 'REDACTED'
-    'request-id': '78ba7894-11ae-11f1-980f-7ced8dc28672'
-    'elapsed-time': 'REDACTED'
-    'Date': 'Tue, 24 Feb 2026 18:27:27 GMT'
-INFO:agents.retrieval_intelligence_agent:DTC → Retrieved 18 docs
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:azure.core.pipeline.policies.http_logging_policy:Request URL: 'https://uat-c01-ai-productivity-transformation-aisearch.search.windows.net/indexes('mortgage-knowledge-index2')/docs/search.post.search?api-version=REDACTED'
-Request method: 'POST'
-Request headers:
-    'Content-Type': 'application/json'
-    'Content-Length': '73929'
-    'api-key': 'REDACTED'
-    'Accept': 'application/json;odata.metadata=none'
-    'x-ms-client-request-id': '79d361f3-11ae-11f1-bffa-7ced8dc28672'
-    'User-Agent': 'azsdk-python-search-documents/11.6.0 Python/3.14.2 (Windows-10-10.0.19045-SP0)'  
-A body is sent with the request
-INFO:azure.core.pipeline.policies.http_logging_policy:Response status: 200
-Response headers:
-    'Transfer-Encoding': 'chunked'
-    'Content-Type': 'application/json; odata.metadata=none; odata.streaming=true; charset=utf-8'    
-    'Content-Encoding': 'REDACTED'
-    'Vary': 'REDACTED'
-    'Strict-Transport-Security': 'REDACTED'
-    'Preference-Applied': 'REDACTED'
-    'OData-Version': 'REDACTED'
-    'request-id': '79d361f3-11ae-11f1-bffa-7ced8dc28672'
-    'elapsed-time': 'REDACTED'
-    'Date': 'Tue, 24 Feb 2026 18:27:28 GMT'
-INFO:agents.retrieval_intelligence_agent:CL1 → Retrieved 20 docs
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:agents.retrieval_intelligence_agent:CL1 → Selected Precondition:
-Pre-Condition & Assumptions:
-Create a loan from BP:
-1. Channel: CL1
-2. Loan Purpose: Purchase
-3. Loan Type: Conventional
-4. Product Code: Any
-5. Loan stage should be UW Submitted
-6. Early Disclosure should be generated, sent via eSign ,Esign should be completed and disclosure should be received.
+    def __init__(self):
 
-=========== TEST STEPS ===========
+        # Azure OpenAI
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+        )
 
-INFO:agents.retrieval_intelligence_agent:✅ Retrieval Completed
-INFO:agents.llm_testcase_generator_agent:🤖 LLM Generator Running
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
-INFO:agents.llm_testcase_generator_agent:✅ LLM Generation Completed
-INFO:agents.excel_export_agent:Excel Export Agent started
-INFO:agents.excel_export_agent:RTL -> Parsed 14 steps
-Selected Precondition:
-None
-INFO:agents.excel_export_agent:WHL -> Parsed 12 steps
-Selected Precondition:
-None
-INFO:agents.excel_export_agent:DTC -> Parsed 14 steps
-Selected Precondition:
-None
-INFO:agents.excel_export_agent:CL1 -> Parsed 10 steps
-Selected Precondition:
-None
-INFO:agents.excel_export_agent:Excel generated: output_excels\Indiv_US_718521_Test_Scripts_v1.0.xlsx
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
 
- Excel Generated at:
-output_excels\Indiv_US_718521_Test_Scripts_v1.0.xlsx
-(.venv) PS C:\Users\h84609n\Desktop\AgenticAI>
+        # Azure AI Search
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
+        )
+
+    # ---------------------------------------------------------
+    # Embed Query
+    # ---------------------------------------------------------
+    def _embed(self, text: str) -> List[float]:
+
+        response = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text[:8000]
+        )
+
+        return response.data[0].embedding
+
+    # ---------------------------------------------------------
+    # Hybrid Search (Vector + Keyword)
+    # ---------------------------------------------------------
+    def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
+
+        vector_query = VectorizedQuery(
+            vector=self._embed(query_text),
+            fields="embedding",
+            k_nearest_neighbors=topk
+        )
+
+        filter_query = f"channels/any(c: c eq '{channel}')"
+
+        results = list(self.search_client.search(
+            search_text=query_text,
+            vector_queries=[vector_query],
+            filter=filter_query,
+            select=["testCaseId", "content"],
+            top=topk
+        ))
+
+        logger.info(f"{channel} → Retrieved {len(results)} docs")
+
+        return results
+
+    # ---------------------------------------------------------
+    # Extract Precondition Block
+    # ---------------------------------------------------------
+    def _extract_precondition(self, content: str) -> str:
+
+        lines = content.splitlines()
+        capture = False
+        collected = []
+
+        for line in lines:
+            lower = line.lower()
+
+            # Detect precondition header variations
+            if (
+                "pre-condition" in lower or
+                "precondition" in lower or
+                "pre condition" in lower
+            ):
+                capture = True
+                collected.append(line)
+                continue
+
+            # Stop when steps begin
+            if capture and line.strip().lower().startswith("step"):
+                break
+
+            if capture:
+                collected.append(line)
+                
+
+        return "\n".join(collected).strip()
 
 
+    # ---------------------------------------------------------
+    # LLM Rerank
+    # ---------------------------------------------------------
+    def _rerank(self, story_text: str, docs: List[Dict]) -> List[Dict]:
 
+        if not docs:
+            return []
 
+        combined = ""
+        for idx, d in enumerate(docs, 1):
+            combined += f"\nDoc {idx}\n{d.get('content')[:1500]}\n"
 
+        prompt = f"""
+Rank the below documents by relevance to this story.
+Return only numbers in order separated by space.
 
+Story:
+{story_text}
 
+Documents:
+{combined}
+"""
 
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
 
+        ranking_text = response.choices[0].message.content.strip()
+        ranking_tokens = ranking_text.split()
 
+        ordered_docs = []
 
+        for token in ranking_tokens:
+            if token.isdigit():
+                idx = int(token) - 1
+                if 0 <= idx < len(docs):
+                    ordered_docs.append(docs[idx])
 
+        return ordered_docs if ordered_docs else docs
 
+    # ---------------------------------------------------------
+    # Main Execution
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
 
+        logger.info("🚀 Retrieval Agent Running")
 
+        full_story = f"""
+User Story: {state['user_story']}
+Description: {state['description']}
+Acceptance Criteria: {state['acceptance_criteria']}
+"""
 
+        channel_context = {}
+        selected_preconditions = {}
+
+        for channel in state["channels"]:
+
+            docs = self._hybrid_search(full_story, channel)
+
+            reranked_docs = self._rerank(full_story, docs)
+
+            best_precondition = ""
+            historical_steps = ""
+
+            for doc in reranked_docs:
+
+                content = doc.get("content", "")
+
+                if not best_precondition:
+                    extracted = self._extract_precondition(content)
+                    if extracted:
+                        best_precondition = extracted
+
+                historical_steps += "\n" + content[:1000]
+
+                if best_precondition:
+                    break
+
+            channel_context[channel] = {
+                "precondition": best_precondition,
+                "historical_steps": historical_steps[:4000]
+            }
+
+            selected_preconditions[channel] = best_precondition
+
+        # 🔥 Store BOTH structured context and flat map
+        state["channel_context"] = channel_context
+        state["selected_preconditions"] = selected_preconditions
+        
+        logger.info(f"{channel} → Selected Precondition:\n{best_precondition}\n")
+
+        logger.info("✅ Retrieval Completed")
+        return state
