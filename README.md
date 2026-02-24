@@ -14,7 +14,6 @@ class RetrievalIntelligenceAgent:
 
     def __init__(self):
 
-        # Azure OpenAI
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
@@ -24,7 +23,6 @@ class RetrievalIntelligenceAgent:
         self.embed_model = get("EMBEDDING_MODEL")
         self.chat_model = get("CHAT_MODEL")
 
-        # Azure AI Search
         self.search_client = SearchClient(
             endpoint=get("AZURE_SEARCH_ENDPOINT"),
             index_name=get("AZURE_SEARCH_INDEX"),
@@ -44,7 +42,7 @@ class RetrievalIntelligenceAgent:
         return response.data[0].embedding
 
     # ---------------------------------------------------------
-    # Hybrid Search (Vector + Keyword)
+    # Hybrid Search
     # ---------------------------------------------------------
     def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
 
@@ -69,7 +67,7 @@ class RetrievalIntelligenceAgent:
         return results
 
     # ---------------------------------------------------------
-    # Extract Precondition Block
+    # Robust Precondition Extraction
     # ---------------------------------------------------------
     def _extract_precondition(self, content: str) -> str:
 
@@ -78,9 +76,10 @@ class RetrievalIntelligenceAgent:
         collected = []
 
         for line in lines:
-            lower = line.lower()
 
-            # Detect precondition header variations
+            lower = line.lower().strip()
+
+            # START capture
             if (
                 "pre-condition" in lower or
                 "precondition" in lower or
@@ -90,16 +89,18 @@ class RetrievalIntelligenceAgent:
                 collected.append(line)
                 continue
 
-            # Stop when steps begin
-            if capture and line.strip().lower().startswith("step"):
+            # STOP capture
+            if capture and (
+                lower.startswith("step") or
+                "test steps" in lower or
+                "=========== test steps" in lower
+            ):
                 break
 
             if capture:
                 collected.append(line)
-                
 
         return "\n".join(collected).strip()
-
 
     # ---------------------------------------------------------
     # LLM Rerank
@@ -162,12 +163,12 @@ Acceptance Criteria: {state['acceptance_criteria']}
         for channel in state["channels"]:
 
             docs = self._hybrid_search(full_story, channel)
-
             reranked_docs = self._rerank(full_story, docs)
 
             best_precondition = ""
             historical_steps = ""
 
+            # Try to extract precondition from reranked docs
             for doc in reranked_docs:
 
                 content = doc.get("content", "")
@@ -182,6 +183,11 @@ Acceptance Criteria: {state['acceptance_criteria']}
                 if best_precondition:
                     break
 
+            # 🔥 Fallback if nothing found
+            if not best_precondition and reranked_docs:
+                logger.warning(f"{channel} → No precondition found. Using first doc fallback.")
+                best_precondition = "Precondition not found in historical data."
+
             channel_context[channel] = {
                 "precondition": best_precondition,
                 "historical_steps": historical_steps[:4000]
@@ -189,11 +195,17 @@ Acceptance Criteria: {state['acceptance_criteria']}
 
             selected_preconditions[channel] = best_precondition
 
-        # 🔥 Store BOTH structured context and flat map
+            logger.info(
+                f"{channel} → Selected Precondition:\n{best_precondition}\n"
+            )
+
+        # 🔥 Store BOTH maps in state
         state["channel_context"] = channel_context
         state["selected_preconditions"] = selected_preconditions
-        
-        logger.info(f"{channel} → Selected Precondition:\n{best_precondition}\n")
+
+        logger.info("Selected Preconditions Map:")
+        logger.info(selected_preconditions)
 
         logger.info("✅ Retrieval Completed")
+
         return state
