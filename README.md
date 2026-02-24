@@ -1,143 +1,61 @@
-import os
-import logging
-from openpyxl import load_workbook
-from config.config import get
+def run(self, state: dict) -> dict:
 
-logger = logging.getLogger(__name__)
+    logger.info("Excel Export Agent started")
 
+    os.makedirs(self.output_dir, exist_ok=True)
+    wb = load_workbook(self.template_path)
 
-class ExcelExportAgent:
+    user_story_id = state["user_story_id"]
+    tc_counter = 1
 
-    def __init__(self):
-        self.template_path = get("EXCEL_TEMPLATE_PATH")
-        self.output_dir = get("EXCEL_OUTPUT_DIR")
+    for channel, llm_text in state["llm_outputs"].items():
 
-    # ---------------------------------------------------
-    # STRICT PIPE PARSER (NO REGEX)
-    # ---------------------------------------------------
-    def _parse_llm_output(self, llm_text: str):
+        if channel not in wb.sheetnames:
+            logger.warning(f"Sheet {channel} not found in template")
+            continue
 
-        scenario = ""
-        script = ""
-        requirement = ""
-        precondition = ""
-        steps = []
+        ws = wb[channel]   # ✅ Correct sheet selection
+        row = 2            # Always start at row 2
 
-        lines = llm_text.splitlines()
-        step_counter = 1
+        parsed = self._parse_llm_output(llm_text)
 
-        for line in lines:
-            line = line.strip()
+        logger.info(f"{channel} -> Parsed {len(parsed['steps'])} steps")
 
-            if not line:
-                continue
+        if not parsed["steps"]:
+            continue
 
-            if line.startswith("Scenario:"):
-                scenario = line.replace("Scenario:", "").strip()
-                continue
+        # ✅ Get precondition from retrieval layer
+        precondition = state["selected_preconditions"].get(channel, "")
 
-            if line.startswith("Script:"):
-                script = line.replace("Script:", "").strip()
-                continue
+        tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
 
-            if line.startswith("Requirement:"):
-                requirement = line.replace("Requirement:", "").strip()
-                continue
+        for idx, step in enumerate(parsed["steps"]):
 
-            if line.startswith("PRECONDITION:"):
-                continue
+            ws.cell(row, 1).value = tc_id if idx == 0 else ""
+            ws.cell(row, 2).value = f"{user_story_id}-{channel}"
+            ws.cell(row, 3).value = parsed["scenario"] if idx == 0 else ""
+            ws.cell(row, 4).value = parsed["script"] if idx == 0 else ""
+            ws.cell(row, 5).value = precondition if idx == 0 else ""
 
-            # Capture precondition lines (numbered)
-            if line.startswith("1.") or line.startswith("2.") or \
-               line.startswith("3.") or line.startswith("4.") or \
-               line.startswith("5.") or line.startswith("Create"):
-                precondition += line + "\n"
-                continue
+            ws.cell(row, 6).value = step["step_no"]
+            ws.cell(row, 7).value = step["desc"]
+            ws.cell(row, 8).value = step["screen"]
+            ws.cell(row, 9).value = step["data"]
+            ws.cell(row, 10).value = step["expected"]
 
-            # Parse only pipe formatted steps
-            if "|" in line and line.lower().startswith("step"):
-                parts = [p.strip() for p in line.split("|")]
+            ws.cell(row, 15).value = parsed["requirement"] if idx == 0 else ""
 
-                if len(parts) != 5:
-                    continue
+            row += 1
 
-                steps.append({
-                    "step_no": f"Step {step_counter:02d}",
-                    "desc": parts[1],
-                    "screen": parts[2],
-                    "data": parts[3],
-                    "expected": parts[4]
-                })
+        tc_counter += 1
 
-                step_counter += 1
+    output_file = os.path.join(
+        self.output_dir,
+        f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
+    )
 
-        return {
-            "scenario": scenario,
-            "script": script,
-            "requirement": requirement,
-            "precondition": precondition.strip(),
-            "steps": steps
-        }
+    wb.save(output_file)
 
-    # ---------------------------------------------------
-    # MAIN RUN
-    # ---------------------------------------------------
-    def run(self, state: dict) -> dict:
-
-        logger.info("Excel Export Agent started")
-
-        os.makedirs(self.output_dir, exist_ok=True)
-
-        wb = load_workbook(self.template_path)
-        ws = wb.active  # single sheet template
-
-        row = 2  # Start writing from row 2
-        tc_counter = 1
-        user_story_id = state["user_story_id"]
-
-        for channel, llm_text in state["llm_outputs"].items():
-
-            parsed = self._parse_llm_output(llm_text)
-
-            logger.info(f"{channel} -> Parsed {len(parsed['steps'])} steps")
-
-            if not parsed["steps"]:
-                continue
-
-            tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
-
-            for idx, step in enumerate(parsed["steps"]):
-
-                ws.cell(row, 1).value = tc_id if idx == 0 else ""
-                ws.cell(row, 2).value = f"{user_story_id}-{channel}"
-                ws.cell(row, 3).value = parsed["scenario"] if idx == 0 else ""
-                ws.cell(row, 4).value = parsed["script"] if idx == 0 else ""
-                ws.cell(row, 5).value = parsed["precondition"] if idx == 0 else ""
-
-                ws.cell(row, 6).value = step["step_no"]
-                ws.cell(row, 7).value = step["desc"]
-                ws.cell(row, 8).value = step["screen"]
-                ws.cell(row, 9).value = step["data"]
-                ws.cell(row, 10).value = step["expected"]
-
-                ws.cell(row, 11).value = ""  # Actual Results
-                ws.cell(row, 12).value = ""  # Status
-                ws.cell(row, 13).value = ""  # Comments
-                ws.cell(row, 14).value = ""  # Post Condition
-                ws.cell(row, 15).value = parsed["requirement"] if idx == 0 else ""
-
-                row += 1
-
-            tc_counter += 1
-
-        output_file = os.path.join(
-            self.output_dir,
-            f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
-        )
-
-        wb.save(output_file)
-
-        logger.info(f"Excel generated: {output_file}")
-
-        state["excel_output"] = output_file
-        return state
+    logger.info(f"Excel generated: {output_file}")
+    state["excel_output"] = output_file
+    return state
