@@ -1,3 +1,296 @@
+import logging
+from typing import Dict, List
+
+from azure.search.documents import SearchClient
+from azure.search.documents.models import VectorizedQuery
+from azure.core.credentials import AzureKeyCredential
+from openai import AzureOpenAI
+from config.config import get
+
+logger = logging.getLogger(__name__)
+
+
+class RetrievalIntelligenceAgent:
+
+    def __init__(self):
+
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+        )
+
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
+
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
+        )
+
+    # ---------------------------------------------------------
+    # Embed Query
+    # ---------------------------------------------------------
+    def _embed(self, text: str) -> List[float]:
+
+        response = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text[:8000]
+        )
+
+        return response.data[0].embedding
+
+    # ---------------------------------------------------------
+    # Hybrid Search
+    # ---------------------------------------------------------
+    def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
+
+        vector_query = VectorizedQuery(
+            vector=self._embed(query_text),
+            fields="embedding",
+            k_nearest_neighbors=topk
+        )
+
+        filter_query = f"channels/any(c: c eq '{channel}')"
+
+        results = list(self.search_client.search(
+            search_text=query_text,
+            vector_queries=[vector_query],
+            filter=filter_query,
+            select=["testCaseId", "content"],
+            top=topk
+        ))
+
+        logger.info(f"{channel} → Retrieved {len(results)} docs")
+
+        return results
+
+    # ---------------------------------------------------------
+    # Robust Precondition Extraction
+    # ---------------------------------------------------------
+    def _extract_precondition(self, content: str) -> str:
+
+        lines = content.splitlines()
+        capture = False
+        collected = []
+
+        for line in lines:
+
+            lower = line.lower().strip()
+
+            # START capture
+            if (
+                "pre-condition" in lower or
+                "precondition" in lower or
+                "pre condition" in lower
+            ):
+                capture = True
+                collected.append(line)
+                continue
+
+            # STOP capture
+            if capture and (
+                lower.startswith("step") or
+                "test steps" in lower or
+                "=========== test steps" in lower
+            ):
+                break
+
+            if capture:
+                collected.append(line)
+
+        return "\n".join(collected).strip()
+
+    # ---------------------------------------------------------
+    # LLM Rerank
+    # ---------------------------------------------------------
+    def _rerank(self, story_text: str, docs: List[Dict]) -> List[Dict]:
+
+        if not docs:
+            return []
+
+        combined = ""
+        for idx, d in enumerate(docs, 1):
+            combined += f"\nDoc {idx}\n{d.get('content')[:1500]}\n"
+
+        prompt = f"""
+Rank the below documents by relevance to this story.
+Return only numbers in order separated by space.
+
+Story:
+{story_text}
+
+Documents:
+{combined}
+"""
+
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+
+        ranking_text = response.choices[0].message.content.strip()
+        ranking_tokens = ranking_text.split()
+
+        ordered_docs = []
+
+        for token in ranking_tokens:
+            if token.isdigit():
+                idx = int(token) - 1
+                if 0 <= idx < len(docs):
+                    ordered_docs.append(docs[idx])
+
+        return ordered_docs if ordered_docs else docs
+
+    # ---------------------------------------------------------
+    # Main Execution
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("🚀 Retrieval Agent Running")
+
+        full_story = f"""
+User Story: {state['user_story']}
+Description: {state['description']}
+Acceptance Criteria: {state['acceptance_criteria']}
+"""
+
+        channel_context = {}
+        selected_preconditions = {}
+
+        for channel in state["channels"]:
+
+            docs = self._hybrid_search(full_story, channel)
+            reranked_docs = self._rerank(full_story, docs)
+
+            best_precondition = ""
+            historical_steps = ""
+
+            # Try to extract precondition from reranked docs
+            for doc in reranked_docs:
+
+                content = doc.get("content", "")
+
+                if not best_precondition:
+                    extracted = self._extract_precondition(content)
+                    if extracted:
+                        best_precondition = extracted
+
+                historical_steps += "\n" + content[:1000]
+
+                if best_precondition:
+                    break
+
+            # 🔥 Fallback if nothing found
+            if not best_precondition and reranked_docs:
+                logger.warning(f"{channel} → No precondition found. Using first doc fallback.")
+                best_precondition = "Precondition not found in historical data."
+
+            channel_context[channel] = {
+                "precondition": best_precondition,
+                "historical_steps": historical_steps[:4000]
+            }
+
+            selected_preconditions[channel] = best_precondition
+
+            logger.info(
+                f"{channel} → Selected Precondition:\n{best_precondition}\n"
+            )
+
+        # 🔥 Store BOTH maps in state
+        state["channel_context"] = channel_context
+        state["selected_preconditions"] = selected_preconditions
+
+        logger.info("Selected Preconditions Map:")
+        logger.info(selected_preconditions)
+
+        logger.info("✅ Retrieval Completed")
+
+        return state
+----------------------------------------------------------------------------
+import logging
+import os
+from typing import Dict
+
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from config.config import get
+
+logger = logging.getLogger(__name__)
+
+
+class LLMTestcaseGeneratorAgent:
+
+    def __init__(self):
+
+        # Load prompt path from .env
+        prompt_path = get("PROMPT_TEMPLATE_PATH")
+
+        if not os.path.exists(prompt_path):
+            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
+
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "user_story_id",
+                "user_story",
+                "description",
+                "ac",
+                "channel",
+                "precondition"
+            ],
+            template=prompt_text
+        )
+
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
+            temperature=0  # deterministic
+        )
+
+        self.chain = self.prompt | self.llm
+
+        logger.info("✅ LLM Testcase Generator initialized")
+
+    # ---------------------------------------------------------
+    # LangGraph Entry
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("🤖 LLM Generator Running")
+
+        outputs = {}
+
+        for channel, ctx in state["channel_context"].items():
+
+            payload = {
+                "user_story_id": state["user_story_id"],
+                "user_story": state["user_story"],
+                "description": state["description"],
+                "ac": state["acceptance_criteria"],
+                "channel": channel,
+                "precondition": ctx["precondition"]
+            }
+
+            result = self.chain.invoke(payload)
+
+            outputs[channel] = result.content.strip()
+
+        state["llm_outputs"] = outputs
+        
+        if "selected_preconditions" not in state:
+            state["selected_preconditions"] = {}
+
+        logger.info("✅ LLM Generation Completed")
+
+        return state
+--------------------------------------------------------------------------------------------
 import os
 import logging
 from openpyxl import load_workbook
@@ -139,3 +432,4 @@ class ExcelExportAgent:
 
         state["excel_output"] = output_file
         return state
+
