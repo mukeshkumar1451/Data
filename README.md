@@ -1,7 +1,7 @@
-def process_html_and_download_images(html: str, story_id: str, section: str):
+def process_html_and_download_images(html: str, story_id: str, section: str) -> str:
 
     if not html:
-        return "", ""
+        return ""
 
     soup = BeautifulSoup(html, "html.parser")
 
@@ -15,6 +15,9 @@ def process_html_and_download_images(html: str, story_id: str, section: str):
 
     all_ocr_text = []
 
+    # -------------------------------------------------
+    # DOWNLOAD + OCR (RAW ONLY)
+    # -------------------------------------------------
     for idx, img in enumerate(images, start=1):
         src = img.get("src")
         if not src:
@@ -32,6 +35,13 @@ def process_html_and_download_images(html: str, story_id: str, section: str):
     raw_text = soup.get_text(separator="\n")
     clean_text = _normalize_text(raw_text)
 
-    combined_ocr = "\n\n".join(all_ocr_text)
+    # -------------------------------------------------
+    # MERGE OCR NATURALLY (NO DEBUG MARKERS)
+    # -------------------------------------------------
+    if all_ocr_text:
+        combined_ocr = "\n\n".join(all_ocr_text)
+        final_text = clean_text + "\n\n" + combined_ocr
+    else:
+        final_text = clean_text
 
-    return clean_text, combined_ocr
+    return final_text
