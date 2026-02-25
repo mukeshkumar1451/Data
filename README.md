@@ -1,35 +1,128 @@
-import os
-from datetime import datetime
+import logging
+from openai import AzureOpenAI
+
+from ado.ado_client import fetch_from_ado
+from utils.html_image_processor import process_html_and_download_images
+from utils.channel_detector import detect_channels
+from utils.state_debugger import dump_state_to_txt
+from config.config import get
+
+logger = logging.getLogger(__name__)
 
 
-def dump_state_to_txt(state: dict, filename: str = "ado_agent_{user_story_id}_output.txt"):
-    os.makedirs("debug", exist_ok=True)
+class ADOIntelligenceAgent:
 
-    filename = filename.format(
-        user_story_id=state.get("user_story_id", "unknown")
-    )
+    def __init__(self):
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+        )
+        self.model = get("CHAT_MODEL")
 
-    path = os.path.join("debug", filename)
+    # ---------------------------------------------------------
+    # Convert any text to step sentences
+    # ---------------------------------------------------------
+    def _convert_to_steps(self, text: str) -> str:
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n\n")
+        if not text:
+            return ""
 
-        f.write(f"User Story ID:\n{state.get('user_story_id')}\n\n")
+        text = text[:6000]  # safety limit
 
-        f.write("----------- TITLE -----------\n")
-        f.write(f"{state.get('title')}\n\n")
+        prompt = f"""
+You are a senior QA analyst.
 
-        f.write("----------- ENRICHED DESCRIPTION -----------\n")
-        f.write(f"{state.get('description')}\n\n")
+Convert the following content into clear numbered step sentences.
 
-        f.write("----------- CHANNELS -----------\n")
-        f.write(f"{state.get('channels')}\n\n")
+Rules:
+- One behavior per sentence.
+- Use simple English.
+- Do NOT hallucinate.
+- Do NOT repeat raw OCR.
+- Keep concise.
+- Use format:
+  1.
+  2.
+  3.
 
-        f.write("----------- ENRICHED ACCEPTANCE CRITERIA -----------\n")
-        f.write(f"{state.get('acceptance_criteria')}\n\n")
+CONTENT:
+{text}
+"""
 
-        f.write("----------- PRECONDITIONS -----------\n")
-        for ch, pre in state.get("preconditions", {}).items():
-            f.write(f"\n[{ch}]\n{pre}\n")
+        try:
+            response = self.openai.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
 
-    print(f"\n State dumped to: {path}\n")
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            logger.error(f"Step conversion failed: {e}")
+            return text
+
+    # ---------------------------------------------------------
+    # MAIN
+    # ---------------------------------------------------------
+    def run(self, state: dict) -> dict:
+
+        logger.info("🚀 ADO Intelligence Agent started")
+
+        user_story_id = state["user_story_id"]
+
+        # 1️⃣ Fetch story
+        story = fetch_from_ado(user_story_id)
+
+        raw_description = story.get("description", "")
+        raw_ac = story.get("acceptance_criteria", "")
+
+        # 2️⃣ Extract OCR separately
+        description_enriched = process_html_and_download_images(
+            raw_description,
+            user_story_id,
+            "description"
+        )
+
+        ac_enriched = process_html_and_download_images(
+            raw_ac,
+            user_story_id,
+            "acceptance_criteria"
+        )
+
+        # 3️⃣ Convert separately
+        description_steps = self._convert_to_steps(description_enriched)
+        ac_steps = self._convert_to_steps(ac_enriched)
+
+        # 4️⃣ Detect channels from AC only (recommended)
+        channels = detect_channels(ac_enriched)
+
+        # -------------------------------------------------
+        # DEBUG OUTPUT
+        # -------------------------------------------------
+        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
+        print("TITLE:", story.get("title"))
+        print("\n--- DESCRIPTION STEPS ---\n")
+        print(description_steps)
+        print("\n--- ACCEPTANCE CRITERIA STEPS ---\n")
+        print(ac_steps)
+        print("\n=====================================================\n")
+
+        # -------------------------------------------------
+        # STATE UPDATE (CLEAN & SEPARATE)
+        # -------------------------------------------------
+        state["user_story_id"] = user_story_id
+        state["title"] = story.get("title")
+        state["user_story"] = story.get("title")
+
+        state["description"] = description_steps
+        state["acceptance_criteria"] = ac_steps
+
+        state["channels"] = channels
+
+        dump_state_to_txt(state)
+
+        logger.info("✅ ADO Intelligence Agent completed")
+
+        return state
