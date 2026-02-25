@@ -1,70 +1,44 @@
-import requests
-import jwt
+You are a Senior Mortgage QA Analyst.
 
-# ==============================
-# CONFIGURATION (SET YOUR VALUES)
-# ==============================
+CHANNEL: {channel}
 
-TENANT_ID = "YOUR_TENANT_ID"
-CLIENT_ID = "YOUR_CLIENT_ID"
-CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+------------------------------------------------------------
+PRECONDITION (DO NOT MODIFY)
 
-# Subsite ID for:
-# https://corpofficeapps.sharepoint.com/sites/Ops_Home/nationalops
-SITE_ID = "corpofficeapps.sharepoint.com,bf088619-af20-4ee0-aed9-f59eadef4cc4,985d34fb-093d-449c-a958-0865ce7aac7d"
+{precondition}
 
+------------------------------------------------------------
+STRICT FORMAT RULES
 
-# ==============================
-# GET ACCESS TOKEN
-# ==============================
+1. Do NOT generate precondition.
+2. Generate ONLY test case header and steps.
+3. Each step must be ONE line.
+4. Each step must contain EXACTLY 4 pipe symbols "|".
+5. Do NOT use markdown.
+6. Do NOT add explanation.
+7. Do NOT insert blank lines between steps.
 
-def get_access_token():
-    token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+------------------------------------------------------------
+FORMAT
 
-    data = {
-        "client_id": CLIENT_ID,
-        "scope": "https://graph.microsoft.com/.default",
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "client_credentials",
-    }
+Scenario: <Business validation scenario>
+Script: <Short functional name>
+Requirement: {user_story_id}
 
-    response = requests.post(token_url, data=data)
-    response.raise_for_status()
+Step 01 | <Action> | <Screen> | <Test Data> | <Expected system behavior>
+Step 02 | <Action> | <Screen> | <Test Data> | <Expected system behavior>
+Step 03 | <Action> | <Screen> | <Test Data> | <Expected system behavior>
 
-    print("✅ Access token acquired\n")
-    return response.json()["access_token"]
+------------------------------------------------------------
 
+User Story:
+{user_story}
 
-# ==============================
-# GET ROOT FOLDERS
-# ==============================
+Description:
+{description}
 
-def get_root_folders(token, site_id):
-    url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root/children"
+Acceptance Criteria:
+{ac}
 
-    headers = {
-        "Authorization": f"Bearer {token}"
-    }
+Generate the test case now.
 
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-
-    items = response.json().get("value", [])
-
-    print("======= FOLDERS IN DEFAULT DOCUMENT LIBRARY =======\n")
-
-    for item in items:
-        if "folder" in item:
-            print("📁", item["name"])
-
-    print("\nDone.")
-
-
-# ==============================
-# MAIN
-# ==============================
-
-if __name__ == "__main__":
-
-    token = get_access_token()
-    get_root_folders(token, SITE_ID)
