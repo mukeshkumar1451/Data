@@ -1,60 +1,50 @@
-def _convert_to_steps(self, text: str) -> str:
+=========== ADO INTELLIGENCE AGENT OUTPUT ===========
 
-    if not text:
-        return ""
+User Story ID:
+718521
 
-    text = text[:6000]
+----------- TITLE -----------
+Modernized Audit additions - DIS > Generate Disclosures Fields
 
-    prompt = f"""
-You are a senior QA automation analyst.
+----------- ENRICHED DESCRIPTION -----------
+1. User can select "Generate Disclosure" button.  
+2. User can select "Intent to Proceed" checkbox.  
+3. User can select "Mortgage Broker Fee/Compensation Agreement" checkbox.  
+4. If "Mortgage Broker Fee/Compensation Agreement" is selected, system validates privilege restrictions.  
+5. If "SubPropState" is set to "CA," "Mortgage Broker License Type" field appears.  
+6. If "Mortgage Broker License Type" field appears, system validates privilege restrictions.  
+7. User can select "Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?" dropdown.  
+8. System validates that the "Mortgage Broker Fee/Compensation Agreement" form meets license/registration disclosure requirements before inclusion.  
+9. User can select "Under which license will you originate this loan?" dropdown.  
+10. User can select "Higher Priced Mortgage Loan" dropdown.  
+11. User can select "Send via" dropdown.  
+12. User can toggle "Allow appraisal order" field.  
+13. User can toggle "Bypass compliance check" field.  
+14. User can toggle "Ignore 3rd Party Fee Check" field.  
+15. User can toggle "Title Fees Verified after LA Increase" field.  
+16. User can toggle "Ignore Fee Quote Data validations" field.  
+17. System validates "Electronic Delivery" selection.  
+18. User can toggle "NPM PV Override" field.
 
-Your task is to convert UI content into accurate, test-ready step sentences.
+----------- CHANNELS -----------
+['RTL', 'WHL', 'DTC', 'CL1']
 
-Follow this strict process:
+----------- ENRICHED ACCEPTANCE CRITERIA -----------
+1. User can select "Generate Disclosure" button.  
+2. User can select "Intent to Proceed" checkbox.  
+3. User can select "Mortgage Broker Fee/Compensation Agreement" checkbox.  
+4. If "SubPropState" is set to "CA", "Mortgage Broker License Type" field appears.  
+5. System validates if the user has privilege access to view "Mortgage Broker Fee/Compensation Agreement".  
+6. System validates if the user has privilege access to view "Mortgage Broker License Type".  
+7. User can select "Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?" dropdown.  
+8. User can select "Under which license will you originate this loan?" dropdown.  
+9. User can select "Higher Priced Mortgage Loan" dropdown.  
+10. User can select "Send via" dropdown.  
+11. User can toggle "Allow appraisal order" field.  
+12. User can toggle "Bypass compliance check" field.  
+13. User can toggle "Ignore 3rd Party Fee Check" field.  
+14. User can toggle "Title Fees Verified after LA Increase" field.  
+15. User can toggle "Ignore Fee Quote Data validations" field.  
+16. System validates if disclosures are sent electronically when consent is provided.  
+17. System validates if disclosures are sent via mail when consent is not provided.
 
-Step 1: Identify valid UI elements only:
-- Checkboxes
-- Dropdowns
-- Buttons
-- Toggle fields
-- Conditional fields
-- System validations
-
-Step 2: Ignore:
-- Broken OCR fragments
-- Random characters
-- Repeated labels
-- Decorative text
-
-Step 3: Convert into precise testable sentences.
-
-Formatting Rules:
-- Number each step.
-- Each step must describe ONE clear behavior.
-- Preserve conditional logic when visible.
-- Use format:
-    1. User can select <Field Name>.
-    2. If <Field> is set to <Value>, <Behavior occurs>.
-    3. System validates <Condition>.
-
-- Do NOT hallucinate logic.
-- Do NOT invent values.
-- Do NOT merge multiple behaviors in one sentence.
-- Be concise and accurate.
-
-CONTENT:
-{text}
-"""
-
-    try:
-        response = self.openai.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-
-        return response.choices[0].message.content.strip()
-
-    except Exception as e:
-        logger.error(f"Step conversion failed: {e}")
-        return text
