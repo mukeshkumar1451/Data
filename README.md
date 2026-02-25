@@ -1,60 +1,60 @@
-=========== ADO INTELLIGENCE AGENT OUTPUT ===========
+def _convert_to_steps(self, text: str) -> str:
 
-User Story ID:
-718521
+    if not text:
+        return ""
 
------------ TITLE -----------
-Modernized Audit additions - DIS > Generate Disclosures Fields
+    text = text[:6000]
 
------------ ENRICHED DESCRIPTION -----------
-1. Add the "DescriptionH2O" field to the Modernized Audit under "UI LocationHPMLDIS > Generate Disclosures > Generate Disclosure."  
-2. Add the "Intent to Proceed" field to the Modernized Audit under "DIS > Generate Disclosures."  
-3. Add the "Mortgage Broker Fee Agreement" field to the Modernized Audit under "DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement."  
-4. Add the "Mortgage Broker License Type" field to the Modernized Audit under "DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement."  
-5. Ensure the "Mortgage Broker License Type" field appears when "SubPropState = CA" based on developer-provided logic.  
-6. Restrict access to the "Mortgage Broker Fee/Compensation Agreement" and "Mortgage Broker License Type" fields based on user privileges.  
-7. Confirm users have consented to receive disclosures electronically; otherwise, send disclosures via mail.  
-8. Provide the option to include the "Mortgage Broker Fee/Compensation Agreement" in the Newrez LE Package.  
-9. Ensure the "Mortgage Broker Fee/Compensation Agreement" form complies with license/registration disclosure requirements before inclusion.  
-10. Enable functionality to append additional disclosures to the Newrez LE Package.  
-11. Allow users to generate disclosures, including "Intent to Proceed."  
-12. Provide the option to allow appraisal orders.  
-13. Enable bypassing compliance checks if necessary.  
-14. Allow ignoring third-party fee checks.  
-15. Verify title fees after loan amount increases.  
-16. Allow ignoring fee quote data validations.  
-17. Provide the option to select "Higher Priced Mortgage Loan" status.  
-18. Enable electronic delivery of disclosures.  
-19. Provide the option to override NPM PV settings.  
-20. Allow users to select the license under which the loan will originate.  
-21. Manage additional broker disclosures through the "Manage Broker Disclosures" functionality.  
-22. Append disclosures to the Newrez LE Package as needed.
+    prompt = f"""
+You are a senior QA automation analyst.
 
------------ CHANNELS -----------
-['RTL', 'WHL', 'DTC', 'CL1']
+Your task is to convert UI content into accurate, test-ready step sentences.
 
------------ ENRICHED ACCEPTANCE CRITERIA -----------
-1. Add the "DescriptionH2O" field to the Modernized Audit under "UI LocationHPMLDIS > Generate Disclosures > Generate Disclosure".  
-2. Add the "Intent to Proceed" field to the Modernized Audit under "DIS > Generate Disclosures".  
-3. Add the "Mortgage Broker Fee Agreement" field to the Modernized Audit under "DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement".  
-4. Add the "Mortgage Broker License Type" field to the Modernized Audit under "DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement".  
-5. Ensure the "Mortgage Broker License Type" field appears when "SubPropState = CA" and confirm logic with development.  
-6. Restrict access to "Mortgage Broker Fee/Compensation Agreement" and "Mortgage Broker License Type" fields based on user privileges.  
-7. Confirm users have consented to receive disclosures electronically; otherwise, send disclosures via mail.  
-8. Provide the option to include the "Mortgage Broker Fee/Compensation Agreement" in the Newrez LE Package.  
-9. Ensure the "Mortgage Broker Fee/Compensation Agreement" form complies with license/registration disclosure requirements before inclusion.  
-10. Enable functionality to append additional disclosures to the Newrez LE Package.  
-11. Allow users to generate disclosures, including "Intent to Proceed".  
-12. Provide the option to allow appraisal orders.  
-13. Enable bypassing compliance checks if necessary.  
-14. Allow ignoring third-party fee checks.  
-15. Verify title fees after loan amount increases.  
-16. Allow ignoring fee quote data validations.  
-17. Provide the option to select "Higher Priced Mortgage Loan" status.  
-18. Enable electronic delivery of disclosures.  
-19. Provide the option to override NPM PV settings.  
-20. Allow users to select the license under which the loan will originate.  
-21. Manage additional broker disclosures through the "Manage Broker Disclosures" functionality.  
-22. Append disclosures to the Newrez LE Package as needed.
+Follow this strict process:
 
------------ PRECONDITIONS -----------
+Step 1: Identify valid UI elements only:
+- Checkboxes
+- Dropdowns
+- Buttons
+- Toggle fields
+- Conditional fields
+- System validations
+
+Step 2: Ignore:
+- Broken OCR fragments
+- Random characters
+- Repeated labels
+- Decorative text
+
+Step 3: Convert into precise testable sentences.
+
+Formatting Rules:
+- Number each step.
+- Each step must describe ONE clear behavior.
+- Preserve conditional logic when visible.
+- Use format:
+    1. User can select <Field Name>.
+    2. If <Field> is set to <Value>, <Behavior occurs>.
+    3. System validates <Condition>.
+
+- Do NOT hallucinate logic.
+- Do NOT invent values.
+- Do NOT merge multiple behaviors in one sentence.
+- Be concise and accurate.
+
+CONTENT:
+{text}
+"""
+
+    try:
+        response = self.openai.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        logger.error(f"Step conversion failed: {e}")
+        return text
