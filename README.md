@@ -7,27 +7,12 @@ from utils.html_image_processor import process_html_and_download_images
 from utils.channel_detector import detect_channels
 from utils.state_debugger import dump_state_to_txt
 from config.config import get
-from utils.channel_rules import build_channel_rules
 
 logger = logging.getLogger(__name__)
 
 
 class ADOIntelligenceAgent:
-    """
-    Responsibilities:
-    1. Fetch User Story from ADO
-    2. Clean Description HTML + download images
-    3. Extract OCR text from images
-    4. Structure OCR UI fields
-    5. Detect Channels
-    6. Derive channel-specific workflow context
-    7. Generate structured business summary
-    8. Prepare state for retrieval agent
-    """
 
-    # ---------------------------------------------------------
-    # INIT
-    # ---------------------------------------------------------
     def __init__(self):
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
@@ -37,132 +22,60 @@ class ADOIntelligenceAgent:
         self.model = get("CHAT_MODEL")
 
     # ---------------------------------------------------------
-    # CHANNEL CONTEXT DERIVATION
+    # RULE EXTRACTION (NEW UNIVERSAL LOGIC ENGINE)
     # ---------------------------------------------------------
-    def _derive_channel_context(self, description: str, ac: str, channels):
+    def _extract_ui_rules(self, description: str, ac: str) -> str:
 
-        logger.info("🧠 Deriving channel specific flows")
+        logger.info("🧠 Extracting derived UI rules")
 
         prompt = f"""
-You are a mortgage workflow analyst.
+You are a senior mortgage QA analyst.
 
-Split the story into channel-specific meaning.
+Extract all visible and logically derivable UI behavior rules.
 
-Channel definitions:
-RTL = Loan officer + borrower interaction
-WHL = Broker submits package / broker compliance
-DTC = Borrower self-service portal behavior
-CL1 = Correspondent purchase / post-closing workflow
+Return ONLY rule statements in this exact format:
+
+=========== DERIVED UI RULES ===========
+
+Rule 1:
+IF <Condition>
+THEN <Behavior>
+
+Rule 2:
+<Field Name> controls visibility of <Other Field>
+
+Rule 3:
+<Field Name> overrides validation
 
 Rules:
-• Extract only relevant sentences per channel
-• Do NOT copy entire story
-• If nothing relevant → return empty string
-• Precision over recall
+- Only include rules supported by the UI.
+- If no conditional behavior exists, return:
+  "No conditional rules identified."
+- Do NOT repeat raw UI text.
+- Do NOT hallucinate.
+- Be concise.
+- No explanation.
+- No markdown.
 
 DESCRIPTION:
 {description}
 
 AC:
 {ac}
-
-Return STRICT JSON:
-
-{{
-"RTL": "...",
-"WHL": "...",
-"DTC": "...",
-"CL1": "..."
-}}
 """
 
         try:
-            resp = self.openai.chat.completions.create(
+            response = self.openai.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0
             )
 
-            content = resp.choices[0].message.content.strip()
-            parsed = json.loads(content)
-
-            for ch in channels:
-                parsed.setdefault(ch, "")
-
-            return parsed
+            return response.choices[0].message.content.strip()
 
         except Exception as e:
-            logger.warning(f"Channel derivation failed: {e}")
-            return {ch: "" for ch in channels}
-
-    # ---------------------------------------------------------
-    # FINAL STRUCTURED SUMMARY
-    # ---------------------------------------------------------
-    def _generate_structured_story_summary(
-        self,
-        story_id: str,
-        title: str,
-        description: str,
-        ac: str,
-        channels: list
-    ) -> str:
-
-        logger.info("📄 Generating structured business summary")
-
-        prompt = f"""
-Generate structured documentation EXACTLY in this format:
-
-User Story {story_id}
-Title: {title}
-
-🔹 Business Requirement
-(2–3 paragraph explanation)
-
-🔹 UI Field Details and Locations
-For each field:
-- Field Name
-- UI Location
-- Description
-- Dropdown Options (if any)
-- Associated Controls (if any)
-- Restrictions (if any)
-- Visibility Logic (if any)
-
-🔹 Channels Impacted
-List channels exactly as provided.
-
-🔹 Acceptance Criteria
-Structured bullets including:
-- Fields required in audit
-- Audit capture expectations
-- Visibility rules
-- Channel consistency requirements
-
-DESCRIPTION:
-{description}
-
-AC:
-{ac}
-
-CHANNELS:
-{channels}
-
-Do not hallucinate.
-Use only provided data.
-"""
-
-        try:
-            resp = self.openai.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0
-            )
-
-            return resp.choices[0].message.content.strip()
-
-        except Exception as e:
-            logger.error(f"Structured summary generation failed: {e}")
-            return ""
+            logger.error(f"Rule extraction failed: {e}")
+            return "Rule extraction failed."
 
     # ---------------------------------------------------------
     # MAIN ENTRY
@@ -173,47 +86,26 @@ Use only provided data.
 
         user_story_id = state["user_story_id"]
 
-        # 1️⃣ Fetch from ADO
+        # 1️⃣ Fetch story
         story = fetch_from_ado(user_story_id)
 
-        # 2️⃣ Process Description (HTML + Images + OCR)
-        logger.info("🧹 Processing Description...")
+        # 2️⃣ Process Description (HTML + OCR)
         description_enriched = process_html_and_download_images(
             story["description"],
             user_story_id,
             "description"
         )
 
-        # 3️⃣ Process Acceptance Criteria
-        logger.info("🧹 Processing Acceptance Criteria...")
-        ac_enriched = process_html_and_download_images(
-            story["acceptance_criteria"],
-            user_story_id,
-            "ac"
-        )
+        # 3️⃣ Process Acceptance Criteria (NO OCR duplication)
+        ac_clean = story["acceptance_criteria"] or ""
 
-        # 4️⃣ Detect Channels
-        channels = detect_channels(ac_enriched)
-        logger.info(f"✅ Channels detected: {channels}")
+        # 4️⃣ Detect Channels (optional — keep if needed)
+        channels = detect_channels(ac_clean)
 
-        channel_rules_map = {
-            ch: build_channel_rules(ch) for ch in channels
-        }
-
-        # 5️⃣ Derive Channel Context
-        channel_context_map = self._derive_channel_context(
+        # 5️⃣ Extract Derived Rules
+        derived_rules = self._extract_ui_rules(
             description_enriched,
-            ac_enriched,
-            channels
-        )
-
-        # 6️⃣ Generate Final Structured Summary
-        structured_summary = self._generate_structured_story_summary(
-            user_story_id,
-            story["title"],
-            description_enriched,
-            ac_enriched,
-            channels
+            ac_clean
         )
 
         # -------------------------------------------------
@@ -222,157 +114,36 @@ Use only provided data.
         print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
         print(f"User Story ID: {user_story_id}")
         print("TITLE:", story["title"])
+        print("\n")
+        print(derived_rules)
         print("\n=====================================================\n")
 
-        dump_state_to_txt({
-            "user_story_id": user_story_id,
-            "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
-            "channels": channels,
-            "channel_context_map": channel_context_map,
-            "structured_summary": structured_summary
-        })
-
         # -------------------------------------------------
-        # STATE MUTATION
+        # STATE UPDATE
         # -------------------------------------------------
-        state["user_story"] = story["title"]
-        state["description"] = description_enriched
-        state["acceptance_criteria"] = ac_enriched
-        state["channels"] = channels
-        state["channel_rules_map"] = channel_rules_map
-        state["channel_context_map"] = channel_context_map
-        state["structured_summary"] = structured_summary
-
         state["story"] = {
             "id": user_story_id,
             "title": story["title"],
-            "description": description_enriched,
-            "acceptance_criteria": ac_enriched,
         }
 
-        logger.info("✅ ADO Intelligence Agent completed successfully")
+        state["channels"] = channels
+        state["derived_ui_rules"] = derived_rules
+
+        dump_state_to_txt({
+            "story_id": user_story_id,
+            "title": story["title"],
+            "channels": channels,
+            "derived_ui_rules": derived_rules
+        })
+
+        logger.info("✅ ADO Intelligence Agent completed")
 
         return state
-----------------------------------------------------------------------------------
-# utils/channel_detector.py
-import re
-import logging
-
-logger = logging.getLogger(__name__)
-
-ALL_CHANNELS = ["RTL", "WHL", "DTC", "CL1"]
-
-
-# -------------------------------------------------
-# Behavioral Channel Detection
-# -------------------------------------------------
-def detect_channels(text: str) -> list:
-
-    logger.info("Behavioral channel detection started...")
-
-    # 🔥 Defensive handling
-    if not text:
-        logger.warning("detect_channels received empty or None text → defaulting to ALL channels")
-        return ALL_CHANNELS
-
-    if not isinstance(text, str):
-        logger.warning(f"detect_channels received non-string type: {type(text)} → converting to string")
-        text = str(text)
-
-    t = text.upper()
-
-    # ---------------------------
-    # 1. Persona Detection (strongest signal)
-    # ---------------------------
-    if "NON-BROKER USER IN H2O" in t or "INTERNAL USER" in t:
-        logger.info("Detected INTERNAL H2O user → WHL")
-        return ["WHL"]
-
-    if "BROKER PORTAL" in t or "BROKER LO" in t:
-        logger.info("Detected Broker persona → WHL")
-        return ["WHL"]
-
-    if "CUSTOMER PORTAL" in t or "BORROWER" in t:
-        logger.info("Detected Borrower persona → RTL")
-        return ["RTL"]
-
-    if "IGNITE" in t or "DIRECT TO CONSUMER" in t:
-        logger.info("Detected Ignite flow → DTC")
-        return ["DTC"]
-
-    if "CORRESPONDENT" in t or "CL1" in t:
-        logger.info("Detected Correspondent → CL1")
-        return ["CL1"]
-
-    # ---------------------------
-    # 2. Feature based detection
-    # ---------------------------
-    if "BUSINESS UNIT" in t or "CREATE LOAN ON BEHALF OF" in t:
-        logger.info("Detected internal operations feature → WHL")
-        return ["WHL"]
-
-    # ---------------------------
-    # Fallback
-    # ---------------------------
-    logger.info("No strong signal → using ALL channels")
-    return ALL_CHANNELS
-------------------------------------------------------------------------------------
-import os
-import re
-import requests
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
-
-from utils.image_ocr_processor import extract_text_from_image, structure_ocr_text
-
-load_dotenv()
-ADO_PAT = os.getenv("ADO_PAT")
-
-
-# ---------------------------------------------------------
-# DOWNLOAD ADO IMAGE
-# ---------------------------------------------------------
-def _download_ado_image(url: str, save_path: str) -> str:
-    try:
-        response = requests.get(url, auth=("", ADO_PAT))
-        response.raise_for_status()
-
-        with open(save_path, "wb") as f:
-            f.write(response.content)
-
-        return save_path
-    except Exception as e:
-        return ""
-
-
-# ---------------------------------------------------------
-# CLEAN TEXT
-# ---------------------------------------------------------
-def _normalize_text(text: str) -> str:
-    if not text:
-        return ""
-
-    text = re.sub(r'(\w)\s{2,}(\w)', r'\1\2', text)
-    text = re.sub(r'[ \t]+', ' ', text)
-    text = re.sub(r'\n(?=[a-z])', ' ', text)
-    text = re.sub(r'\n{2,}', '\n', text)
-    text = re.sub(r'\.\s*\.\s*\.\s*', ' ', text)
-    text = re.sub(r'\s+([.,!?])', r'\1', text)
-    text = re.sub(r'\s*:\s*', ': ', text)
-
-    return text.strip()
-
-
-# ---------------------------------------------------------
-# MAIN PROCESSOR
-# ---------------------------------------------------------
-
+--------------------------------------------------------------------------------
 def process_html_and_download_images(html: str, story_id: str, section: str):
 
     if not html:
-        return "", ""
+        return ""
 
     soup = BeautifulSoup(html, "html.parser")
 
@@ -397,281 +168,19 @@ def process_html_and_download_images(html: str, story_id: str, section: str):
         if downloaded_path:
             ocr_text = extract_text_from_image(downloaded_path)
 
-            if ocr_text and len(ocr_text.strip()) > 10:
+            if ocr_text and len(ocr_text.strip()) > 20:
                 all_ocr_text.append(ocr_text.strip())
 
     raw_text = soup.get_text(separator="\n")
     clean_text = _normalize_text(raw_text)
-    
-    if all_ocr_text: 
-        combined_ocr = "\n\n".join(all_ocr_text)
-        final_text=clean_text+"\n\\n"+combined_ocr
+
+    # Append OCR only once
+    if all_ocr_text:
+        combined_ocr = "\n".join(set(all_ocr_text))  # deduplicate
+        final_text = clean_text + "\n" + combined_ocr
     else:
-        final_text=clean_text
+        final_text = clean_text
 
     return final_text
---------------------------------------------------------------------------------------
-import pytesseract
-import cv2
-import os
-from openai import AzureOpenAI
-from config.config import get
+--------------------------------------------------------------------------
 
-
-# ---------------------------------------------------------
-# OCR EXTRACTION
-# ---------------------------------------------------------
-def extract_text_from_image(image_path: str) -> str:
-    try:
-        if not os.path.exists(image_path):
-            print(f"OCR DEBUG: File not found -> {image_path}")
-            return ""
-
-        image = cv2.imread(image_path)
-
-        if image is None:
-            print(f"OCR DEBUG: cv2 could not read image -> {image_path}")
-            return ""
-
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
-
-        text = pytesseract.image_to_string(gray)
-
-        print(f"OCR DEBUG: Extracted text length = {len(text)}")
-
-        return text.strip()
-
-    except Exception as e:
-        print(f"OCR ERROR: {e}")
-        return ""
-    
-
-
-# ---------------------------------------------------------
-# STRUCTURE OCR TEXT INTO UI FIELD FORMAT
-# ---------------------------------------------------------
-def structure_ocr_text(ocr_text: str) -> str:
-    if not ocr_text:
-        return ""
-
-    client = AzureOpenAI(
-        api_key=get("AZURE_OPENAI_KEY"),
-        azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-        api_version=get("AZURE_OPENAI_API_VERSION"),
-    )
-
-    model = get("CHAT_MODEL")
-
-    prompt = f"""
-You are a mortgage UI analyst.
-
-Convert this OCR extracted UI text into structured field documentation.
-
-For each field identify:
-- Field Name
-- UI Section
-- UI Location (if inferable)
-- Description
-- Dropdown Options (if any)
-- Restrictions (if any)
-- Visibility Logic (if any)
-
-Be precise.
-Do not hallucinate.
-
-OCR TEXT:
-{ocr_text}
-"""
-
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-
-        return resp.choices[0].message.content.strip()
-
-    except Exception as e:
-        return f"STRUCTURE_FAILED: {e}"
-		
-------------------------------------------------------------------------------------------
-OutPut result
---------------
-=========== ADO INTELLIGENCE AGENT OUTPUT ===========
-
-User Story ID:
-718521
-
------------ TITLE -----------
-Modernized Audit additions - DIS > Generate Disclosures Fields
-
------------ ENRICHED DESCRIPTION -----------
-Business would like to add the following fields to Modernized Audit. 
- 
-DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
- 
- 
-Intent to Proceed -  
- 
- 
-Mortgage Broker Fee/Compensation Agreement -  
- 
-*Appears to be privilege restrictedMortgage Broker License Type -  
- 
-*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
-**Also appears to be privilege restricted
-\nGenerate Disclosure
-Intent to Proceed
-
-D allow appraisal order
-
-Ceypass compliance Check
-ignore 3rd Party Fee Check
-Oi title Fees Verified after LA Increase
-
-A ignore Fee Quote Data validations
-
-Higher Priced Mortgage Loan: [Select... ¥]
-4 Electronic Deli
-yes
-
-No
-
-Send via: [esign
-
-Olnpm pv override
-
-| Generate Disclosure
-
-| intent to Proceed
-
-have consented to receive disclosures electronically. Otherwise. disclosures will be sent via Mail.
-
-Mortgage Broker Fee/Compensation Agreement
-
-Do you want to include Mortgage Broker Fee/Compensation Agreement in the
-Newrez LE Package?
-
-Select... v]
-
-NOTE: This form may not be suitable for every transaction or broker Mi scec._| reviewed to ensure it meets your
-license/registration’s disclosure requirements prior to including in the f Yes
-
-Manage Additional Broker Disclosures
-
-Manage Broker Disclosures
-
-No
-
-This functionality provides the ability to:
-© Append additional disclosures to the Newrez LE Package
-
-Mortgage Broker Fee/Compensation Agreement
-
-Do you want to include Mortgage Broker Fee/Compensation Agreement inthe [¥es___]
-Newrez LE Package?
-Under which license will you originate this loan? Select... ¥]
-
-NOTE: This form may not be suitable for every transaction or broker Aisces.. | reviews
-license/registration’s disclosure requirements prior to including in the Fp,
-
-DRE
-Manage Additional Broker Disclosures RML
-
-This functionality F
-© Append addi
-
-gn Cocin
-
-Manage Broker Disclosures
-
-Disclosures to be appended to Newrez LE Package: 0
-
------------ CHANNELS -----------
-['RTL', 'WHL', 'DTC', 'CL1']
-
------------ ENRICHED ACCEPTANCE CRITERIA -----------
-Business would like to add the following fields to Modernized Audit. 
- 
-DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -  
- 
- 
-Intent to Proceed -  
- 
- 
-Mortgage Broker Fee/Compensation Agreement -  
- 
-*Appears to be privilege restrictedMortgage Broker License Type -  
- 
-*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
-**Also appears to be privilege restricted
-\nGenerate Disclosure
-Intent to Proceed
-
-D allow appraisal order
-
-Ceypass compliance Check
-ignore 3rd Party Fee Check
-Oi title Fees Verified after LA Increase
-
-A ignore Fee Quote Data validations
-
-Higher Priced Mortgage Loan: [Select... ¥]
-4 Electronic Deli
-yes
-
-No
-
-Send via: [esign
-
-Olnpm pv override
-
-| Generate Disclosure
-
-| intent to Proceed
-
-have consented to receive disclosures electronically. Otherwise. disclosures will be sent via Mail.
-
-Mortgage Broker Fee/Compensation Agreement
-
-Do you want to include Mortgage Broker Fee/Compensation Agreement in the
-Newrez LE Package?
-
-Select... v]
-
-NOTE: This form may not be suitable for every transaction or broker Mi scec._| reviewed to ensure it meets your
-license/registration’s disclosure requirements prior to including in the f Yes
-
-Manage Additional Broker Disclosures
-
-Manage Broker Disclosures
-
-No
-
-This functionality provides the ability to:
-© Append additional disclosures to the Newrez LE Package
-
-Mortgage Broker Fee/Compensation Agreement
-
-Do you want to include Mortgage Broker Fee/Compensation Agreement inthe [¥es___]
-Newrez LE Package?
-Under which license will you originate this loan? Select... ¥]
-
-NOTE: This form may not be suitable for every transaction or broker Aisces.. | reviews
-license/registration’s disclosure requirements prior to including in the Fp,
-
-DRE
-Manage Additional Broker Disclosures RML
-
-This functionality F
-© Append addi
-
-gn Cocin
-
-Manage Broker Disclosures
-
-Disclosures to be appended to Newrez LE Package: 0
-
------------ PRECONDITIONS -----------
