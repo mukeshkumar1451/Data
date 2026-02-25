@@ -1,139 +1,123 @@
-C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-INFO:agents.llm_testcase_generator_agent:✅ LLM Testcase Generator initialized
-INFO:agents.ado_intelligence_agent:🚀 ADO Intelligence Agent started
-OCR DEBUG: Extracted text length = 301
-OCR DEBUG: Extracted text length = 44
-OCR DEBUG: Extracted text length = 614
-OCR DEBUG: Extracted text length = 543
-INFO:utils.channel_detector:Behavioral channel detection started...
-INFO:utils.channel_detector:No strong signal → using ALL channels
-INFO:agents.ado_intelligence_agent:🧠 Extracting derived UI rules
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+import logging
+from openai import AzureOpenAI
 
-=========== ADO INTELLIGENCE AGENT OUTPUT ===========
+from ado.ado_client import fetch_from_ado
+from utils.html_image_processor import process_html_and_download_images
+from utils.channel_detector import detect_channels
+from utils.state_debugger import dump_state_to_txt
+from config.config import get
 
-User Story ID: 718521
-TITLE: Modernized Audit additions - DIS > Generate Disclosures Fields
+logger = logging.getLogger(__name__)
 
 
-=========== DERIVED UI RULES ===========
+class ADOIntelligenceAgent:
 
-Rule 1:
-IF SubPropState = CA
-THEN Mortgage Broker License Type field becomes visible
+    def __init__(self):
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+        )
+        self.model = get("CHAT_MODEL")
 
-Rule 2:
-Mortgage Broker License Type controls visibility of Mortgage Broker Fee/Compensation Agreement      
+    # ---------------------------------------------------------
+    # CONVERT TO CLEAR STEP SENTENCES
+    # ---------------------------------------------------------
+    def _convert_to_steps(self, text: str) -> str:
 
-Rule 3:
-Privilege restrictions override visibility of Mortgage Broker Fee/Compensation Agreement
+        logger.info("🧠 Converting extracted content into step sentences")
 
-Rule 4:
-Privilege restrictions override visibility of Mortgage Broker License Type
+        text = text[:7000]  # prevent token overflow
 
-=====================================================
+        prompt = f"""
+You are a senior QA analyst.
 
+Convert the following UI content into clear, simple,
+numbered step sentences.
 
- State dumped to: debug\ado_agent_unknown_output.txt
+Rules:
+- Each step must describe one user action or system behavior.
+- Use simple English.
+- Use numbered format (1., 2., 3. ...).
+- Do NOT repeat raw OCR text.
+- Do NOT hallucinate.
+- Keep it concise.
+- Make it test-case ready.
 
-INFO:agents.ado_intelligence_agent:✅ ADO Intelligence Agent completed
+CONTENT:
+{text}
+"""
 
- Excel Generated at:
-Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
-    run("718521")
-    ~~~^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 19, in run
-    print(final_state["excel_output"])
-          ~~~~~~~~~~~^^^^^^^^^^^^^^^^
-KeyError: 'excel_output'
-(.venv) PS C:\Users\h84609n\Desktop\AgenticAI> py run_agent.py
-C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
-  from pydantic.v1.fields import FieldInfo as FieldInfoV1
-INFO:agents.llm_testcase_generator_agent:✅ LLM Testcase Generator initialized
-INFO:agents.ado_intelligence_agent:🚀 ADO Intelligence Agent started
-OCR DEBUG: Extracted text length = 301
-OCR DEBUG: Extracted text length = 44
-OCR DEBUG: Extracted text length = 614
-OCR DEBUG: Extracted text length = 543
-INFO:utils.channel_detector:Behavioral channel detection started...
-INFO:utils.channel_detector:No strong signal → using ALL channels
-INFO:agents.ado_intelligence_agent:🧠 Extracting derived UI rules
-INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+        try:
+            response = self.openai.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
 
-=========== ADO INTELLIGENCE AGENT OUTPUT ===========
+            return response.choices[0].message.content.strip()
 
-User Story ID: 718521
-TITLE: Modernized Audit additions - DIS > Generate Disclosures Fields
+        except Exception as e:
+            logger.error(f"Step conversion failed: {e}")
+            return text  # fallback to original text
 
+    # ---------------------------------------------------------
+    # MAIN ENTRY
+    # ---------------------------------------------------------
+    def run(self, state: dict) -> dict:
 
-=========== DERIVED UI RULES ===========
+        logger.info("🚀 ADO Intelligence Agent started")
 
-Rule 1:
-IF SubPropState = CA
-THEN Mortgage Broker License Type field becomes visible
+        user_story_id = state["user_story_id"]
 
-Rule 2:
-Mortgage Broker License Type controls visibility of Mortgage Broker Fee/Compensation Agreement      
+        # 1️⃣ Fetch story from ADO
+        story = fetch_from_ado(user_story_id)
 
-Rule 3:
-Privilege restrictions override visibility of Mortgage Broker Fee/Compensation Agreement
+        # 2️⃣ Extract description + OCR
+        description_enriched = process_html_and_download_images(
+            story.get("description", ""),
+            user_story_id,
+            "description"
+        )
 
-Rule 4:
-Privilege restrictions override visibility of Mortgage Broker License Type
+        # 3️⃣ Extract AC (without duplicating OCR)
+        ac_clean = story.get("acceptance_criteria", "")
 
-=====================================================
+        # 4️⃣ Combine both for step conversion
+        combined_text = (description_enriched or "") + "\n\n" + (ac_clean or "")
 
+        # 5️⃣ Convert to step sentences
+        step_sentences = self._convert_to_steps(combined_text)
 
- State dumped to: debug\ado_agent_unknown_output.txt
+        # 6️⃣ Detect channels (optional, keep if needed)
+        channels = detect_channels(ac_clean)
 
-INFO:agents.ado_intelligence_agent:✅ ADO Intelligence Agent completed
-INFO:agents.retrieval_intelligence_agent:🚀 Retrieval Agent Running
-Traceback (most recent call last):
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
-    run("718521")
-    ~~~^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run
-    final_state = app.invoke(initial_state)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3071, in invoke
-    for chunk in self.stream(
-                 ~~~~~~~~~~~^
-        input,
-        ^^^^^^
-    ...<10 lines>...
-        **kwargs,
-        ^^^^^^^^^
-    ):
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2646, in stream
-    for _ in runner.tick(
-             ~~~~~~~~~~~^
-        [t for t in loop.tasks.values() if not t.writes],
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ...<2 lines>...
-        schedule_task=loop.accept_push,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    ):
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 167, in tick
-    run_with_retry(
-    ~~~~~~~~~~~~~~^
-        t,
-        ^^
-    ...<10 lines>...
-        },
-        ^^
-    )
-    ^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 42, in run_with_retry
-    return task.proc.invoke(task.input, config)
-           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
-    input = context.run(step.invoke, input, config, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
-    ret = self.func(*args, **kwargs)
-  File "C:\Users\h84609n\Desktop\AgenticAI\agents\retrieval_intelligence_agent.py", line 159, in run    User Story: {state['user_story']}
-                 ~~~~~^^^^^^^^^^^^^^
-KeyError: 'user_story'
-During task with name 'retrieval_agent' and id 'e04ddac9-19ba-34ba-067b-5673a3c9d0f7'
+        # -------------------------------------------------
+        # DEBUG OUTPUT
+        # -------------------------------------------------
+        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
+        print(f"User Story ID: {user_story_id}")
+        print("TITLE:", story.get("title"))
+        print("\n")
+        print(step_sentences)
+        print("\n=====================================================\n")
+
+        # -------------------------------------------------
+        # IMPORTANT: Overwrite description & AC
+        # -------------------------------------------------
+        state["description"] = step_sentences
+        state["acceptance_criteria"] = step_sentences
+
+        state["user_story"] = story.get("title")
+        state["channels"] = channels
+
+        dump_state_to_txt({
+            "story_id": user_story_id,
+            "title": story.get("title"),
+            "channels": channels,
+            "final_description": step_sentences
+        })
+
+        logger.info("✅ ADO Intelligence Agent completed")
+
+        return state
