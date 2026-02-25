@@ -1,186 +1,139 @@
-import logging
-import json
-from openai import AzureOpenAI
+C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+INFO:agents.llm_testcase_generator_agent:✅ LLM Testcase Generator initialized
+INFO:agents.ado_intelligence_agent:🚀 ADO Intelligence Agent started
+OCR DEBUG: Extracted text length = 301
+OCR DEBUG: Extracted text length = 44
+OCR DEBUG: Extracted text length = 614
+OCR DEBUG: Extracted text length = 543
+INFO:utils.channel_detector:Behavioral channel detection started...
+INFO:utils.channel_detector:No strong signal → using ALL channels
+INFO:agents.ado_intelligence_agent:🧠 Extracting derived UI rules
+INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
 
-from ado.ado_client import fetch_from_ado
-from utils.html_image_processor import process_html_and_download_images
-from utils.channel_detector import detect_channels
-from utils.state_debugger import dump_state_to_txt
-from config.config import get
+=========== ADO INTELLIGENCE AGENT OUTPUT ===========
 
-logger = logging.getLogger(__name__)
+User Story ID: 718521
+TITLE: Modernized Audit additions - DIS > Generate Disclosures Fields
 
-
-class ADOIntelligenceAgent:
-
-    def __init__(self):
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-        )
-        self.model = get("CHAT_MODEL")
-
-    # ---------------------------------------------------------
-    # RULE EXTRACTION (NEW UNIVERSAL LOGIC ENGINE)
-    # ---------------------------------------------------------
-    def _extract_ui_rules(self, description: str, ac: str) -> str:
-
-        logger.info("🧠 Extracting derived UI rules")
-
-        prompt = f"""
-You are a senior mortgage QA analyst.
-
-Extract all visible and logically derivable UI behavior rules.
-
-Return ONLY rule statements in this exact format:
 
 =========== DERIVED UI RULES ===========
 
 Rule 1:
-IF <Condition>
-THEN <Behavior>
+IF SubPropState = CA
+THEN Mortgage Broker License Type field becomes visible
 
 Rule 2:
-<Field Name> controls visibility of <Other Field>
+Mortgage Broker License Type controls visibility of Mortgage Broker Fee/Compensation Agreement      
 
 Rule 3:
-<Field Name> overrides validation
+Privilege restrictions override visibility of Mortgage Broker Fee/Compensation Agreement
 
-Rules:
-- Only include rules supported by the UI.
-- If no conditional behavior exists, return:
-  "No conditional rules identified."
-- Do NOT repeat raw UI text.
-- Do NOT hallucinate.
-- Be concise.
-- No explanation.
-- No markdown.
+Rule 4:
+Privilege restrictions override visibility of Mortgage Broker License Type
 
-DESCRIPTION:
-{description}
+=====================================================
 
-AC:
-{ac}
-"""
 
-        try:
-            response = self.openai.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0
-            )
+ State dumped to: debug\ado_agent_unknown_output.txt
 
-            return response.choices[0].message.content.strip()
+INFO:agents.ado_intelligence_agent:✅ ADO Intelligence Agent completed
 
-        except Exception as e:
-            logger.error(f"Rule extraction failed: {e}")
-            return "Rule extraction failed."
+ Excel Generated at:
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
+    run("718521")
+    ~~~^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 19, in run
+    print(final_state["excel_output"])
+          ~~~~~~~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'excel_output'
+(.venv) PS C:\Users\h84609n\Desktop\AgenticAI> py run_agent.py
+C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+INFO:agents.llm_testcase_generator_agent:✅ LLM Testcase Generator initialized
+INFO:agents.ado_intelligence_agent:🚀 ADO Intelligence Agent started
+OCR DEBUG: Extracted text length = 301
+OCR DEBUG: Extracted text length = 44
+OCR DEBUG: Extracted text length = 614
+OCR DEBUG: Extracted text length = 543
+INFO:utils.channel_detector:Behavioral channel detection started...
+INFO:utils.channel_detector:No strong signal → using ALL channels
+INFO:agents.ado_intelligence_agent:🧠 Extracting derived UI rules
+INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
 
-    # ---------------------------------------------------------
-    # MAIN ENTRY
-    # ---------------------------------------------------------
-    def run(self, state: dict) -> dict:
+=========== ADO INTELLIGENCE AGENT OUTPUT ===========
 
-        logger.info("🚀 ADO Intelligence Agent started")
+User Story ID: 718521
+TITLE: Modernized Audit additions - DIS > Generate Disclosures Fields
 
-        user_story_id = state["user_story_id"]
 
-        # 1️⃣ Fetch story
-        story = fetch_from_ado(user_story_id)
+=========== DERIVED UI RULES ===========
 
-        # 2️⃣ Process Description (HTML + OCR)
-        description_enriched = process_html_and_download_images(
-            story["description"],
-            user_story_id,
-            "description"
-        )
+Rule 1:
+IF SubPropState = CA
+THEN Mortgage Broker License Type field becomes visible
 
-        # 3️⃣ Process Acceptance Criteria (NO OCR duplication)
-        ac_clean = story["acceptance_criteria"] or ""
+Rule 2:
+Mortgage Broker License Type controls visibility of Mortgage Broker Fee/Compensation Agreement      
 
-        # 4️⃣ Detect Channels (optional — keep if needed)
-        channels = detect_channels(ac_clean)
+Rule 3:
+Privilege restrictions override visibility of Mortgage Broker Fee/Compensation Agreement
 
-        # 5️⃣ Extract Derived Rules
-        derived_rules = self._extract_ui_rules(
-            description_enriched,
-            ac_clean
-        )
+Rule 4:
+Privilege restrictions override visibility of Mortgage Broker License Type
 
-        # -------------------------------------------------
-        # DEBUG OUTPUT
-        # -------------------------------------------------
-        print("\n=========== ADO INTELLIGENCE AGENT OUTPUT ===========\n")
-        print(f"User Story ID: {user_story_id}")
-        print("TITLE:", story["title"])
-        print("\n")
-        print(derived_rules)
-        print("\n=====================================================\n")
+=====================================================
 
-        # -------------------------------------------------
-        # STATE UPDATE
-        # -------------------------------------------------
-        state["story"] = {
-            "id": user_story_id,
-            "title": story["title"],
-        }
 
-        state["channels"] = channels
-        state["derived_ui_rules"] = derived_rules
+ State dumped to: debug\ado_agent_unknown_output.txt
 
-        dump_state_to_txt({
-            "story_id": user_story_id,
-            "title": story["title"],
-            "channels": channels,
-            "derived_ui_rules": derived_rules
-        })
-
-        logger.info("✅ ADO Intelligence Agent completed")
-
-        return state
---------------------------------------------------------------------------------
-def process_html_and_download_images(html: str, story_id: str, section: str):
-
-    if not html:
-        return ""
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    for tag in soup(["script", "style"]):
-        tag.decompose()
-
-    images = soup.find_all("img")
-
-    img_folder = os.path.join("downloads", story_id, section)
-    os.makedirs(img_folder, exist_ok=True)
-
-    all_ocr_text = []
-
-    for idx, img in enumerate(images, start=1):
-        src = img.get("src")
-        if not src:
-            continue
-
-        save_path = os.path.join(img_folder, f"image_{idx}.png")
-        downloaded_path = _download_ado_image(src, save_path)
-
-        if downloaded_path:
-            ocr_text = extract_text_from_image(downloaded_path)
-
-            if ocr_text and len(ocr_text.strip()) > 20:
-                all_ocr_text.append(ocr_text.strip())
-
-    raw_text = soup.get_text(separator="\n")
-    clean_text = _normalize_text(raw_text)
-
-    # Append OCR only once
-    if all_ocr_text:
-        combined_ocr = "\n".join(set(all_ocr_text))  # deduplicate
-        final_text = clean_text + "\n" + combined_ocr
-    else:
-        final_text = clean_text
-
-    return final_text
---------------------------------------------------------------------------
-
+INFO:agents.ado_intelligence_agent:✅ ADO Intelligence Agent completed
+INFO:agents.retrieval_intelligence_agent:🚀 Retrieval Agent Running
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
+    run("718521")
+    ~~~^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run
+    final_state = app.invoke(initial_state)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3071, in invoke
+    for chunk in self.stream(
+                 ~~~~~~~~~~~^
+        input,
+        ^^^^^^
+    ...<10 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2646, in stream
+    for _ in runner.tick(
+             ~~~~~~~~~~~^
+        [t for t in loop.tasks.values() if not t.writes],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        schedule_task=loop.accept_push,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 167, in tick
+    run_with_retry(
+    ~~~~~~~~~~~~~~^
+        t,
+        ^^
+    ...<10 lines>...
+        },
+        ^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 42, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
+    ret = self.func(*args, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\agents\retrieval_intelligence_agent.py", line 159, in run    User Story: {state['user_story']}
+                 ~~~~~^^^^^^^^^^^^^^
+KeyError: 'user_story'
+During task with name 'retrieval_agent' and id 'e04ddac9-19ba-34ba-067b-5673a3c9d0f7'
