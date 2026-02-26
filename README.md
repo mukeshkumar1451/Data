@@ -1,120 +1,21 @@
-You are a Senior Mortgage QA Analyst generating structured Excel-ready LOS test cases.
-
-CRITICAL: Output must be plain text only.
-Do NOT use markdown.
-Do NOT use tables.
-Do NOT use bold.
-Do NOT use headings.
-Do NOT use backticks.
-Do NOT use bullet points.
-Do NOT add Notes section.
-Do NOT add explanation.
-Do NOT add commentary.
-
-Any deviation from plain text pipe format is invalid.
-
-CHANNEL: {channel}
-
-MANDATORY CHANNEL ENFORCEMENT:
-
-If CHANNEL is RTL or DTC:
-
-Mortgage Broker entities are strictly prohibited.
-
-Do NOT mention:
-Mortgage Broker
-Broker License
-Broker Compensation
-Broker Fee Agreement
-Manage Broker Disclosures
-
-If CHANNEL is WHL or CL1:
-
-Mortgage Broker entities may be included when required by AC.
-
-If violated, output is invalid.
-
-PRECONDITION CONTEXT (REFERENCE ONLY)
-
-{precondition}
-
-Do NOT repeat it.
-
-STRICT OUTPUT STRUCTURE
-
-Output must follow EXACTLY this order:
-
-Test Case ID / Test Script ID: {user_story_id}_{channel}_01
-Test Scenario Id: {user_story_id}_SC_01
-Test Scenario Description: <one sentence business objective>
-Test Script Description: <one paragraph business coverage summary>
-Pre-Condition & Assumptions: Refer to provided precondition context
-
-Then immediately output steps in this exact pipe format:
-
-Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping
-
-Rules for steps:
-
-Step 01 must be Login
-
-Step 02 must be Open Loan
-
-Final step must be Logout
-
-Business steps must cover ALL acceptance criteria
-
-Each step must contain EXACTLY 5 pipe separators
-
-No line wrapping
-
-No extra spaces
-
-No blank lines
-
-No markdown symbols
-
-No table borders
-
-No “###”
-
-No explanations
-
-Login Step:
-Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA
-
-Open Loan Step:
-Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA
-
-Business Step Rules:
-
-No “verify”
-
-No “check”
-
-No “ensure”
-
-No “confirm”
-
-No “should”
-
-Expected result must start with “The system”
-
-Each business step must map to {user_story_id}_AC_XX
-
-Do not skip any AC
-
-Final Step:
-Final Step | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
-
-User Story:
-{user_story}
-
-Description:
-{description}
-
-Acceptance Criteria:
-{ac}
-
-Generate the output now in STRICT plain text format.
-
+LLM Outputs: {'RTL': 'Test Case ID / Test Script ID: 718521_RTL_01  \nTest Scenario Id: 718521_SC_01  \nTest Scenario Description: Validate the addition of fields to Modernized Audit and generation of disclosures in the RTL channel.  \nTest Script Description: This test script validates the functionality of adding fields to Modernized Audit, generating disclosures, and ensuring compliance checks in the RTL channel. It covers user actions, system responses, and conditions for generating disclosures and managing related fields.  \nPre-Condition & Assumptions: Refer to provided precondition context  \n\nTest Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping  \nStep 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA  \nStep 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system 
+loads the loan in editable state | NA  \nStep 03 | Navigate to DIS > Generate Disclosures | Generate Disclosures | NA | The system displays the Generate Disclosures screen with available options | 718521_AC_01  \nStep 04 | Select Intent to Proceed from Generate Disclosures | Generate Disclosures | NA | The system displays the Intent to Proceed section | 718521_AC_02  \nStep 05 | Select Generate Disclosure option | Generate Disclosures | NA | The system displays the Generate Disclosure options | 718521_AC_03  \nStep 06 | Select Higher Priced Mortgage Loan field and choose Yes | Generate Disclosures | Yes | The system records the selection and updates the loan details | 718521_AC_04  \nStep 07 | Select delivery method for disclosures as eSign | Generate Disclosures | eSign | The system records the selected delivery method | 718521_AC_05  \nStep 08 | Perform compliance checks by selecting Ignore 3rd Party Fee Check | Compliance Checks | Ignore 3rd Party Fee Check | The system updates the compliance status based on the selected option | 718521_AC_06  \nStep 09 | Perform compliance checks by selecting Ignore Fee Quote Data Validations | Compliance Checks | Ignore Fee Quote Data Validations | The system updates the compliance status based on the selected option | 718521_AC_07  \nStep 10 | Perform compliance checks by selecting Title Fees Verified after Loan Amount Increase | Compliance Checks | Title Fees Verified after Loan Amount Increase | The system updates the compliance status based on the selected option | 718521_AC_08  \nFinal Step | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA', 'WHL': "Test Case ID / Test Script ID: 718521_WHL_01  \nTest Scenario Id: 718521_SC_01  \nTest Scenario Description: Validate the addition of fields to Modernized Audit and generation of disclosures in WHL channel  \nTest Script Description: This test script validates the functionality of adding fields to Modernized Audit, generating disclosures, and managing broker disclosures in the WHL 
+channel. It ensures that all user actions, system responses, and conditions are met as per the acceptance criteria.  \nPre-Condition & Assumptions: Refer to provided precondition context  \n\nTest Step No. | Test Step Description | Screen Name 
+| Test Data | Expected Results | Requirement Mapping  \nStep 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA  \nStep 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA  \nStep 03 | Navigate to DIS > Generate Disclosures | Generate Disclosures | NA | The system displays options for generating disclosures | 718521_AC_01  \nStep 04 | Select Intent to Proceed from Generate Disclosures | Generate Disclosures | NA | The system displays the Intent to Proceed section | 718521_AC_02  \nStep 05 | Select Mortgage Broker Fee/Compensation Agreement from Generate Disclosures | Generate Disclosures | NA | The system displays the Mortgage Broker Fee/Compensation Agreement section | 718521_AC_03  \nStep 06 | Select Mortgage Broker License Type from Generate Disclosures | Generate Disclosures | SubPropState = CA | The system displays the Mortgage Broker License Type section | 718521_AC_04  \nStep 07 | Select Generate Disclosure option | Generate Disclosures | NA | The system displays the Generate Disclosure options | 718521_AC_05  \nStep 08 | Select Higher Priced Mortgage Loan field | Generate Disclosures | Yes/No | The system records the user's selection 
+| 718521_AC_06  \nStep 09 | Select delivery method for disclosures | Generate Disclosures | Electronic Delivery/Mail | The system records the selected delivery method | 718521_AC_07  \nStep 10 | Perform compliance checks | Generate Disclosures 
+| Ignore 3rd Party Fee Check, Ignore Fee Quote Data Validations, Title Fees Verified after Loan Amount Increase | The system performs the compliance checks and updates the status | 718521_AC_08  \nStep 11 | Navigate to Manage Additional Broker 
+Disclosures | Manage Additional Broker Disclosures | NA | The system displays functionality to append additional disclosures to the Newrez LE Package | 718521_AC_09  \nStep 12 | Select disclosures to append to the Newrez LE Package | Manage Additional Broker Disclosures | Selected disclosures | The system appends the selected disclosures to the Newrez LE Package | 718521_AC_10  \nFinal Step | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA", 'DTC': "Test Case ID / Test Script ID: 718521_DTC_01  \nTest Scenario Id: 718521_SC_01  \nTest Scenario Description: Validate the generation of disclosures in the DTC channel for a refinance loan.  \nTest Script Description: This test script validates the end-to-end process of generating disclosures for a refinance loan in the DTC channel. It ensures that all required fields and options are displayed and function as expected, while adhering to the business rules and acceptance criteria.  \nPre-Condition & Assumptions: Refer to provided precondition context  \n\nTest Step No. 
+| Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping  \nStep 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA  \nStep 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA  \nStep 03 | Navigate to DIS > Generate Disclosures | Generate Disclosures | NA | The system displays the Generate Disclosures screen with available options | 718521_AC_01  \nStep 04 | Select Intent to Proceed from Generate Disclosures | Generate Disclosures | NA | The system displays the Intent to Proceed section | 718521_AC_02  \nStep 05 | Select delivery method for disclosures | Generate Disclosures | Delivery Method: Electronic Delivery | The system records the selected delivery method | 718521_AC_03  \nStep 06 | Perform compliance checks | Generate Disclosures | Compliance Options: Ignore 3rd Party Fee Check, Ignore Fee Quote Data Validations, Title Fees Verified after Loan Amount Increase | 
+The system performs the compliance checks and updates the status accordingly | 718521_AC_04  \nStep 07 | Select Higher Priced Mortgage Loan option | Generate Disclosures | Higher Priced Mortgage Loan: Yes | The system records the user's selection and updates the loan details | 718521_AC_05  \nFinal Step | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA", 'CL1': "Test Case ID / Test Script ID: 718521_CL1_01  \nTest 
+Scenario Id: 718521_SC_01  \nTest Scenario Description: Validate the addition of fields to Modernized Audit and generation of disclosures.  \nTest Script Description: This test script validates the functionality of adding fields to Modernized Audit, generating disclosures, and managing broker disclosures in the H2O-A system. It ensures that all user actions, system responses, and conditions are met as per the acceptance criteria.  \nPre-Condition & Assumptions: Refer to provided precondition context  \n\nTest Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping  \nStep 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA  \nStep 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA  \nStep 03 | Navigate to DIS > Generate Disclosures | Generate Disclosures | NA | The system displays the Generate Disclosures screen with available options | 718521_AC_01  \nStep 04 | Select Intent to Proceed from Generate Disclosures | Generate Disclosures | NA | The system displays the Intent to Proceed section | 718521_AC_02  \nStep 05 | Select Mortgage Broker Fee/Compensation Agreement from Generate Disclosures | Generate Disclosures | NA | The system displays the Mortgage Broker Fee/Compensation Agreement section | 718521_AC_03  \nStep 
+06 | Select Mortgage Broker License Type from Mortgage Broker Fee/Compensation Agreement | Generate Disclosures | SubPropState = CA | The system displays the Mortgage Broker License Type section | 718521_AC_04  \nStep 07 | Select Generate Disclosure option | Generate Disclosures | NA | The system displays the Generate Disclosure options | 718521_AC_05  \nStep 08 | Select Higher Priced Mortgage Loan field and choose Yes | Generate Disclosures | Yes | The system records the user's selection for Higher Priced Mortgage Loan | 718521_AC_06  \nStep 09 | Select delivery method for disclosures as Electronic Delivery | Generate Disclosures | Electronic Delivery | The system records the selected delivery method | 718521_AC_07  \nStep 10 | Perform compliance checks and select Ignore 3rd Party Fee Check | Generate Disclosures | Ignore 3rd Party Fee Check | The system performs the compliance check and ignores the 3rd Party Fee Check | 718521_AC_08  \nStep 11 | Perform compliance checks and select Ignore Fee Quote Data Validations | Generate Disclosures | Ignore Fee Quote Data Validations | The 
+system performs the compliance check and ignores Fee Quote Data Validations | 718521_AC_09  \nStep 12 | Perform compliance checks and select Title Fees Verified after Loan Amount Increase | Generate Disclosures | Title Fees Verified after Loan 
+Amount Increase | The system performs the compliance check and verifies Title Fees after Loan Amount Increase | 718521_AC_10  \nStep 13 | Navigate to Manage Additional Broker Disclosures | Manage Additional Broker Disclosures | NA | The system 
+displays the functionality to append additional disclosures to the Newrez LE Package | 718521_AC_11  \nStep 14 | Select disclosures to append to the Newrez LE Package | Manage Additional Broker Disclosures | Selected disclosures | The system appends the selected disclosures to the Newrez LE Package | 718521_AC_12  \nFinal Step | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA"}
+INFO:agents.excel_export_agent:Excel Export Agent started
+INFO:agents.excel_export_agent:Sheets after cleanup: ['RTL', 'DTC', 'WHL', 'CL1']
+INFO:agents.excel_export_agent:RTL -> Parsed 10 steps
+INFO:agents.excel_export_agent:WHL -> Parsed 12 steps
+INFO:agents.excel_export_agent:DTC -> Parsed 7 steps
+INFO:agents.excel_export_agent:CL1 -> Parsed 14 steps
+INFO:agents.excel_export_agent:Excel generated: output_excels\Indiv_US_718521_Test_Scripts_v1.0.xlsx
