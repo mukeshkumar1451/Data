@@ -4,16 +4,16 @@ CRITICAL OUTPUT RULES:
 - Output must be plain text only.
 - Do NOT use markdown.
 - Do NOT use tables.
-- Do NOT use bold, ###, or special symbols.
-- Do NOT add explanations, notes, summaries, or commentary.
+- Do NOT use bold text, ###, backticks, or special formatting.
+- Do NOT add explanations, notes, commentary, or summaries.
 - Do NOT leave blank lines.
-- Each step must be on a single line.
+- Each step must be written on a single line.
 - Any formatting deviation is invalid.
 
 ------------------------------------------------------------
 CHANNEL: {channel}
 
-MANDATORY CHANNEL ENFORCEMENT:
+MANDATORY CHANNEL ENTITY ENFORCEMENT:
 
 If CHANNEL is RTL or DTC:
 - STRICTLY DO NOT include or reference:
@@ -39,18 +39,39 @@ PRECONDITION CONTEXT (REFERENCE ONLY – DO NOT REPEAT)
 - Do NOT validate loan creation.
 
 ------------------------------------------------------------
-HEADER SECTION (MANDATORY – NO FIELD MAY BE BLANK)
+HISTORICAL STYLE ALIGNMENT RULE (MANDATORY)
+
+The provided historical test steps represent the enterprise-approved writing standard.
+
+Use historical data as the authoritative style reference for:
+
+- Test Scenario Description wording pattern
+- Test Script Description structure and tone
+- Step phrasing style
+- Screen naming consistency
+- Expected Results depth and enforcement tone
+- Validation granularity
+- Acceptance Criteria mapping structure
+
+Do NOT copy historical text.
+Do NOT reuse exact sentences.
+Use it strictly as writing behavior guidance.
+
+Generated output must match historical professionalism, structure, and enforcement depth.
+
+------------------------------------------------------------
+HEADER SECTION (MANDATORY – NONE MAY BE BLANK)
 
 Generate exactly once:
 
 Test Case ID / Test Script ID: {user_story_id}_{channel}_01
 Test Scenario Id: {user_story_id}_SC_01
-Test Scenario Description: <One clear business objective sentence, max 25 words>
-Test Script Description: <2–3 sentences summarizing validation scope aligned to Acceptance Criteria>
+Test Scenario Description: <One clear business objective sentence, maximum 25 words>
+Test Script Description: <2–3 sentences summarizing business validation coverage aligned to Acceptance Criteria>
 Pre-Condition & Assumptions: Refer to provided precondition context
 
 ------------------------------------------------------------
-STEP STRUCTURE (MANDATORY ORDER)
+STEP STRUCTURE
 
 After header, output exactly:
 
@@ -59,7 +80,7 @@ Test Step No. | Test Step Description | Screen Name | Test Data | Expected Resul
 ------------------------------------------------------------
 STEP RULES
 
-1. Step numbering must be sequential numeric format:
+1. Step numbering must be strictly sequential:
    Step 01
    Step 02
    Step 03
@@ -77,17 +98,17 @@ Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number
 - Each Acceptance Criterion must have at least:
   • One positive validation
   • One negative validation where applicable
-- Do NOT duplicate actions.
-- Each step must validate a distinct business rule.
+- Do NOT duplicate validations.
+- Each step must validate one distinct business rule.
 
-5. YES/NO RULE:
+5. YES/NO HANDLING:
 - If Yes and No produce different system behavior, they MUST be separate steps.
-- If Yes and No only validate field selection availability, they may be combined.
-- When separate, each must have distinct Expected Results.
+- If Yes and No only validate field availability, they may be combined.
+- Separate steps must have distinct Expected Results.
 
 6. Expected Results:
 - Must begin with “The system”.
-- Must describe rule enforcement, calculation, visibility, restriction, status change, or dependency behavior.
+- Must describe enforcement, calculation result, restriction, visibility rule, status change, or dependency behavior.
 - Do NOT use:
   verify
   check
@@ -98,14 +119,15 @@ Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number
   if applicable
 
 7. Requirement Mapping:
-- All business steps must map using format:
+- All business validation steps must map using:
   {user_story_id}_AC_XX
 - Login and Logout must use NA.
 - No business step may have NA mapping.
 
 8. Screen Names:
 - Must remain consistent across all steps.
-- Use exact functional screen label (no variation).
+- Use exact functional screen labels.
+- Do not vary singular/plural naming.
 
 ------------------------------------------------------------
 MANDATORY TERMINATION STEP
@@ -115,7 +137,7 @@ The last sequential step MUST be:
 Step XX | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
 
 - Must be last.
-- Must be sequentially numbered.
+- Must follow numeric sequence.
 - Must not be labeled “Final Step”.
 - If missing, output is invalid.
 
