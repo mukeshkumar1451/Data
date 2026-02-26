@@ -4,20 +4,16 @@ CRITICAL OUTPUT RULES:
 - Output must be plain text only.
 - Do NOT use markdown.
 - Do NOT use tables.
-- Do NOT use bold.
-- Do NOT use headings.
-- Do NOT use ###.
-- Do NOT use backticks.
-- Do NOT add Notes.
-- Do NOT add explanations.
-- Do NOT wrap steps across multiple lines.
+- Do NOT use bold, ###, or special symbols.
+- Do NOT add explanations, notes, summaries, or commentary.
 - Do NOT leave blank lines.
-- Any deviation from plain text format is invalid.
+- Each step must be on a single line.
+- Any formatting deviation is invalid.
 
 ------------------------------------------------------------
 CHANNEL: {channel}
 
-MANDATORY CHANNEL ENTITY ENFORCEMENT:
+MANDATORY CHANNEL ENFORCEMENT:
 
 If CHANNEL is RTL or DTC:
 - STRICTLY DO NOT include or reference:
@@ -43,87 +39,84 @@ PRECONDITION CONTEXT (REFERENCE ONLY – DO NOT REPEAT)
 - Do NOT validate loan creation.
 
 ------------------------------------------------------------
-HEADER FIELD RULES (MANDATORY)
+HEADER SECTION (MANDATORY – NO FIELD MAY BE BLANK)
 
-Generate the following fields exactly once.
-Each field must contain a value.
-None can be blank.
-Do NOT decorate them with symbols.
+Generate exactly once:
 
-Test Case ID / Test Script ID:
-Test Scenario Id:
-Test Scenario Description:
-Test Script Description:
-Pre-Condition & Assumptions:
-
-Test Scenario Description:
-- Must be one clear business objective sentence.
-- Maximum 25 words.
-
-Test Script Description:
-- Must be 2–3 sentences.
-- Summarize validation coverage aligned to Acceptance Criteria.
-- No technical implementation details.
-
-Pre-Condition & Assumptions must be:
-Refer to provided precondition context
+Test Case ID / Test Script ID: {user_story_id}_{channel}_01
+Test Scenario Id: {user_story_id}_SC_01
+Test Scenario Description: <One clear business objective sentence, max 25 words>
+Test Script Description: <2–3 sentences summarizing validation scope aligned to Acceptance Criteria>
+Pre-Condition & Assumptions: Refer to provided precondition context
 
 ------------------------------------------------------------
-EXECUTION FLOW STRUCTURE (MANDATORY ORDER)
+STEP STRUCTURE (MANDATORY ORDER)
 
-1. Step 01 must be Login.
-2. Step 02 must be Open Loan.
-3. Business validation steps must follow.
-4. Final step must be Logout.
-5. Output is invalid if Logout is missing.
-
-------------------------------------------------------------
-STEP FORMAT (STRICT)
-
-After header fields, output the following column header exactly:
+After header, output exactly:
 
 Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping
 
-Then generate steps using EXACT pipe structure.
-Each step must contain EXACTLY 5 pipe separators.
-No extra spaces before or after pipes.
-No wrapped lines.
-
 ------------------------------------------------------------
-MANDATORY STEPS
+STEP RULES
 
+1. Step numbering must be sequential numeric format:
+   Step 01
+   Step 02
+   Step 03
+   ...
+   Final step must also follow numeric sequence.
+
+2. Step 01 must be:
 Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA
 
+3. Step 02 must be:
 Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA
 
-Business steps:
-- Generate as many steps as required to fully validate all Acceptance Criteria.
-- Each Acceptance Criterion must have at least one validation step.
-- Include negative validation where applicable.
-- Do NOT duplicate steps.
-- Requirement Mapping must follow format:
-  {user_story_id}_AC_XX
-- No business step may have Requirement Mapping = NA.
+4. Business validation steps:
+- Generate as many steps as required to fully validate ALL Acceptance Criteria.
+- Each Acceptance Criterion must have at least:
+  • One positive validation
+  • One negative validation where applicable
+- Do NOT duplicate actions.
+- Each step must validate a distinct business rule.
 
-Expected Results rules:
-- Must begin with "The system".
+5. YES/NO RULE:
+- If Yes and No produce different system behavior, they MUST be separate steps.
+- If Yes and No only validate field selection availability, they may be combined.
+- When separate, each must have distinct Expected Results.
+
+6. Expected Results:
+- Must begin with “The system”.
+- Must describe rule enforcement, calculation, visibility, restriction, status change, or dependency behavior.
 - Do NOT use:
   verify
   check
   ensure
   confirm
   should
+  may
+  if applicable
+
+7. Requirement Mapping:
+- All business steps must map using format:
+  {user_story_id}_AC_XX
+- Login and Logout must use NA.
+- No business step may have NA mapping.
+
+8. Screen Names:
+- Must remain consistent across all steps.
+- Use exact functional screen label (no variation).
 
 ------------------------------------------------------------
 MANDATORY TERMINATION STEP
 
-The final line of output MUST be exactly:
+The last sequential step MUST be:
 
-Final Step | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
+Step XX | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
 
-- Must appear exactly once.
-- Must be the last line.
-- Must not be numbered.
+- Must be last.
+- Must be sequentially numbered.
+- Must not be labeled “Final Step”.
 - If missing, output is invalid.
 
 ------------------------------------------------------------
