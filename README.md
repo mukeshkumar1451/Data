@@ -1,101 +1,80 @@
-You are a Senior Mortgage QA Analyst generating LOS business validation scripts aligned to enterprise QA standards.
-
-CHANNEL: {channel}
-
-CHANNEL ENTITY RULE (MANDATORY)
-
-If CHANNEL is RTL or DTC:
-STRICTLY DO NOT include Mortgage Broker, Broker Company, Broker Compensation, or Broker Approval entities.
-
-If CHANNEL is WHL or CL1:
-Include Mortgage Broker entities where applicable to business logic.
-
-Violation of this rule is not allowed.
-
-PRECONDITION CONTEXT (REFERENCE ONLY – DO NOT REPEAT)
-
-{precondition}
-
-Rules:
-
-Do NOT rewrite precondition.
-
-Do NOT generate login validation.
-
-Do NOT generate loan creation validation.
-
-Assume loan already exists.
-
-Begin from first functional business screen.
-
-HISTORICAL STEPS (REFERENCE ONLY)
-
-{historical_steps}
-
-Use only for:
-
-Navigation naming consistency
-
-Business validation depth
-
-Step structure alignment
-
-Do NOT copy text.
-
-STRICT GENERATION RULES
-
-Generate 8–15 steps.
-
-Generate only business rule validation steps.
-
-Each step must validate system behavior.
-
-Avoid vague words: verify, check, ensure.
-
-Expected Results must describe:
-
-Rule enforcement
-
-Calculation result
-
-Field state behavior
-
-Error message trigger
-
-Status update
-
-Dependency impact
-
-No technical or backend validation.
-
-No duplicate steps.
-
-No blank lines.
-
-Follow EXACT column order below.
-
-OUTPUT FORMAT (MATCH EXCEL STRUCTURE)
-
-Test Case ID / Test Script ID: {user_story_id}_{ModuleName}_01
-Test Scenario Id: {user_story_id}_SC_01
-Test Scenario Description: <Business validation objective>
-Test Script Description: <Detailed script objective aligned to acceptance criteria>
-Pre-Condition & Assumptions: Refer to provided precondition context
-
-Then generate step rows:
-
-Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping
-
-Step 01 | <Specific business action> | <Exact screen label> | <Precise data or NA> | <Precise system behavior> | {user_story_id}_AC_01
-Step 02 | <Specific business action> | <Exact screen label> | <Precise data or NA> | <Precise system behavior> | {user_story_id}_AC_02
-
-User Story:
-{user_story}
-
-Description:
-{description}
-
-Acceptance Criteria:
-{ac}
-
-Generate the test case now.
+INFO:agents.llm_testcase_generator_agent:🤖 LLM Generator Running
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
+    run("718521")
+    ~~~^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run
+    final_state = app.invoke(initial_state)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3071, in invoke   
+    for chunk in self.stream(
+                 ~~~~~~~~~~~^
+        input,
+        ^^^^^^
+    ...<10 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2646, in stream   
+    for _ in runner.tick(
+             ~~~~~~~~~~~^
+        [t for t in loop.tasks.values() if not t.writes],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        schedule_task=loop.accept_push,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 167, in tick   
+    run_with_retry(
+    ~~~~~~~~~~~~~~^
+        t,
+        ^^
+    ...<10 lines>...
+        },
+        ^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 42, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
+    ret = self.func(*args, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\agents\llm_testcase_generator_agent.py", line 74, in run
+    result = self.chain.invoke(payload)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 3155, in invoke
+    input_ = context.run(step.invoke, input_, config, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 223, in invoke
+    return self._call_with_config(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        self._format_prompt_with_error_handling,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        serialized=self._serialized,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 2060, in _call_with_config
+    context.run(
+    ~~~~~~~~~~~^
+        call_func_with_variable_args,  # type: ignore[arg-type]
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ),
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\config.py", line 452, in 
+call_func_with_variable_args
+    return func(input, **kwargs)  # type: ignore[call-arg]
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 196, in _format_prompt_with_error_handling
+    inner_input_ = self._validate_input(inner_input)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 190, in _validate_input
+    raise KeyError(
+        create_message(message=msg, error_code=ErrorCode.INVALID_PROMPT_INPUT)
+    )
+KeyError: "Input to PromptTemplate is missing variables {'ModuleName'}.  Expected: ['ModuleName', 'ac', 'channel', 'description', 'historical_steps', 'precondition', 'user_story', 'user_story_id'] Received: ['user_story_id', 'user_story', 'description', 'ac', 'channel', 'precondition', 'historical_steps']\nNote: if you intended {ModuleName} to be part of the string and not a variable, please escape it with double curly braces like: '{{ModuleName}}'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT "
+During task with name 'llm_agent' and id '5c7e4cae-372e-0d05-30ba-5b0d15e506f8'
+(.venv) PS C:\Users\h84609n\Desktop\AgenticAI> 
