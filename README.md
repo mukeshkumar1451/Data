@@ -1,5 +1,6 @@
 import logging
 import base64
+from bs4 import BeautifulSoup
 from openai import AzureOpenAI
 
 from ado.ado_client import fetch_from_ado
@@ -52,21 +53,31 @@ class ADOIntelligenceAgent:
         raw_ac = story.get("acceptance_criteria", "")
 
         # -----------------------------------------------------
-        # 2️⃣ Process HTML + Download Images (NO OCR)
+        # 2️⃣ Clean DESCRIPTION (TEXT ONLY)
         # -----------------------------------------------------
-        desc_data = process_html_and_download_images(
-            raw_description, story_id, "description"
-        )
+        soup_desc = BeautifulSoup(raw_description, "html.parser")
 
+        for tag in soup_desc(["script", "style"]):
+            tag.decompose()
+
+        clean_description = soup_desc.get_text(separator="\n").strip()
+
+        logger.info("✅ Description cleaned (no images downloaded)")
+
+        # -----------------------------------------------------
+        # 3️⃣ Process ACCEPTANCE CRITERIA (DOWNLOAD IMAGES ONLY HERE)
+        # -----------------------------------------------------
         ac_data = process_html_and_download_images(
             raw_ac, story_id, "acceptance_criteria"
         )
 
-        clean_description = desc_data["clean_text"]
         clean_ac = ac_data["clean_text"]
+        ac_images = ac_data["image_paths"]
+
+        logger.info(f"📷 Acceptance Criteria images downloaded: {len(ac_images)}")
 
         # -----------------------------------------------------
-        # 3️⃣ Build Vision Input Payload
+        # 4️⃣ Build GPT Vision Input (AC Images Only)
         # -----------------------------------------------------
         vision_content = [{
             "type": "text",
@@ -79,24 +90,21 @@ Acceptance Criteria:
 """
         }]
 
-        all_images = desc_data["image_paths"] + ac_data["image_paths"]
-        logger.info(f"📷 Total images being sent to GPT-4o: {len(all_images)}")
-
-        for img_path in all_images:
-            encoded = self._encode_image(img_path)
-            if encoded:
+        for img_path in ac_images:
+            encoded_image = self._encode_image(img_path)
+            if encoded_image:
                 vision_content.append({
                     "type": "image_url",
                     "image_url": {
-                        "url": f"data:image/png;base64,{encoded}"
+                        "url": f"data:image/png;base64,{encoded_image}"
                     }
                 })
 
-        # -----------------------------------------------------
-        # 4️⃣ Call Azure GPT-4o (Force JSON Output)
-        # -----------------------------------------------------
-        logger.info("📡 Sending request to Azure GPT-4o")
+        logger.info("📡 Sending request to Azure GPT-4o (AC images only)")
 
+        # -----------------------------------------------------
+        # 5️⃣ Call Azure GPT-4o
+        # -----------------------------------------------------
         response = self.client.chat.completions.create(
             model=self.model,
             temperature=0,
@@ -137,21 +145,21 @@ Return JSON only.
         llm_output = response.choices[0].message.content
 
         # -----------------------------------------------------
-        # 5️⃣ Convert JSON → Grouped QA Steps
+        # 6️⃣ Convert JSON → Grouped Acceptance Criteria
         # -----------------------------------------------------
         grouped_steps = convert_json_to_grouped_steps(llm_output)
 
-        logger.info("📝 Grouped validation steps generated")
+        logger.info("📝 Grouped acceptance criteria generated")
 
         # -----------------------------------------------------
-        # 6️⃣ Detect Channels from RAW Acceptance Criteria
+        # 7️⃣ Detect Channels from RAW Acceptance Criteria
         # -----------------------------------------------------
         channels = detect_channels(clean_ac)
 
         logger.info(f"📡 Channels detected from RAW AC: {channels}")
 
         # -----------------------------------------------------
-        # 7️⃣ Save TXT Output File
+        # 8️⃣ Save Output File
         # -----------------------------------------------------
         save_final_txt(
             story_id,
@@ -161,17 +169,17 @@ Return JSON only.
         )
 
         # -----------------------------------------------------
-        # 8️⃣ Update State for Next Agents
+        # 9️⃣ Update State (IMPORTANT FOR NEXT AGENTS)
         # -----------------------------------------------------
         state["story_id"] = story_id
         state["title"] = story.get("title")
         state["user_story"] = story.get("title")
         state["description"] = clean_description
 
-        # RAW AC (for traceability & retrieval)
+        # Keep raw AC separately
         state["original_acceptance_criteria"] = clean_ac
 
-        # FINAL ACCEPTANCE CRITERIA (grouped steps)
+        # Final Acceptance Criteria (LLM generated)
         state["acceptance_criteria"] = grouped_steps
 
         state["llm_output"] = llm_output
