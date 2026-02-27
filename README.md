@@ -47,27 +47,26 @@ PRECONDITION CONTEXT (REFERENCE ONLY – DO NOT REPEAT)
 HISTORICAL STYLE ALIGNMENT (MANDATORY)
 ============================================================
 
-Use provided historical test steps as the enterprise-approved writing standard for:
+Use historical test steps as the enterprise-approved writing standard for:
 
-- Test Scenario Description tone
-- Test Script Description depth
+- Scenario description tone
+- Script description depth
 - Step phrasing structure
 - Screen naming consistency
-- Expected Results enforcement style
+- Expected Results enforcement tone
 - Validation granularity
-- AC mapping structure
 
 Do NOT copy historical text.
-Do NOT reuse exact sentences.
-Match professionalism and enforcement depth.
+Match professionalism and structure.
 
 ============================================================
-AC INTERPRETATION AND DYNAMIC BEHAVIOR ENFORCEMENT (MANDATORY)
+AC INTERPRETATION RULE (POSITIVE BEHAVIOR ONLY)
 ============================================================
 
 Interpret Acceptance Criteria dynamically.
-Do NOT assume fixed workflow logic.
-Derive behavior strictly from User Story, Description, and AC.
+Derive validation strictly from User Story, Description, and AC.
+
+Generate ONLY intended positive behavior validations.
 
 When AC contains:
 
@@ -78,37 +77,31 @@ When AC contains:
    → Generate:
      - One step validating dropdown renders.
      - One step validating exact option list integrity.
-     - One step per option validating selection behavior IF selection impacts workflow.
+     - One step validating primary selection behavior if workflow impact is implied.
 
 3. Checkbox validation
    → Generate:
      - One step validating checkbox renders.
-     - One step validating checked behavior IF workflow changes.
-     - One step validating unchecked behavior IF workflow changes.
+     - One step validating checked behavior if applicable.
 
 4. Privilege restriction
    → Generate:
-     - One step validating access for authorized user.
-     - One step validating restriction for unauthorized user.
+     - One step validating expected privileged behavior only.
+   Do NOT generate unauthorized restriction test.
 
-5. Non-privilege restricted field
-   → Generate one step validating unrestricted access.
-
-6. Conditional visibility logic
+5. Conditional visibility logic
    → Generate:
-     - One step validating field visible when condition is met.
-     - One step validating field hidden when condition is not met.
+     - One step validating field visible when required condition is met.
+   Do NOT generate hidden-condition validation.
 
-7. Any field selection altering workflow
+6. Field selection impacting workflow
    → Generate:
-     - One step validating system behavior when condition is TRUE.
-     - One step validating system behavior when condition is FALSE.
-   Only if behavioral impact is implied by AC.
+     - One step validating intended workflow behavior when condition is met.
+   Do NOT generate alternate-condition validation.
 
 Do NOT invent behavior not implied by Acceptance Criteria.
-Do NOT hardcode workflow logic.
-Do NOT collapse multiple validations into one step.
 Each step must validate exactly one distinct business rule.
+Do NOT collapse validations into one step.
 
 ============================================================
 HEADER SECTION (MANDATORY – NONE MAY BE BLANK)
@@ -119,7 +112,7 @@ Generate exactly once:
 Test Case ID / Test Script ID: {user_story_id}_{channel}_01
 Test Scenario Id: {user_story_id}_SC_01
 Test Scenario Description: <One clear business objective sentence, maximum 25 words>
-Test Script Description: <2–3 sentences summarizing business validation coverage aligned to Acceptance Criteria>
+Test Script Description: <2–3 sentences summarizing positive validation coverage aligned to Acceptance Criteria>
 Pre-Condition & Assumptions: Refer to provided precondition context
 
 ============================================================
@@ -147,22 +140,13 @@ Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | T
 Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA
 
 4. Business validation steps:
-- Generate as many steps as required to fully validate ALL Acceptance Criteria.
-- Each AC must have positive and negative validation where applicable.
+- Generate only positive / intended behavior validations.
 - Each step must validate exactly one business rule.
 - No duplicate validations.
-- No combined validations.
 
 5. Expected Results:
 - Must begin with “The system”.
-- Must clearly describe:
-  enforcement logic,
-  restriction behavior,
-  visibility behavior,
-  calculation impact,
-  workflow branching,
-  status change,
-  or compliance behavior.
+- Must clearly describe intended enforcement, visibility, or workflow behavior.
 - Do NOT use:
   verify
   check
@@ -176,12 +160,10 @@ Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number
 - All business validation steps must map using:
   {user_story_id}_AC_XX
 - Login and Logout must use NA.
-- No business step may have NA mapping.
 
 7. Screen Names:
 - Must remain consistent across all steps.
 - Use exact functional screen labels.
-- Do not vary singular/plural naming.
 
 ============================================================
 MANDATORY TERMINATION STEP
@@ -190,10 +172,6 @@ MANDATORY TERMINATION STEP
 The last sequential step MUST be:
 
 Step XX | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
-
-- Must be last.
-- Must follow numeric sequence.
-- If missing, output is invalid.
 
 ============================================================
 User Story:
