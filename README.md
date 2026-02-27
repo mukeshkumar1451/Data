@@ -1,96 +1,58 @@
-import json
-import logging
-
-logger = logging.getLogger(__name__)
-
-
-def convert_json_to_grouped_steps(llm_output: str) -> str:
-    try:
-        data = json.loads(llm_output)
-        logger.info("✅ LLM JSON successfully parsed")
-    except Exception as e:
-        logger.error(f"❌ JSON parsing failed: {e}")
-        return llm_output
-
-    output_blocks = []
-    fields = data.get("fields", [])
-
-    logger.info(f"🔎 Total fields extracted: {len(fields)}")
-
-    for field in fields:
-        name = field.get("name", "")
-        field_type = field.get("type", "")
-        values = field.get("values", [])
-        location = field.get("location", "")
-        visibility = field.get("visibilityRule", "")
-        privilege = field.get("privilegeRestricted", False)
-
-        block_lines = []
-
-        # 🔹 Field Title Line (HPML, Intent to Proceed, etc.)
-        block_lines.append(name)
-
-        if location:
-            block_lines.append(f"Navigate to {location}.")
-
-        block_lines.append(
-            f'Verify that the "{name}" field is rendered as a {field_type}.'
-        )
-
-        if values:
-            block_lines.append(
-                'Verify that the dropdown contains exactly the following options:'
-            )
-            for val in values:
-                block_lines.append(f"    - {val}")
-
-        if visibility:
-            block_lines.append(
-                f'Verify that the field is visible when: {visibility}.'
-            )
-
-        if privilege:
-            block_lines.append(
-                "Verify that the field is restricted based on user privilege."
-            )
-        else:
-            block_lines.append(
-                "Verify that the field is not privilege restricted."
-            )
-
-        output_blocks.append("\n".join(block_lines))
-
-    return "\n\n".join(output_blocks)
------------------------------------------------------------------
-import os
-import logging
-from datetime import datetime
-
-logger = logging.getLogger(__name__)
-
-
-def save_final_txt(story_id, title, description, grouped_steps):
-
-    folder = os.path.join("llm_outputs", story_id)
-    os.makedirs(folder, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = os.path.join(folder, f"{story_id}_{timestamp}.txt")
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write("=====================================\n")
-        f.write("ADO INTELLIGENCE ANALYSIS OUTPUT\n")
-        f.write("=====================================\n\n\n")
-
-        f.write(f"Story ID: {story_id}\n")
-        f.write(f"Title: {title}\n")
-        f.write(f"Timestamp: {timestamp}\n")
-
-        f.write("------------ DESCRIPTION ------------\n")
-        f.write(description + "\n")
-
-        f.write("------ ACCEPTANCE CRITERIA ----------\n")
-        f.write(grouped_steps)
-
-    logger.info(f"✅ Final formatted TXT saved: {file_path}")
-    return file_path
+INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:agents.ado_intelligence_agent:✅ GPT-4o response received
+ERROR:utils.step_generartor:❌ JSON parsing failed: Expecting value: line 1 column 1 (char 0)
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
+    run("718521")
+    ~~~^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run
+    final_state = app.invoke(initial_state)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3071, in invoke   
+    for chunk in self.stream(
+                 ~~~~~~~~~~~^
+        input,
+        ^^^^^^
+    ...<10 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2646, in stream   
+    for _ in runner.tick(
+             ~~~~~~~~~~~^
+        [t for t in loop.tasks.values() if not t.writes],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        schedule_task=loop.accept_push,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 167, in tick   
+    run_with_retry(
+    ~~~~~~~~~~~~~~^
+        t,
+        ^^
+    ...<10 lines>...
+        },
+        ^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 42, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
+    ret = self.func(*args, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\agents\ado_intelligence_agent.py", line 107, in run
+    save_final_txt(
+    ~~~~~~~~~~~~~~^
+        story_id,
+        ^^^^^^^^^
+    ...<3 lines>...
+        grouped_steps
+        ^^^^^^^^^^^^^
+    )
+    ^
+TypeError: save_final_txt() takes 4 positional arguments but 5 were given
+During task with name 'ado_agent' and id '85119e4f-0038-b016-6c19-f9afe7c88804'
