@@ -60,7 +60,7 @@ Do NOT copy historical text.
 Match professionalism and structure.
 
 ============================================================
-AC INTERPRETATION RULE (POSITIVE BEHAVIOR ONLY)
+AC INTERPRETATION AND VALIDATION RULES (POSITIVE BEHAVIOR ONLY)
 ============================================================
 
 Interpret Acceptance Criteria dynamically.
@@ -68,40 +68,46 @@ Derive validation strictly from User Story, Description, and AC.
 
 Generate ONLY intended positive behavior validations.
 
-When AC contains:
+1. Field Rendering
+   - Generate one step validating the field renders correctly on the specified screen.
 
-1. Field rendering validation
-   → Generate one step validating the field renders correctly.
-
-2. Dropdown validation
-   → Generate:
+2. Dropdown Validation
+   - Generate:
      - One step validating dropdown renders.
      - One step validating exact option list integrity.
-     - One step validating primary selection behavior if workflow impact is implied.
+     - One step validating primary selection behavior IF workflow impact is implied.
 
-3. Checkbox validation
-   → Generate:
+3. Checkbox Validation
+   - Generate:
      - One step validating checkbox renders.
-     - One step validating checked behavior if applicable.
+     - One step validating checked behavior IF workflow impact is implied.
 
-4. Privilege restriction
-   → Generate:
-     - One step validating expected privileged behavior only.
-   Do NOT generate unauthorized restriction test.
+4. Privilege Restricted Field
+   - Generate one step validating expected privileged behavior only.
 
-5. Conditional visibility logic
-   → Generate:
-     - One step validating field visible when required condition is met.
-   Do NOT generate hidden-condition validation.
+5. Non-Privilege Restricted Field
+   - Generate one step validating unrestricted access.
 
-6. Field selection impacting workflow
-   → Generate:
-     - One step validating intended workflow behavior when condition is met.
-   Do NOT generate alternate-condition validation.
+6. Conditional Visibility Logic
+   - Generate one step validating field visible when required condition is met.
 
-Do NOT invent behavior not implied by Acceptance Criteria.
-Each step must validate exactly one distinct business rule.
-Do NOT collapse validations into one step.
+7. FIELD DEPENDENCY / CROSS-FIELD VALIDATION (MANDATORY WHEN IMPLIED)
+
+   If selection of one field affects another field’s value, state, visibility, or selection:
+   - Generate a separate step validating automatic system update of the dependent field.
+   - Clearly describe the triggering field and resulting system behavior.
+   - Expected Result must state that the system automatically updates the dependent field.
+
+   Example rule interpretation:
+   If HPML = Yes triggers automatic checkbox selection,
+   generate a step validating:
+   "The system automatically selects the related checkbox when HPML is set to Yes."
+
+   Do NOT invent dependencies not implied by AC or Description.
+   Only validate dependencies explicitly or logically implied.
+
+8. Do NOT collapse multiple validations into one step.
+   Each step must validate exactly one distinct business rule.
 
 ============================================================
 HEADER SECTION (MANDATORY – NONE MAY BE BLANK)
@@ -140,30 +146,30 @@ Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | T
 Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA
 
 4. Business validation steps:
-- Generate only positive / intended behavior validations.
-- Each step must validate exactly one business rule.
-- No duplicate validations.
+   - Generate only positive intended behavior validations.
+   - Each step must validate exactly one rule.
+   - No duplicate validations.
 
 5. Expected Results:
-- Must begin with “The system”.
-- Must clearly describe intended enforcement, visibility, or workflow behavior.
-- Do NOT use:
-  verify
-  check
-  ensure
-  confirm
-  should
-  may
-  if applicable
+   - Must begin with “The system”.
+   - Must clearly describe intended enforcement, visibility, workflow behavior, or automatic dependency behavior.
+   - Do NOT use:
+     verify
+     check
+     ensure
+     confirm
+     should
+     may
+     if applicable
 
 6. Requirement Mapping:
-- All business validation steps must map using:
-  {user_story_id}_AC_XX
-- Login and Logout must use NA.
+   - All business validation steps must map using:
+     {user_story_id}_AC_XX
+   - Login and Logout must use NA.
 
 7. Screen Names:
-- Must remain consistent across all steps.
-- Use exact functional screen labels.
+   - Must remain consistent across all steps.
+   - Use exact functional screen labels.
 
 ============================================================
 MANDATORY TERMINATION STEP
