@@ -1,197 +1,230 @@
-import logging
-import base64
-from bs4 import BeautifulSoup
-from openai import AzureOpenAI
-
-from ado.ado_client import fetch_from_ado
-from utils.html_image_processor import process_html_and_download_images
-from utils.step_generator import convert_json_to_grouped_steps
-from utils.channel_detector import detect_channels
-from utils.output_writer import save_final_txt
-from utils.image_optimizer import resize_image_if_needed
-from config.config import get
-
-logger = logging.getLogger(__name__)
+=====================================
+ADO INTELLIGENCE ANALYSIS OUTPUT
+=====================================
 
 
-class ADOIntelligenceAgent:
+Story ID: 718521
+Title: Modernized Audit additions - DIS > Generate Disclosures Fields
+Timestamp: 20260227_170211
+------------ DESCRIPTION ------------
+Business would like to add the following fields to Modernized Audit. 
+ 
+Description 
+H2O UI Location 
+HPML 
+DIS > Generate Disclosures > Generate Disclosure 
+Intent to Proceed 
+DIS > Generate Disclosures 
+Mortgage Broker Fee Agreement
+ 
+ 
+DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement 
+Mortgage Broker License Type 
+DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement 
+ 
+ 
+HPML -  
+ 
+ 
+Intent to Proceed -  
+ 
+ 
+Mortgage Broker Fee/Compensation Agreement -  
+ 
+*Appears to be privilege restricted 
+ 
+ 
+Mortgage Broker License Type -  
+ 
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
+**Also appears to be privilege restricted
+------ ACCEPTANCE CRITERIA ----------
+HPML
+Navigate to DIS > Generate Disclosures > Generate Disclosure.
+Verify that the "HPML" field is rendered as a Dropdown.
+Verify that the dropdown contains exactly the following options:
+    - Yes
+    - No
+Verify that the field is not privilege restricted.
 
-    def __init__(self):
-        self.client = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-        )
-        self.model = get("CHAT_MODEL")
+Intent to Proceed
+Navigate to DIS > Generate Disclosures.
+Verify that the "Intent to Proceed" field is rendered as a Checkbox.
+Verify that the dropdown contains exactly the following options:
+    - Checked
+    - Unchecked
+Verify that the field is not privilege restricted.
 
-    # ---------------------------------------------------------
-    # Encode image to Base64
-    # ---------------------------------------------------------
-    def _encode_image(self, path: str) -> str:
-        try:
-            with open(path, "rb") as f:
-                return base64.b64encode(f.read()).decode("utf-8")
-        except Exception as e:
-            logger.error(f"❌ Failed to encode image {path}: {e}")
-            return ""
+Mortgage Broker Fee/Compensation Agreement
+Navigate to DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement.
+Verify that the "Mortgage Broker Fee/Compensation Agreement" field is rendered as a Dropdown.
+Verify that the dropdown contains exactly the following options:
+    - Yes
+    - No
+Verify that the field is restricted based on user privilege.
 
-    # ---------------------------------------------------------
-    # MAIN EXECUTION
-    # ---------------------------------------------------------
-    def run(self, state: dict) -> dict:
+Mortgage Broker License Type
+Navigate to DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement.
+Verify that the "Mortgage Broker License Type" field is rendered as a Dropdown.
+Verify that the dropdown contains exactly the following options:
+    - CFL
+    - DRE
+    - RML
+Verify that the field is visible when: SubPropState = CA.
+Verify that the field is restricted based on user privilege.
+-------------------------------------------------------------------------------------------
+You are a Senior Mortgage QA Analyst generating structured, Excel-ready LOS test cases.
 
-        logger.info("🚀 ADO Intelligence Agent started")
+CRITICAL OUTPUT RULES:
+- Output must be plain text only.
+- Do NOT use markdown.
+- Do NOT use tables.
+- Do NOT use bold text, ###, backticks, or special formatting.
+- Do NOT add explanations, notes, commentary, or summaries.
+- Do NOT leave blank lines.
+- Each step must be written on a single line.
+- Any formatting deviation is invalid.
 
-        story_id = state["user_story_id"]
+------------------------------------------------------------
+CHANNEL: {channel}
 
-        # -----------------------------------------------------
-        # 1️⃣ Fetch ADO Work Item
-        # -----------------------------------------------------
-        story = fetch_from_ado(story_id)
-        logger.info("✅ ADO story fetched successfully")
+MANDATORY CHANNEL ENTITY ENFORCEMENT:
 
-        raw_description = story.get("description", "")
-        raw_ac = story.get("acceptance_criteria", "")
+If CHANNEL is RTL or DTC:
+- STRICTLY DO NOT include or reference:
+  Mortgage Broker
+  Broker License
+  Broker Compensation
+  Broker Fee Agreement
+  Manage Broker Disclosures
+  Mortgage Broker License Type
 
-        # -----------------------------------------------------
-        # 2️⃣ Clean DESCRIPTION (TEXT ONLY)
-        # -----------------------------------------------------
-        soup_desc = BeautifulSoup(raw_description, "html.parser")
-        for tag in soup_desc(["script", "style"]):
-            tag.decompose()
+If CHANNEL is WHL or CL1:
+- Mortgage Broker entities may be included only when required by Acceptance Criteria.
 
-        clean_description = soup_desc.get_text(separator="\n").strip()
-        logger.info("✅ Description cleaned (no images downloaded)")
+If this rule is violated, output is invalid.
 
-        # -----------------------------------------------------
-        # 3️⃣ Process ACCEPTANCE CRITERIA (Download Images)
-        # -----------------------------------------------------
-        ac_data = process_html_and_download_images(
-            raw_ac, story_id, "acceptance_criteria"
-        )
+------------------------------------------------------------
+PRECONDITION CONTEXT (REFERENCE ONLY – DO NOT REPEAT)
 
-        clean_ac = ac_data["clean_text"]
-        ac_images = ac_data["image_paths"]
+{precondition}
 
-        if not ac_images:
-            logger.warning("⚠ No Acceptance Criteria images found.")
-            logger.info("📄 Proceeding with text-only GPT extraction.")
-        else:
-            logger.info(f"📷 AC Images downloaded: {len(ac_images)}")
+- Do NOT rewrite the precondition.
+- Assume loan already exists as per precondition.
+- Do NOT validate loan creation.
 
-        # -----------------------------------------------------
-        # 4️⃣ Build Vision Input (AC Images Only)
-        # -----------------------------------------------------
-        vision_content = [{
-            "type": "text",
-            "text": f"""
+------------------------------------------------------------
+HISTORICAL STYLE ALIGNMENT RULE (MANDATORY)
+
+The provided historical test steps represent the enterprise-approved writing standard.
+
+Use historical data as the authoritative style reference for:
+
+- Test Scenario Description wording pattern
+- Test Script Description structure and tone
+- Step phrasing style
+- Screen naming consistency
+- Expected Results depth and enforcement tone
+- Validation granularity
+- Acceptance Criteria mapping structure
+
+Do NOT copy historical text.
+Do NOT reuse exact sentences.
+Use it strictly as writing behavior guidance.
+
+Generated output must match historical professionalism, structure, and enforcement depth.
+
+------------------------------------------------------------
+HEADER SECTION (MANDATORY – NONE MAY BE BLANK)
+
+Generate exactly once:
+
+Test Case ID / Test Script ID: {user_story_id}_{channel}_01
+Test Scenario Id: {user_story_id}_SC_01
+Test Scenario Description: <One clear business objective sentence, maximum 25 words>
+Test Script Description: <2–3 sentences summarizing business validation coverage aligned to Acceptance Criteria>
+Pre-Condition & Assumptions: Refer to provided precondition context
+
+------------------------------------------------------------
+STEP STRUCTURE
+
+After header, output exactly:
+
+Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping
+
+------------------------------------------------------------
+STEP RULES
+
+1. Step numbering must be strictly sequential:
+   Step 01
+   Step 02
+   Step 03
+   ...
+   Final step must also follow numeric sequence.
+
+2. Step 01 must be:
+Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA
+
+3. Step 02 must be:
+Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA
+
+4. Business validation steps:
+- Generate as many steps as required to fully validate ALL Acceptance Criteria.
+- Each Acceptance Criterion must have at least:
+  • One positive validation
+  • One negative validation where applicable
+- Do NOT duplicate validations.
+- Each step must validate one distinct business rule.
+
+5. YES/NO HANDLING:
+- If Yes and No produce different system behavior, they MUST be separate steps.
+- If Yes and No only validate field availability, they may be combined.
+- Separate steps must have distinct Expected Results.
+
+6. Expected Results:
+- Must begin with “The system”.
+- Must describe enforcement, calculation result, restriction, visibility rule, status change, or dependency behavior.
+- Do NOT use:
+  verify
+  check
+  ensure
+  confirm
+  should
+  may
+  if applicable
+
+7. Requirement Mapping:
+- All business validation steps must map using:
+  {user_story_id}_AC_XX
+- Login and Logout must use NA.
+- No business step may have NA mapping.
+
+8. Screen Names:
+- Must remain consistent across all steps.
+- Use exact functional screen labels.
+- Do not vary singular/plural naming.
+
+------------------------------------------------------------
+MANDATORY TERMINATION STEP
+
+The last sequential step MUST be:
+
+Step XX | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
+
+- Must be last.
+- Must follow numeric sequence.
+- Must not be labeled “Final Step”.
+- If missing, output is invalid.
+
+------------------------------------------------------------
 User Story:
-{clean_description}
+{user_story}
+
+Description:
+{description}
 
 Acceptance Criteria:
-{clean_ac}
-"""
-        }]
+{ac}
 
-        for img_path in ac_images:
-
-            # 🔥 Resize before sending
-            optimized_path = resize_image_if_needed(img_path)
-
-            encoded_image = self._encode_image(optimized_path)
-
-            if encoded_image:
-                vision_content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{encoded_image}"
-                    }
-                })
-
-        logger.info("📡 Sending request to Azure GPT-4o")
-
-        # -----------------------------------------------------
-        # 5️⃣ Call Azure GPT-4o (Force JSON)
-        # -----------------------------------------------------
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": """
-You are a Senior Mortgage QA Analyst.
-
-Extract structured JSON strictly in this format:
-
-{
-  "fields": [
-    {
-      "name": "",
-      "type": "",
-      "values": [],
-      "location": "",
-      "visibilityRule": "",
-      "privilegeRestricted": false
-    }
-  ]
-}
-
-Return JSON only.
-"""
-                },
-                {
-                    "role": "user",
-                    "content": vision_content
-                }
-            ]
-        )
-
-        logger.info("✅ GPT-4o response received")
-
-        llm_output = response.choices[0].message.content
-
-        # -----------------------------------------------------
-        # 6️⃣ Convert JSON → Grouped Acceptance Criteria
-        # -----------------------------------------------------
-        grouped_steps = convert_json_to_grouped_steps(llm_output)
-        logger.info("📝 Structured Acceptance Criteria generated")
-
-        # -----------------------------------------------------
-        # 7️⃣ Detect Channels from RAW AC
-        # -----------------------------------------------------
-        channels = detect_channels(clean_ac)
-        logger.info(f"📡 Channels detected from RAW AC: {channels}")
-
-        # -----------------------------------------------------
-        # 8️⃣ Save Output File
-        # -----------------------------------------------------
-        save_final_txt(
-            story_id,
-            story.get("title"),
-            clean_description,
-            grouped_steps
-        )
-
-        # -----------------------------------------------------
-        # 9️⃣ Update State (For Retrieval Agent)
-        # -----------------------------------------------------
-        state["story_id"] = story_id
-        state["title"] = story.get("title")
-        state["user_story"] = story.get("title")
-        state["description"] = clean_description
-
-        # Raw AC (kept for reference)
-        state["original_acceptance_criteria"] = clean_ac
-
-        # Final Acceptance Criteria (LLM Generated)
-        state["acceptance_criteria"] = grouped_steps
-
-        state["llm_output"] = llm_output
-        state["channels"] = channels
-
-        logger.info(f"🔎 Final state keys: {list(state.keys())}")
-        logger.info("🎯 ADO Intelligence Agent completed successfully")
-
-        return state
+Generate the complete test case now in strict plain text format.
+--------------------------------------------------------------------
