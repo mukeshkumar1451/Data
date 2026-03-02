@@ -1,7 +1,8 @@
 import requests
+from urllib.parse import urlparse
 
 # ==============================
-# CONFIGURATION
+# CONFIG
 # ==============================
 
 TENANT_ID = "YOUR_TENANT_ID"
@@ -9,12 +10,11 @@ CLIENT_ID = "YOUR_CLIENT_ID"
 CLIENT_SECRET = "YOUR_CLIENT_SECRET"
 
 SITE_URL = "https://corpofficeapps.sharepoint.com/sites/Ops_Home/nationalops"
-
-FILE_NAME = "sample.txt"   # change to your file
+FILE_NAME = "sample.txt"   # change this
 
 
 # ==============================
-# GET ACCESS TOKEN
+# GET TOKEN
 # ==============================
 
 def get_access_token():
@@ -27,28 +27,19 @@ def get_access_token():
         "grant_type": "client_credentials",
     }
 
-    response = requests.post(token_url, data=data)
-    response.raise_for_status()
+    res = requests.post(token_url, data=data)
+    res.raise_for_status()
 
-    print("✅ Access token acquired\n")
-    return response.json()["access_token"]
+    print("✅ Token acquired\n")
+    return res.json()["access_token"]
 
 
 # ==============================
-# GET SITE ID FROM URL
+# GET SITE ID
 # ==============================
 
 def get_site_id(token, site_url):
-
     headers = {"Authorization": f"Bearer {token}"}
-
-    # Convert URL into Graph format
-    # Example:
-    # https://corpofficeapps.sharepoint.com/sites/Ops_Home/nationalops
-    # =>
-    # /sites/corpofficeapps.sharepoint.com:/sites/Ops_Home/nationalops
-
-    from urllib.parse import urlparse
 
     parsed = urlparse(site_url)
     host = parsed.netloc
@@ -56,54 +47,56 @@ def get_site_id(token, site_url):
 
     graph_url = f"https://graph.microsoft.com/v1.0/sites/{host}:{path}"
 
-    response = requests.get(graph_url, headers=headers)
-    response.raise_for_status()
+    res = requests.get(graph_url, headers=headers)
+    res.raise_for_status()
 
-    site_data = response.json()
+    site_data = res.json()
 
-    print("✅ Site Found:", site_data["displayName"])
-    print("Site ID:", site_data["id"], "\n")
-
+    print("✅ Site:", site_data["displayName"])
     return site_data["id"]
 
 
 # ==============================
-# SEARCH + READ FILE IN MEMORY
+# SEARCH ENTIRE LIBRARY
 # ==============================
 
-def search_and_read_file(token, site_id, filename):
+def search_and_read(token, site_id, filename):
 
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Search file
+    # This searches entire drive (all folders)
     search_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root/search(q='{filename}')"
 
-    search_response = requests.get(search_url, headers=headers)
-    search_response.raise_for_status()
+    res = requests.get(search_url, headers=headers)
+    res.raise_for_status()
 
-    results = search_response.json().get("value", [])
+    results = res.json().get("value", [])
 
     if not results:
-        print("❌ File not found")
+        print("❌ File not found anywhere in library")
         return
 
-    file_item = results[0]
+    # If multiple files found
+    print(f"🔎 Found {len(results)} matching file(s)\n")
 
-    print("✅ File Found:", file_item["name"])
-    print("Web URL:", file_item["webUrl"])
+    file_item = results[0]  # take first match
 
-    # Read content directly (in memory)
+    print("✅ File Name:", file_item["name"])
+    print("📁 Path:", file_item["parentReference"]["path"])
+    print("🌐 Web URL:", file_item["webUrl"])
+
+    # Read file content in memory
     content_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{file_item['id']}/content"
 
-    file_response = requests.get(content_url, headers=headers)
-    file_response.raise_for_status()
+    file_res = requests.get(content_url, headers=headers)
+    file_res.raise_for_status()
 
     print("\n======= FILE DATA =======\n")
 
     try:
-        print(file_response.text)
+        print(file_res.text)
     except:
-        print("⚠ Binary file detected (PDF/DOCX/etc). Cannot print as text.")
+        print("⚠ Binary file (PDF/DOCX/etc). Cannot print as text.")
 
 
 # ==============================
@@ -113,7 +106,6 @@ def search_and_read_file(token, site_id, filename):
 if __name__ == "__main__":
 
     token = get_access_token()
-
     site_id = get_site_id(token, SITE_URL)
 
-    search_and_read_file(token, site_id, FILE_NAME)
+    search_and_read(token, site_id, FILE_NAME)
