@@ -1,215 +1,71 @@
-import logging
-from typing import Dict, List
-
-from azure.search.documents import SearchClient
-from azure.search.documents.models import VectorizedQuery
-from azure.core.credentials import AzureKeyCredential
-from openai import AzureOpenAI
-from config.config import get
-
-logger = logging.getLogger(__name__)
+=====================================
+ADO INTELLIGENCE ANALYSIS OUTPUT
+=====================================
 
 
-class RetrievalIntelligenceAgent:
+Story ID: 718521
+Title: Modernized Audit additions - DIS > Generate Disclosures Fields
+Timestamp: 20260302_120649
+------------ DESCRIPTION ------------
+Business would like to add the following fields to Modernized Audit. 
+ 
+Description 
+H2O UI Location 
+HPML 
+DIS > Generate Disclosures > Generate Disclosure 
+Intent to Proceed 
+DIS > Generate Disclosures 
+Mortgage Broker Fee Agreement
+ 
+ 
+DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement 
+Mortgage Broker License Type 
+DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement 
+ 
+ 
+HPML -  
+ 
+ 
+Intent to Proceed -  
+ 
+ 
+Mortgage Broker Fee/Compensation Agreement -  
+ 
+*Appears to be privilege restricted 
+ 
+ 
+Mortgage Broker License Type -  
+ 
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
+**Also appears to be privilege restricted
+------ ACCEPTANCE CRITERIA ----------
+HPML
+Navigate to DIS > Generate Disclosures > Generate Disclosure.
+Verify that the "HPML" field is rendered as a Dropdown.
+Verify that the "HPML" dropdown contains exactly the following options:
+    - Yes
+    - No
+Verify that the field is not privilege restricted.
 
-    def __init__(self):
+Intent to Proceed
+Navigate to DIS > Generate Disclosures.
+Verify that the "Intent to Proceed" field is rendered as a Checkbox.
+Verify that the "Intent to Proceed" checkbox can be checked and unchecked.
+Verify that the field is not privilege restricted.
 
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-        )
+Mortgage Broker Fee/Compensation Agreement
+Navigate to DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement.
+Verify that the "Mortgage Broker Fee/Compensation Agreement" field is rendered as a Dropdown.
+Verify that the "Mortgage Broker Fee/Compensation Agreement" dropdown contains exactly the following options:
+    - Yes
+    - No
+Verify that the field is restricted based on user privilege.
 
-        self.embed_model = get("EMBEDDING_MODEL")
-        self.chat_model = get("CHAT_MODEL")
-
-        self.search_client = SearchClient(
-            endpoint=get("AZURE_SEARCH_ENDPOINT"),
-            index_name=get("AZURE_SEARCH_INDEX"),
-            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
-        )
-
-    # ---------------------------------------------------------
-    # Embed Query
-    # ---------------------------------------------------------
-    def _embed(self, text: str) -> List[float]:
-
-        response = self.openai.embeddings.create(
-            model=self.embed_model,
-            input=text[:8000]
-        )
-
-        return response.data[0].embedding
-
-    # ---------------------------------------------------------
-    # Hybrid Search
-    # ---------------------------------------------------------
-    def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
-
-        vector_query = VectorizedQuery(
-            vector=self._embed(query_text),
-            fields="embedding",
-            k_nearest_neighbors=topk
-        )
-
-        filter_query = f"channels/any(c: c eq '{channel}')"
-
-        results = list(self.search_client.search(
-            search_text=query_text,
-            vector_queries=[vector_query],
-            filter=filter_query,
-            select=["testCaseId", "content"],
-            top=topk
-        ))
-
-        logger.info(f"{channel} → Retrieved {len(results)} docs")
-
-        return results
-
-    # ---------------------------------------------------------
-    # Robust Precondition Extraction
-    # ---------------------------------------------------------
-    def _extract_precondition(self, content: str) -> str:
-
-        lines = content.splitlines()
-        capture = False
-        collected = []
-
-        for line in lines:
-
-            lower = line.lower().strip()
-
-            # START capture
-            if (
-                "pre-condition" in lower or
-                "precondition" in lower or
-                "pre condition" in lower
-            ):
-                capture = True
-                collected.append(line)
-                continue
-
-            # STOP capture
-            if capture and (
-                lower.startswith("step") or
-                "test steps" in lower or
-                "=========== test steps" in lower
-            ):
-                break
-
-            if capture:
-                collected.append(line)
-
-        result = "\n".join(collected).strip()
-        if result.lower().startswith("pre-condition")or result.lower().startswith("precondition") or result.lower().startswith("pre condition"): 
-            lines = result.splitlines()
-            result = "\n".join(lines[1:]).strip()
-        return result   
-
-    # ---------------------------------------------------------
-    # LLM Rerank
-    # ---------------------------------------------------------
-    def _rerank(self, story_text: str, docs: List[Dict]) -> List[Dict]:
-
-        if not docs:
-            return []
-
-        combined = ""
-        for idx, d in enumerate(docs, 1):
-            combined += f"\nDoc {idx}\n{d.get('content')[:1500]}\n"
-
-        prompt = f"""
-Rank the below documents by relevance to this story.
-Return only numbers in order separated by space.
-
-Story:
-{story_text}
-
-Documents:
-{combined}
-"""
-
-        response = self.openai.chat.completions.create(
-            model=self.chat_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-
-        ranking_text = response.choices[0].message.content.strip()
-        ranking_tokens = ranking_text.split()
-
-        ordered_docs = []
-
-        for token in ranking_tokens:
-            if token.isdigit():
-                idx = int(token) - 1
-                if 0 <= idx < len(docs):
-                    ordered_docs.append(docs[idx])
-
-        return ordered_docs if ordered_docs else docs
-
-    # ---------------------------------------------------------
-    # Main Execution
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("Retrieval Agent Running")
-
-        full_story = f"""
-User Story: {state['user_story']}
-Description: {state['description']}
-Acceptance Criteria: {state['acceptance_criteria']}
-"""
-
-        channel_context = {}
-        selected_preconditions = {}
-
-        for channel in state["channels"]:
-
-            docs = self._hybrid_search(full_story, channel)
-            reranked_docs = self._rerank(full_story, docs)
-
-            best_precondition = ""
-            historical_steps = ""
-
-            # Try to extract precondition from reranked docs
-            for doc in reranked_docs:
-
-                content = doc.get("content", "")
-
-                if not best_precondition:
-                    extracted = self._extract_precondition(content)
-                    if extracted:
-                        best_precondition = extracted
-
-                historical_steps += "\n" + content[:1000]
-
-                if best_precondition:
-                    break
-
-            #  Fallback if nothing found
-            if not best_precondition and reranked_docs:
-                logger.warning(f"{channel} → No precondition found. Using first doc fallback.")
-                best_precondition = "Precondition not found in historical data."
-
-            channel_context[channel] = {
-                "precondition": best_precondition,
-                "historical_steps": historical_steps[:4000]
-            }
-
-            selected_preconditions[channel] = best_precondition
-
-            # logger.info(
-            #     f"{channel} → Selected Precondition:\n{best_precondition}\n"
-            # )
-
-        #  Store BOTH maps in state
-        state["channel_context"] = channel_context
-        state["selected_preconditions"] = selected_preconditions
-
-        # logger.info("Selected Preconditions Map:")
-        # logger.info(selected_preconditions)
-
-        logger.info(" Retrieval Completed")
-
-        return state
+Mortgage Broker License Type
+Navigate to DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement.
+Verify that the "Mortgage Broker License Type" field is rendered as a Dropdown.
+Verify that the "Mortgage Broker License Type" dropdown contains exactly the following options:
+    - CFL
+    - DRE
+    - RML
+Verify that the field is restricted based on user privilege.
