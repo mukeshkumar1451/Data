@@ -1,6 +1,13 @@
 from typing import TypedDict, Dict, List
 
 
+class HistoricalContext(TypedDict, total=False):
+    precondition: str
+    historical_scenario: str
+    historical_script: str
+    historical_steps: List[Dict[str, str]]
+
+
 class RAGState(TypedDict, total=False):
     user_story_id: str
 
@@ -9,25 +16,19 @@ class RAGState(TypedDict, total=False):
     description: str
     acceptance_criteria: str
     channels: List[str]
-    preconditions: Dict[str, str]
     story: Dict
 
     # Retrieval Agent outputs
-    retrieved_docs: Dict[str, List[Dict]]
-
-    # ADD THIS
-    channel_context: Dict[str, List[Dict]]
-    selected_preconditions: Dict[str, str]
-
-    channel_setup: Dict[str, str]
+    retrieved_docs: Dict[str, List[Dict]]  # Raw search docs (optional debug)
+    channel_context: Dict[str, HistoricalContext]
 
     # LLM Agent outputs
     llm_outputs: Dict[str, str]
 
     # Excel Agent outputs
     excel_output: str
--------------------------------------------------------------
-You are a Senior Mortgage QA Analyst generating structured, Excel-ready LOS test cases.
+    ---------------------------------------------------------------
+    You are a Senior Mortgage QA Analyst generating structured, Excel-ready LOS test cases.
 
 ============================================================
 CRITICAL OUTPUT RULES (NON-NEGOTIABLE)
@@ -76,17 +77,24 @@ PRECONDITION CONTEXT (REFERENCE ONLY – DO NOT REPEAT)
 HISTORICAL STYLE ALIGNMENT (MANDATORY)
 ============================================================
 
-Use historical test steps as the enterprise-approved writing standard for:
+Historical Scenario Reference:
+{historical_scenario}
 
-- Scenario description tone
-- Script description depth
-- Step phrasing structure
-- Screen naming consistency
-- Expected Results enforcement tone
-- Validation granularity
+Historical Script Reference:
+{historical_script}
 
-Do NOT copy historical text.
-Match professionalism and structure.
+Historical Step Pattern:
+{historical_steps}
+
+MANDATORY RULES:
+
+- Use historical tone, structure, and validation depth.
+- Match professional enterprise QA writing standard.
+- Match screen naming consistency.
+- Match expected result enforcement strength.
+- Do NOT copy historical text.
+- Do NOT reuse historical requirement mapping.
+- Use historical content only for structural alignment.
 
 ============================================================
 AC INTERPRETATION AND VALIDATION RULES (POSITIVE BEHAVIOR ONLY)
@@ -127,13 +135,12 @@ Generate ONLY intended positive behavior validations.
    - Clearly describe the triggering field and resulting system behavior.
    - Expected Result must state that the system automatically updates the dependent field.
 
-   Example rule interpretation:
+   Example:
    If HPML = Yes triggers automatic checkbox selection,
    generate a step validating:
-   "The system automatically selects the related checkbox when HPML is set to Yes."
+   The system automatically selects the related checkbox when HPML is set to Yes.
 
    Do NOT invent dependencies not implied by AC or Description.
-   Only validate dependencies explicitly or logically implied.
 
 8. Do NOT collapse multiple validations into one step.
    Each step must validate exactly one distinct business rule.
