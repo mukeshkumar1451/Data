@@ -1,138 +1,215 @@
-import requests
-from urllib.parse import urlparse
-from io import BytesIO
-from docx import Document
+import logging
+from typing import Dict, List
 
-# ==============================
-# CONFIGURATION
-# ==============================
+from azure.search.documents import SearchClient
+from azure.search.documents.models import VectorizedQuery
+from azure.core.credentials import AzureKeyCredential
+from openai import AzureOpenAI
+from config.config import get
 
-TENANT_ID = "YOUR_TENANT_ID"
-CLIENT_ID = "YOUR_CLIENT_ID"
-CLIENT_SECRET = "YOUR_CLIENT_SECRET"
-
-SITE_URL = "https://corpofficeapps.sharepoint.com/sites/Ops_Home/nationalops"
-
-# Exact file name
-FILE_NAME = "sKnowledge Modelling Approach Document.docx"
+logger = logging.getLogger(__name__)
 
 
-# ==============================
-# GET ACCESS TOKEN
-# ==============================
+class RetrievalIntelligenceAgent:
 
-def get_access_token():
-    token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+    def __init__(self):
 
-    data = {
-        "client_id": CLIENT_ID,
-        "scope": "https://graph.microsoft.com/.default",
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "client_credentials",
-    }
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+        )
 
-    res = requests.post(token_url, data=data)
-    res.raise_for_status()
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
 
-    print("✅ Token acquired\n")
-    return res.json()["access_token"]
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
+        )
 
+    # ---------------------------------------------------------
+    # Embed Query
+    # ---------------------------------------------------------
+    def _embed(self, text: str) -> List[float]:
 
-# ==============================
-# GET SITE ID FROM URL
-# ==============================
+        response = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text[:8000]
+        )
 
-def get_site_id(token, site_url):
-    headers = {"Authorization": f"Bearer {token}"}
+        return response.data[0].embedding
 
-    parsed = urlparse(site_url)
-    host = parsed.netloc
-    path = parsed.path
+    # ---------------------------------------------------------
+    # Hybrid Search
+    # ---------------------------------------------------------
+    def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
 
-    graph_url = f"https://graph.microsoft.com/v1.0/sites/{host}:{path}"
+        vector_query = VectorizedQuery(
+            vector=self._embed(query_text),
+            fields="embedding",
+            k_nearest_neighbors=topk
+        )
 
-    res = requests.get(graph_url, headers=headers)
-    res.raise_for_status()
+        filter_query = f"channels/any(c: c eq '{channel}')"
 
-    site_data = res.json()
+        results = list(self.search_client.search(
+            search_text=query_text,
+            vector_queries=[vector_query],
+            filter=filter_query,
+            select=["testCaseId", "content"],
+            top=topk
+        ))
 
-    print("✅ Site:", site_data["displayName"])
-    return site_data["id"]
+        logger.info(f"{channel} → Retrieved {len(results)} docs")
 
+        return results
 
-# ==============================
-# SEARCH FILE (SAFE WAY)
-# ==============================
+    # ---------------------------------------------------------
+    # Robust Precondition Extraction
+    # ---------------------------------------------------------
+    def _extract_precondition(self, content: str) -> str:
 
-def search_and_read_docx(token, site_id, filename):
+        lines = content.splitlines()
+        capture = False
+        collected = []
 
-    headers = {"Authorization": f"Bearer {token}"}
+        for line in lines:
 
-    # Use only first word as keyword (prevents Graph 500)
-    keyword = filename.split()[0]
+            lower = line.lower().strip()
 
-    search_url = (
-        f"https://graph.microsoft.com/v1.0/"
-        f"sites/{site_id}/drive/root/search(q='{keyword}')"
-    )
+            # START capture
+            if (
+                "pre-condition" in lower or
+                "precondition" in lower or
+                "pre condition" in lower
+            ):
+                capture = True
+                collected.append(line)
+                continue
 
-    res = requests.get(search_url, headers=headers)
+            # STOP capture
+            if capture and (
+                lower.startswith("step") or
+                "test steps" in lower or
+                "=========== test steps" in lower
+            ):
+                break
 
-    if res.status_code != 200:
-        print("❌ Search failed")
-        print("Status:", res.status_code)
-        print(res.text)
-        return
+            if capture:
+                collected.append(line)
 
-    results = res.json().get("value", [])
+        result = "\n".join(collected).strip()
+        if result.lower().startswith("pre-condition")or result.lower().startswith("precondition") or result.lower().startswith("pre condition"): 
+            lines = result.splitlines()
+            result = "\n".join(lines[1:]).strip()
+        return result   
 
-    if not results:
-        print("❌ No matching files found")
-        return
+    # ---------------------------------------------------------
+    # LLM Rerank
+    # ---------------------------------------------------------
+    def _rerank(self, story_text: str, docs: List[Dict]) -> List[Dict]:
 
-    # Filter exact filename locally
-    file_item = None
-    for item in results:
-        if item.get("name", "").lower() == filename.lower():
-            file_item = item
-            break
+        if not docs:
+            return []
 
-    if not file_item:
-        print("❌ Exact file not found. Available matches:")
-        for r in results:
-            print(" -", r["name"])
-        return
+        combined = ""
+        for idx, d in enumerate(docs, 1):
+            combined += f"\nDoc {idx}\n{d.get('content')[:1500]}\n"
 
-    print("✅ File Found:", file_item["name"])
-    print("📁 Path:", file_item["parentReference"]["path"])
-    print("🌐 URL:", file_item["webUrl"])
+        prompt = f"""
+Rank the below documents by relevance to this story.
+Return only numbers in order separated by space.
 
-    # Read file in memory
-    content_url = (
-        f"https://graph.microsoft.com/v1.0/"
-        f"sites/{site_id}/drive/items/{file_item['id']}/content"
-    )
+Story:
+{story_text}
 
-    file_res = requests.get(content_url, headers=headers)
-    file_res.raise_for_status()
+Documents:
+{combined}
+"""
 
-    # Extract DOCX in memory
-    doc = Document(BytesIO(file_res.content))
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
 
-    print("\n======= DOCX CONTENT =======\n")
+        ranking_text = response.choices[0].message.content.strip()
+        ranking_tokens = ranking_text.split()
 
-    for para in doc.paragraphs:
-        if para.text.strip():
-            print(para.text)
+        ordered_docs = []
 
+        for token in ranking_tokens:
+            if token.isdigit():
+                idx = int(token) - 1
+                if 0 <= idx < len(docs):
+                    ordered_docs.append(docs[idx])
 
-# ==============================
-# MAIN
-# ==============================
+        return ordered_docs if ordered_docs else docs
 
-if __name__ == "__main__":
+    # ---------------------------------------------------------
+    # Main Execution
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
 
-    token = get_access_token()
-    site_id = get_site_id(token, SITE_URL)
+        logger.info("Retrieval Agent Running")
 
-    search_and_read_docx(token, site_id, FILE_NAME)
+        full_story = f"""
+User Story: {state['user_story']}
+Description: {state['description']}
+Acceptance Criteria: {state['acceptance_criteria']}
+"""
+
+        channel_context = {}
+        selected_preconditions = {}
+
+        for channel in state["channels"]:
+
+            docs = self._hybrid_search(full_story, channel)
+            reranked_docs = self._rerank(full_story, docs)
+
+            best_precondition = ""
+            historical_steps = ""
+
+            # Try to extract precondition from reranked docs
+            for doc in reranked_docs:
+
+                content = doc.get("content", "")
+
+                if not best_precondition:
+                    extracted = self._extract_precondition(content)
+                    if extracted:
+                        best_precondition = extracted
+
+                historical_steps += "\n" + content[:1000]
+
+                if best_precondition:
+                    break
+
+            #  Fallback if nothing found
+            if not best_precondition and reranked_docs:
+                logger.warning(f"{channel} → No precondition found. Using first doc fallback.")
+                best_precondition = "Precondition not found in historical data."
+
+            channel_context[channel] = {
+                "precondition": best_precondition,
+                "historical_steps": historical_steps[:4000]
+            }
+
+            selected_preconditions[channel] = best_precondition
+
+            # logger.info(
+            #     f"{channel} → Selected Precondition:\n{best_precondition}\n"
+            # )
+
+        #  Store BOTH maps in state
+        state["channel_context"] = channel_context
+        state["selected_preconditions"] = selected_preconditions
+
+        # logger.info("Selected Preconditions Map:")
+        # logger.info(selected_preconditions)
+
+        logger.info(" Retrieval Completed")
+
+        return state
