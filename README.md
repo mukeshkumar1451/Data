@@ -1,223 +1,105 @@
 import logging
-from typing import Dict, List
-from azure.search.documents import SearchClient
-from azure.search.documents.models import VectorizedQuery
-from azure.core.credentials import AzureKeyCredential
-from openai import AzureOpenAI
+import os
+from typing import Dict
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
 from config.config import get
-import json
 
 logger = logging.getLogger(__name__)
 
 
-class RetrievalIntelligenceAgent:
+class LLMTestcaseGeneratorAgent:
 
     def __init__(self):
 
-        # Azure OpenAI
-        self.openai = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+        prompt_path = get("PROMPT_TEMPLATE_PATH")
+
+        if not os.path.exists(prompt_path):
+            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
+
+        # 🔥 FIXED: Added comma between precondition & historical_steps
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "user_story_id",
+                "user_story",
+                "description",
+                "ac",
+                "channel",
+                "precondition",
+                "historical_scenario",
+                "historical_script",
+                "historical_steps"
+            ],
+            template=prompt_text
+        )
+
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
             api_version=get("AZURE_OPENAI_API_VERSION"),
-        )
-
-        self.embed_model = get("EMBEDDING_MODEL")
-        self.chat_model = get("CHAT_MODEL")
-
-        # Azure AI Search
-        self.search_client = SearchClient(
-            endpoint=get("AZURE_SEARCH_ENDPOINT"),
-            index_name=get("AZURE_SEARCH_INDEX"),
-            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
-        )
-
-    # ---------------------------------------------------------
-    # Embed Story Text
-    # ---------------------------------------------------------
-    def _embed(self, text: str) -> List[float]:
-
-        response = self.openai.embeddings.create(
-            model=self.embed_model,
-            input=text[:8000]
-        )
-
-        return response.data[0].embedding
-
-    # ---------------------------------------------------------
-    # Hybrid Search (Keyword + Vector + Channel Filter)
-    # ---------------------------------------------------------
-    def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
-
-        vector_query = VectorizedQuery(
-            vector=self._embed(query_text),
-            fields="embedding",
-            k_nearest_neighbors=topk
-        )
-
-        filter_query = f"channels/any(c: c eq '{channel}')"
-
-        results = list(
-            self.search_client.search(
-                search_text=query_text,
-                vector_queries=[vector_query],
-                filter=filter_query,
-                select=["testCaseId", "content"],
-                top=topk
-            )
-        )
-
-        logger.info(f"{channel} → Retrieved {len(results)} documents")
-        return results
-
-    # ---------------------------------------------------------
-    # LLM Rerank for Better Precision
-    # ---------------------------------------------------------
-    def _rerank(self, story_text: str, docs: List[Dict]) -> List[Dict]:
-
-        if not docs:
-            return []
-
-        combined = ""
-        for idx, d in enumerate(docs, 1):
-            combined += f"\nDoc {idx}:\n{d.get('content')[:2000]}\n"
-
-        prompt = f"""
-Rank the below documents by relevance to the story.
-Return only numbers in order separated by space.
-
-Story:
-{story_text}
-
-Documents:
-{combined}
-"""
-
-        response = self.openai.chat.completions.create(
-            model=self.chat_model,
-            messages=[{"role": "user", "content": prompt}],
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
             temperature=0
         )
 
-        ranking_text = response.choices[0].message.content.strip()
-        ranking_tokens = ranking_text.split()
+        self.chain = self.prompt | self.llm
 
-        ordered_docs = []
-
-        for token in ranking_tokens:
-            if token.isdigit():
-                idx = int(token) - 1
-                if 0 <= idx < len(docs):
-                    ordered_docs.append(docs[idx])
-
-        return ordered_docs if ordered_docs else docs
+        logger.info("LLM Testcase Generator initialized")
 
     # ---------------------------------------------------------
-    # LLM Structured Extraction
+    # Format Historical Steps for Prompt
     # ---------------------------------------------------------
-    def _extract_structured_content(self, content: str) -> Dict:
+    def _format_historical_steps(self, steps: list) -> str:
 
-        extraction_prompt = f"""
-Extract structured JSON strictly in this format:
+        if not steps:
+            return "No historical steps available."
 
-{{
-  "scenario": "",
-  "script": "",
-  "precondition": "",
-  "steps": [
-    {{
-      "stepNo": "",
-      "description": "",
-      "expectedResult": ""
-    }}
-  ]
-}}
+        formatted = ""
+        for step in steps:
+            formatted += (
+                f"{step.get('stepNo', '')} | "
+                f"{step.get('description', '')} | "
+                f"{step.get('expectedResult', '')}\n"
+            )
 
-If any section is missing, return empty string or empty array.
-Return JSON only.
-
-Content:
-{content[:6000]}
-"""
-
-        response = self.openai.chat.completions.create(
-            model=self.chat_model,
-            temperature=0,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": "You are a QA test case extraction engine."},
-                {"role": "user", "content": extraction_prompt}
-            ]
-        )
-
-        try:
-            structured = json.loads(response.choices[0].message.content)
-        except Exception:
-            structured = {
-                "scenario": "",
-                "script": "",
-                "precondition": "",
-                "steps": []
-            }
-
-        return structured
+        return formatted.strip()
 
     # ---------------------------------------------------------
     # Main Execution
     # ---------------------------------------------------------
     def run(self, state: Dict) -> Dict:
 
-        logger.info("Retrieval Intelligence Agent Running")
+        logger.info("LLM Generator Running")
 
-        full_story = f"""
-User Story: {state['user_story']}
-Description: {state['description']}
-Acceptance Criteria: {state['acceptance_criteria']}
-"""
+        new_state = dict(state)
+        outputs = {}
 
-        channel_context = {}
+        for channel, ctx in state["channel_context"].items():
 
-        for channel in state["channels"]:
+            formatted_steps = self._format_historical_steps(
+                ctx.get("historical_steps", [])
+            )
 
-            logger.info(f"Processing channel: {channel}")
-
-            # 1️⃣ Hybrid Search
-            docs = self._hybrid_search(full_story, channel)
-
-            # 2️⃣ Rerank
-            reranked_docs = self._rerank(full_story, docs)
-
-            best_structured = None
-
-            # 3️⃣ Extract structured content from top documents
-            for doc in reranked_docs:
-
-                content = doc.get("content", "")
-                structured = self._extract_structured_content(content)
-
-                if structured.get("precondition") or structured.get("steps"):
-                    best_structured = structured
-                    break
-
-            # 4️⃣ Fallback
-            if not best_structured:
-                logger.warning(f"{channel} → No structured data found. Using fallback.")
-                best_structured = {
-                    "scenario": "",
-                    "script": "",
-                    "precondition": "Precondition not found in historical data.",
-                    "steps": []
-                }
-
-            # 5️⃣ Store in channel context
-            channel_context[channel] = {
-                "precondition": best_structured["precondition"],
-                "historical_scenario": best_structured["scenario"],
-                "historical_script": best_structured["script"],
-                "historical_steps": best_structured["steps"]
+            payload = {
+                "user_story_id": state["user_story_id"],
+                "user_story": state["user_story"],
+                "description": state["description"],
+                "ac": state["acceptance_criteria"],
+                "channel": channel,
+                "precondition": ctx.get("precondition", ""),
+                "historical_scenario": ctx.get("historical_scenario", ""),
+                "historical_script": ctx.get("historical_script", ""),
+                "historical_steps": formatted_steps
             }
 
-        # 6️⃣ Update shared state
-        state["channel_context"] = channel_context
+            result = self.chain.invoke(payload)
 
-        logger.info("Retrieval Intelligence Agent Completed")
-        return state
+            outputs[channel] = result.content.strip()
+
+        new_state["llm_outputs"] = outputs
+
+        logger.info("LLM Testcase Generation Completed")
+
+        return new_state
