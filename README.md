@@ -14,7 +14,6 @@ class RetrievalIntelligenceAgent:
 
     def __init__(self):
 
-        # Azure OpenAI
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
@@ -24,7 +23,6 @@ class RetrievalIntelligenceAgent:
         self.embed_model = get("EMBEDDING_MODEL")
         self.chat_model = get("CHAT_MODEL")
 
-        # Azure AI Search
         self.search_client = SearchClient(
             endpoint=get("AZURE_SEARCH_ENDPOINT"),
             index_name=get("AZURE_SEARCH_INDEX"),
@@ -44,7 +42,7 @@ class RetrievalIntelligenceAgent:
         return response.data[0].embedding
 
     # ---------------------------------------------------------
-    # Hybrid Search (Keyword + Vector + Channel Filter)
+    # Hybrid Search
     # ---------------------------------------------------------
     def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
 
@@ -66,11 +64,19 @@ class RetrievalIntelligenceAgent:
             )
         )
 
-        logger.info(f"{channel} → Retrieved {len(results)} documents")
+        logger.info(f"\n🔎 {channel} → Retrieved {len(results)} documents from Vector DB")
+
+        # 🔥 PRINT RAW RETRIEVED DOCUMENTS
+        for i, doc in enumerate(results, 1):
+            logger.info(f"\n----- RAW DOC {i} -----")
+            logger.info(f"TestCaseId: {doc.get('testCaseId')}")
+            logger.info(f"Content Preview:\n{doc.get('content')[:800]}")
+            logger.info("----------------------")
+
         return results
 
     # ---------------------------------------------------------
-    # LLM Rerank for Better Precision
+    # LLM Rerank
     # ---------------------------------------------------------
     def _rerank(self, story_text: str, docs: List[Dict]) -> List[Dict]:
 
@@ -109,10 +115,14 @@ Documents:
                 if 0 <= idx < len(docs):
                     ordered_docs.append(docs[idx])
 
+        logger.info("\n📊 RERANKED ORDER:")
+        for i, doc in enumerate(ordered_docs, 1):
+            logger.info(f"Rank {i}: {doc.get('testCaseId')}")
+
         return ordered_docs if ordered_docs else docs
 
     # ---------------------------------------------------------
-    # LLM Structured Extraction
+    # Structured Extraction
     # ---------------------------------------------------------
     def _extract_structured_content(self, content: str) -> Dict:
 
@@ -132,7 +142,6 @@ Extract structured JSON strictly in this format:
   ]
 }}
 
-If any section is missing, return empty string or empty array.
 Return JSON only.
 
 Content:
@@ -151,7 +160,13 @@ Content:
 
         try:
             structured = json.loads(response.choices[0].message.content)
-        except Exception:
+
+            # 🔥 PRINT STRUCTURED EXTRACTION RESULT
+            logger.info("\n🧠 STRUCTURED EXTRACTION RESULT:")
+            logger.info(json.dumps(structured, indent=2))
+
+        except Exception as e:
+            logger.error(f"Structured extraction failed: {e}")
             structured = {
                 "scenario": "",
                 "script": "",
@@ -166,7 +181,7 @@ Content:
     # ---------------------------------------------------------
     def run(self, state: Dict) -> Dict:
 
-        logger.info("Retrieval Intelligence Agent Running")
+        logger.info("\n🚀 Retrieval Intelligence Agent Running")
 
         full_story = f"""
 User Story: {state['user_story']}
@@ -174,21 +189,23 @@ Description: {state['description']}
 Acceptance Criteria: {state['acceptance_criteria']}
 """
 
+        logger.info("\n📌 QUERY SENT TO VECTOR SEARCH:")
+        logger.info(full_story)
+
         channel_context = {}
 
         for channel in state["channels"]:
 
-            logger.info(f"Processing channel: {channel}")
+            logger.info(f"\n==============================")
+            logger.info(f"🔵 Processing Channel: {channel}")
+            logger.info(f"==============================")
 
-            # 1️⃣ Hybrid Search
             docs = self._hybrid_search(full_story, channel)
 
-            # 2️⃣ Rerank
             reranked_docs = self._rerank(full_story, docs)
 
             best_structured = None
 
-            # 3️⃣ Extract structured content from top documents
             for doc in reranked_docs:
 
                 content = doc.get("content", "")
@@ -198,9 +215,8 @@ Acceptance Criteria: {state['acceptance_criteria']}
                     best_structured = structured
                     break
 
-            # 4️⃣ Fallback
             if not best_structured:
-                logger.warning(f"{channel} → No structured data found. Using fallback.")
+                logger.warning(f"{channel} → No structured data found.")
                 best_structured = {
                     "scenario": "",
                     "script": "",
@@ -208,7 +224,6 @@ Acceptance Criteria: {state['acceptance_criteria']}
                     "steps": []
                 }
 
-            # 5️⃣ Store in channel context
             channel_context[channel] = {
                 "precondition": best_structured["precondition"],
                 "historical_scenario": best_structured["scenario"],
@@ -216,8 +231,7 @@ Acceptance Criteria: {state['acceptance_criteria']}
                 "historical_steps": best_structured["steps"]
             }
 
-        # 6️⃣ Update shared state
         state["channel_context"] = channel_context
 
-        logger.info("Retrieval Intelligence Agent Completed")
+        logger.info("\n✅ Retrieval Intelligence Agent Completed")
         return state
