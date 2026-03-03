@@ -1,180 +1,43 @@
-import logging
-from typing import Dict
-from langchain_openai import AzureChatOpenAI
-from config.config import get
+### Behavioral Test Case for User Story ID: 718521  
+**Title:** Modernized Audit additions - DIS > Generate Disclosures Fields  
 
-logger = logging.getLogger(__name__)
+---
 
+#### Precondition:  
+Create a loan using Mismo 3.4 XML file.  
 
-class LLMTestcaseGeneratorAgent:
+---
 
-    def __init__(self):
+### Test Case Steps  
 
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
+**Step 01** | **Description:** Log in to H2O-A in UAT1 Environment. | **Screen Name:** Dashboard | **Test Data:** https://qch2o.caliberdirect.com | **Expected Result:** The system should successfully log in to the application. | **Requirement Mapping:** Historical Step 1  
 
-    # ---------------------------------------------------------
-    # BUILD INTELLIGENT PROMPT
-    # ---------------------------------------------------------
-    def _build_prompt(self, payload: Dict) -> str:
+**Step 02** | **Description:** Open the loan created as per the precondition. | **Screen Name:** Loan Summary | **Test Data:** N/A | **Expected Result:** The system should display the Loan Summary screen for the selected loan. | **Requirement Mapping:** Historical Step 2  
 
-        return f"""
-You are a Senior Mortgage QA Analyst generating enterprise-grade LOS test cases.
+**Step 03** | **Description:** Navigate to DIS > Generate Disclosures screen. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should display the Generate Disclosure screen. | **Requirement Mapping:** Historical Step 3  
 
-============================================================
-CORE PRINCIPLE
-============================================================
+**Step 04** | **Description:** Locate the "Description" field in the H2O UI. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should render the "Description" field as a text field without privilege restrictions. | **Requirement Mapping:** AC Transformation  
 
-1. Historical data defines HOW validation is performed.
-2. Acceptance Criteria defines WHAT must be validated.
-3. You MUST combine both.
-4. You MUST NOT copy Acceptance Criteria text.
-5. You MUST NOT restate AC sentences as steps.
-6. AC is a contract reference only.
+**Step 05** | **Description:** Locate the "HPML" field in the Generate Disclosure section. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should render the "HPML" field as a dropdown containing options "Yes" and "No" without privilege restrictions. | **Requirement Mapping:** AC Transformation  
 
-If AC wording appears directly in output, result is invalid.
+**Step 06** | **Description:** Locate the "Intent to Proceed" field in the Generate Disclosure section. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should render the "Intent to Proceed" field as a checkbox that can be toggled on and off without privilege restrictions. | **Requirement Mapping:** AC Transformation  
 
-============================================================
-CHANNEL ENTITY ENFORCEMENT
-============================================================
+**Step 07** | **Description:** Save changes made to the "Intent to Proceed" field. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should save the changes successfully. | **Requirement Mapping:** Flow Intelligence  
 
-Channel: {payload["channel"]}
+**Step 08** | **Description:** Perform audit validation for the "Intent to Proceed" field. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should log the audit trail for the changes made to the "Intent to Proceed" field. | **Requirement Mapping:** Flow Intelligence  
 
-If Channel is RTL or DTC:
-- DO NOT generate Mortgage Broker related steps.
-- DO NOT generate Broker License validations.
-- DO NOT generate Broker Compensation logic.
-- Ignore broker-related historical patterns completely.
+**Step 09** | **Description:** Confirm that the "Mortgage Broker Fee Agreement" field is not displayed for the RTL channel. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should not display the "Mortgage Broker Fee Agreement" field for the RTL channel. | **Requirement Mapping:** Channel Entity Enforcement  
 
-If Channel is WHL or CL1:
-- Include Mortgage Broker validations ONLY if present in Acceptance Criteria.
-- Privilege validations must be included when applicable.
+**Step 10** | **Description:** Confirm that the "Mortgage Broker License Type" field is not displayed for the RTL channel. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should not display the "Mortgage Broker License Type" field for the RTL channel. | **Requirement Mapping:** Channel Entity Enforcement  
 
-Violation of channel rule makes output invalid.
+**Step 11** | **Description:** Log out of the application. | **Screen Name:** Dashboard | **Test Data:** N/A | **Expected Result:** The system should log out successfully. | **Requirement Mapping:** Logout Step  
 
-============================================================
-FLOW INTELLIGENCE
-============================================================
+---
 
-Flow Intelligence:
-{payload["flow_intelligence"]}
+### Notes:  
+- Steps related to "Mortgage Broker Fee Agreement" and "Mortgage Broker License Type" are excluded due to RTL channel enforcement rules.  
+- Behavioral patterns such as save cycles and audit validations are applied where applicable.  
+- Dropdown and checkbox interactions are included based on Flow Intelligence.  
 
-From historical steps:
-- Identify navigation order.
-- Identify save cycle pattern.
-- Identify audit validation pattern.
-- Identify dropdown/checkbox interaction pattern.
-- Identify value transition behavior.
-
-Rules:
-
-If audit_behavioral_pattern is True:
-- Generate value change → save → audit validation flow.
-
-If requires_save_cycle is True:
-- Include save step after data modification.
-
-If value_transition_pattern is True:
-- Generate alternate value validation cycle.
-
-If has_dropdown_pattern is True:
-- Include dropdown selection behavior.
-
-If has_checkbox_pattern is True:
-- Include checkbox toggle behavior.
-
-Never invent logic.
-Apply only dominant historical patterns.
-
-============================================================
-AC TRANSFORMATION RULE
-============================================================
-
-Acceptance Criteria:
-{payload["ac"]}
-
-Extract validation intent only.
-
-Transform into enterprise behavioral validation steps.
-
-Do NOT:
-- Start steps with "Verify that"
-- Copy AC sentence structure
-- Rephrase AC line-by-line
-
-============================================================
-CONTEXT
-============================================================
-
-User Story ID:
-{payload["user_story_id"]}
-
-Title:
-{payload["user_story"]}
-
-Description:
-{payload["description"]}
-
-Precondition:
-{payload["precondition"]}
-
-Historical Steps:
-{payload["historical_steps"]}
-
-============================================================
-OUTPUT FORMAT (STRICT)
-============================================================
-
-Each step must be written exactly as:
-
-Step XX | Description | Screen Name | Test Data | Expected Result | Requirement Mapping
-
-Rules:
-- Sequential numbering
-- One validation per step
-- Expected Result must start with "The system"
-- Login first step
-- Open Loan second step
-- Logout last step
-
-Generate the complete behavioral test case now.
-"""
-
-    # ---------------------------------------------------------
-    # MAIN EXECUTION
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("LLM Behavioral Testcase Generation Started")
-
-        outputs = {}
-
-        for channel, ctx in state["channel_context"].items():
-
-            payload = {
-                "user_story_id": state["user_story_id"],
-                "user_story": state["user_story"],
-                "description": state["description"],
-                "ac": state["acceptance_criteria"],
-                "channel": channel,
-                "precondition": ctx.get("precondition", ""),
-                "historical_steps": ctx.get("historical_steps", []),
-                "flow_intelligence": ctx.get("flow_intelligence", {})
-            }
-
-            prompt = self._build_prompt(payload)
-
-            response = self.llm.invoke(prompt)
-
-            outputs[channel] = response.content.strip()
-
-        state["llm_outputs"] = outputs
-
-        logger.info("LLM Behavioral Testcase Generation Completed")
-
-        return state
+---  
+**End of Test Case**
