@@ -1,257 +1,165 @@
-You are a Senior Mortgage QA Analyst generating structured, Excel-ready LOS test cases.
+import os
+import logging
+from openpyxl import load_workbook
+from config.config import get
 
-You must construct a complete enterprise-grade test case using:
-- User Story
-- Description
-- Acceptance Criteria
-- Channel rules
-- Precondition context
-- Historical structural references
-- Aggregated flow intelligence
+logger = logging.getLogger(__name__)
 
-You must think before generating. Output only the final test case.
 
-============================================================
-CRITICAL OUTPUT RULES (NON-NEGOTIABLE)
-============================================================
+class ExcelExportAgent:
 
-- Output must be plain text only.
-- Do NOT use markdown.
-- Do NOT use tables.
-- Do NOT use bold text, ###, backticks, or special formatting.
-- Do NOT add explanations, notes, commentary, or summaries.
-- Do NOT leave blank lines.
-- Each step must be written on a single line.
-- Any formatting deviation is invalid.
+    def __init__(self):
+        self.template_path = get("EXCEL_TEMPLATE_PATH")
+        self.output_dir = get("EXCEL_OUTPUT_DIR")
 
-============================================================
-CHANNEL: {channel}
-============================================================
+    # -------------------------------------------------
+    # STRICT PIPE FORMAT PARSER (NO REGEX)
+    # -------------------------------------------------
+    def _parse_llm_output(self, llm_text: str):
 
-MANDATORY CHANNEL ENTITY ENFORCEMENT:
+        scenario = ""
+        script = ""
+        requirement = ""
+        steps = []
 
-If CHANNEL is RTL or DTC:
-- STRICTLY DO NOT include or reference:
-  Mortgage Broker
-  Broker License
-  Broker Compensation
-  Broker Fee Agreement
-  Manage Broker Disclosures
-  Mortgage Broker License Type
+        lines = llm_text.splitlines()
 
-If CHANNEL is WHL or CL1:
-- Mortgage Broker fields MUST be validated if present in Acceptance Criteria.
-- Privilege restricted fields MUST include:
-  - One step validating restricted behavior for non-privileged users.
-  - One step validating correct behavior for privileged users.
-- Dropdown validation must include:
-  - Rendering validation
-  - Option integrity validation
-  - Selection behavior validation when workflow requires interaction
-- Do NOT skip broker-related validations when explicitly present.
+        for line in lines:
+            line = line.strip()
 
-If this rule is violated, output is invalid.
+            if not line:
+                continue
 
-============================================================
-PRECONDITION CONTEXT (REFERENCE ONLY – DO NOT REPEAT)
-============================================================
+            if line.startswith("Test Scenario Description:") or line.startswith("Scenario:"):
+                scenario = line.replace("Test Scenario Description:", "").replace("Scenario:", "").strip()
+                continue
 
-{precondition}
+            if line.startswith("Script:") or line.startswith("Test Script Description:"):
+                script = line.replace("Script:", "").replace("Test Script Description:", "").strip()
+                continue
 
-- Do NOT rewrite the precondition.
-- Assume loan already exists as per precondition.
-- Do NOT validate loan creation.
+            if line.startswith("Test Scenario Id:"):
+                requirement = line.replace("Test Scenario Id:", "").strip()
+                continue
 
-============================================================
-HISTORICAL STRUCTURE ALIGNMENT (MANDATORY)
-============================================================
+            if line.lower().startswith("step") and "|" in line:
 
-Historical Scenario Reference:
-{historical_scenario}
+                parts = [p.strip() for p in line.split("|")]
 
-Historical Script Reference:
-{historical_script}
+                if len(parts) != 6:
+                    continue
 
-Historical Step Pattern:
-{historical_steps}
+                steps.append({
+                    "step_no": parts[0],
+                    "desc": parts[1],
+                    "screen": parts[2],
+                    "data": parts[3],
+                    "expected": parts[4],
+                    "requirement": parts[5]
+                })
 
-MANDATORY STRUCTURAL RULES:
+        return {
+            "scenario": scenario,
+            "script": script,
+            "requirement": requirement,
+            "steps": steps
+        }
 
-- Use historical content strictly for structural alignment.
-- Match professional QA tone and validation depth.
-- Match historical screen naming conventions.
-- Match enforcement strength in Expected Results.
-- Do NOT copy historical business logic.
-- Do NOT reuse historical requirement mapping.
-- Do NOT override current Acceptance Criteria using historical logic.
+    # -------------------------------------------------
+    # MAIN EXECUTION
+    # -------------------------------------------------
+    def run(self, state: dict) -> dict:
 
-Historical data defines structure, not obligation.
-Acceptance Criteria defines obligation.
+        logger.info("Excel Export Agent started")
 
-============================================================
-HISTORICAL FLOW PATTERN INTELLIGENCE (MANDATORY)
-============================================================
+        os.makedirs(self.output_dir, exist_ok=True)
 
-FLOW INTELLIGENCE (AGGREGATED FROM HISTORICAL DATA):
-{flow_intelligence}
+        wb = load_workbook(self.template_path)
 
-You MUST analyze this before generating steps.
+        # -------------------------------------------------
+        #  DELETE UNUSED SHEETS BASED ON CHANNEL DETECTION
+        # -------------------------------------------------
+        detected_channels = state.get("channels", [])
 
-FLOW APPLICATION RULES:
+        if detected_channels:
+            for sheet_name in list(wb.sheetnames):
+                if sheet_name not in detected_channels:
+                    wb.remove(wb[sheet_name])
 
-1. Step Ordering Pattern:
-   - Detect common historical ordering (render → interact → save → audit).
-   - Apply same ordering logic when applicable to this story.
+        logger.info(f"Sheets after cleanup: {wb.sheetnames}")
 
-2. Control-Type Behavior Detection:
-   From Acceptance Criteria and Description dynamically detect:
-   - Dropdown
-   - Checkbox
-   - Picker
-   - Date picker
-   - Text field
-   - Privilege restriction
-   - Audit behavior
-   - Pagination
-   - Search functionality
-   - Defaulting logic
-   - Cross-field dependency
+        user_story_id = state["user_story_id"]
 
-3. Dropdown Selection Logic:
-   - If Acceptance Criteria explicitly defines which value to select, use it.
-   - If AC is silent, analyze dominant historical positive pattern.
-   - Use only dominant positive workflow value.
-   - Do NOT invent dependencies not implied by AC or Description.
+        # -------------------------------------------------
+        # PROCESS EACH CHANNEL
+        # -------------------------------------------------
+        for channel, llm_text in state["llm_outputs"].items():
 
-4. Privilege Logic:
-   - If field is privilege restricted:
-     - Generate non-privileged validation.
-     - Generate privileged validation.
-   - If privilege not mentioned, do NOT assume.
+            if channel not in wb.sheetnames:
+                logger.warning(f"Sheet '{channel}' not found after cleanup.")
+                continue
 
-5. Audit Logic:
-   - Only include Modernized Audit or Audit steps if:
-     - AC explicitly requires it, OR
-     - Description logically implies audit validation.
-   - Historical audit presence alone must NOT force audit validation.
+            ws = wb[channel]
+            row = 2
 
-6. Dependency Logic:
-   - Generate dependency validation only if explicitly or logically implied.
-   - Historical dependency must NOT override current AC.
+            #  Reset counter per channel
+            tc_counter = 1
 
-7. Institutional Memory Priority:
-   - Acceptance Criteria always overrides historical pattern.
-   - Historical pattern guides how to structure validation.
-   - Never override contract with memory.
+            parsed = self._parse_llm_output(llm_text)
 
-Failure to apply flow intelligence correctly makes output invalid.
+            # logger.info(f"{channel} -> Parsed {len(parsed['steps'])} steps")
 
-============================================================
-DYNAMIC FIELD VALIDATION RULES (NO HARDCODING)
-============================================================
+            if not parsed["steps"]:
+                continue
 
-For each field mentioned in Acceptance Criteria:
+            selected_preconditions = state.get("selected_preconditions", {})
+            precondition = selected_preconditions.get(channel, "")
 
-- Rendering must be validated once.
-- If dropdown:
-  - Validate rendering.
-  - Validate exact option integrity if options provided.
-  - Validate selection behavior if interaction required.
-- If checkbox:
-  - Validate rendering.
-  - Validate toggle behavior.
-- If picker:
-  - Validate popup behavior.
-  - Validate column structure.
-  - Validate search behavior if described.
-  - Validate pagination if described.
-  - Validate selection behavior.
-  - Validate defaulting logic if described.
-- If defaulting logic exists:
-  - Validate automatic system selection.
-- If performance or UI optimization is mentioned:
-  - Validate interaction behavior, not backend metrics.
+            tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
 
-Do NOT collapse multiple business rules into a single step.
-Each step must validate exactly one distinct rule.
+            start_row = row  # for merging
 
-============================================================
-HEADER SECTION (MANDATORY – NONE MAY BE BLANK)
-============================================================
+            for idx, step in enumerate(parsed["steps"]):
 
-Generate exactly once:
+                ws.cell(row, 1).value = tc_id if idx == 0 else ""
+                ws.cell(row, 2).value = f"{user_story_id}-{channel}" if idx == 0 else ""
+                ws.cell(row, 3).value = parsed["scenario"] if idx == 0 else ""
+                ws.cell(row, 4).value = parsed["script"] if idx == 0 else ""
+                ws.cell(row, 5).value = precondition if idx == 0 else ""
 
-Test Case ID / Test Script ID: {user_story_id}_{channel}_01
-Test Scenario Id: {user_story_id}_SC_01
-Test Scenario Description: <One clear business objective sentence, maximum 25 words>
-Test Script Description: <2–3 sentences summarizing validation coverage aligned strictly to Acceptance Criteria>
-Pre-Condition & Assumptions: Refer to provided precondition context
+                ws.cell(row, 6).value = step["step_no"]
+                ws.cell(row, 7).value = step["desc"]
+                ws.cell(row, 8).value = step["screen"]
+                ws.cell(row, 9).value = step["data"]
+                ws.cell(row, 10).value = step["expected"]
 
-============================================================
-STEP STRUCTURE (STRICT FORMAT)
-============================================================
+                ws.cell(row, 11).value = ""
+                ws.cell(row, 12).value = ""
+                ws.cell(row, 13).value = ""
+                ws.cell(row, 14).value = ""
+                ws.cell(row, 15).value = parsed["requirement"] 
 
-After header, output exactly:
+                row += 1
 
-Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping
+            end_row = row - 1
 
-============================================================
-STEP RULES
-============================================================
+            # -------------------------------------------------
+            # 🔥 MERGE TEST SCENARIO ID COLUMN (Column 2)
+            # -------------------------------------------------
+            if end_row > start_row:
+                ws.merge_cells(start_row=start_row, start_column=2,
+                                end_row=end_row, end_column=2)
 
-1. Step numbering must be strictly sequential:
-   Step 01
-   Step 02
-   Step 03
-   ...
+            tc_counter += 1
 
-2. Step 01 must be:
-Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA
+        output_file = os.path.join(
+            self.output_dir,
+            f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
+        )
 
-3. Step 02 must be:
-Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA
+        wb.save(output_file)
 
-4. Business validation steps:
-   - Each step must validate exactly one distinct business rule.
-   - No duplicate validations.
+        logger.info(f"Excel generated: {output_file}")
 
-5. Expected Results:
-   - Must begin with “The system”.
-   - Must clearly describe system enforcement or behavior.
-   - Do NOT use:
-     verify
-     check
-     ensure
-     confirm
-     should
-     may
-     if applicable
-
-6. Requirement Mapping:
-   - All business validation steps must map using:
-     {user_story_id}_AC_XX
-   - Login and Logout must use NA.
-
-7. Screen Names:
-   - Must remain consistent across all steps.
-   - Use exact functional screen labels derived from story.
-
-============================================================
-MANDATORY TERMINATION STEP
-============================================================
-
-The last sequential step MUST be:
-
-Step XX | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
-
-============================================================
-User Story:
-{user_story}
-
-Description:
-{description}
-
-Acceptance Criteria:
-{ac}
-
-Generate the complete test case now in strict plain text format.
+        state["excel_output"] = output_file
+        return state
