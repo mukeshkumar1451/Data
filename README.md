@@ -1,7 +1,6 @@
 import logging
 from typing import Dict
 from langchain_openai import AzureChatOpenAI
-from langchain_core.prompts import PromptTemplate
 from config.config import get
 
 logger = logging.getLogger(__name__)
@@ -20,69 +19,96 @@ class LLMTestcaseGeneratorAgent:
         )
 
     # ---------------------------------------------------------
-    # BUILD DYNAMIC PROMPT
+    # BUILD INTELLIGENT PROMPT
     # ---------------------------------------------------------
     def _build_prompt(self, payload: Dict) -> str:
 
         return f"""
-You are a Senior Mortgage QA Analyst.
+You are a Senior Mortgage QA Analyst generating enterprise-grade LOS test cases.
 
 ============================================================
-ROLE BEHAVIORAL INTELLIGENCE RULE
+CORE PRINCIPLE
 ============================================================
 
 1. Historical data defines HOW validation is performed.
 2. Acceptance Criteria defines WHAT must be validated.
 3. You MUST combine both.
-4. You MUST NOT copy or restate Acceptance Criteria sentences.
-5. Acceptance Criteria is a contract reference only.
+4. You MUST NOT copy Acceptance Criteria text.
+5. You MUST NOT restate AC sentences as steps.
+6. AC is a contract reference only.
 
-If AC sentence structure appears in output, the result is invalid.
+If AC wording appears directly in output, result is invalid.
 
 ============================================================
-FLOW REASONING INSTRUCTIONS
+CHANNEL ENTITY ENFORCEMENT
 ============================================================
 
-Analyze historical steps carefully.
+Channel: {payload["channel"]}
+
+If Channel is RTL or DTC:
+- DO NOT generate Mortgage Broker related steps.
+- DO NOT generate Broker License validations.
+- DO NOT generate Broker Compensation logic.
+- Ignore broker-related historical patterns completely.
+
+If Channel is WHL or CL1:
+- Include Mortgage Broker validations ONLY if present in Acceptance Criteria.
+- Privilege validations must be included when applicable.
+
+Violation of channel rule makes output invalid.
+
+============================================================
+FLOW INTELLIGENCE
+============================================================
+
+Flow Intelligence:
+{payload["flow_intelligence"]}
 
 From historical steps:
-- Detect ordering pattern.
-- Detect navigation sequence.
-- Detect save cycle pattern.
-- Detect audit verification pattern.
-- Detect dropdown/checkbox interaction pattern.
+- Identify navigation order.
+- Identify save cycle pattern.
+- Identify audit validation pattern.
+- Identify dropdown/checkbox interaction pattern.
+- Identify value transition behavior.
 
-From flow_intelligence:
-- If audit_behavioral_pattern is True → generate change + save + audit validation.
-- If requires_save_cycle is True → include save step after value change.
-- If value_transition_pattern is True → validate alternate value as second cycle.
-- If dropdown pattern exists → include selection behavior.
-- If checkbox pattern exists → include toggle behavior.
+Rules:
 
-Never hardcode behavior.
-Use dominance pattern from historical content.
+If audit_behavioral_pattern is True:
+- Generate value change → save → audit validation flow.
 
-============================================================
-AC USAGE RULE
-============================================================
+If requires_save_cycle is True:
+- Include save step after data modification.
 
-Extract validation intent from Acceptance Criteria.
-Transform into behavioral enterprise test steps.
-Do NOT copy AC text.
-Do NOT generate steps starting with "Verify that".
-Do NOT rephrase AC directly.
+If value_transition_pattern is True:
+- Generate alternate value validation cycle.
 
-============================================================
-OUTPUT FORMAT
-============================================================
+If has_dropdown_pattern is True:
+- Include dropdown selection behavior.
 
-Each step must follow:
-Step XX | Description | Screen Name | Test Data | Expected Result | Requirement Mapping
+If has_checkbox_pattern is True:
+- Include checkbox toggle behavior.
 
-Expected Result must start with "The system".
+Never invent logic.
+Apply only dominant historical patterns.
 
 ============================================================
-INPUT DATA
+AC TRANSFORMATION RULE
+============================================================
+
+Acceptance Criteria:
+{payload["ac"]}
+
+Extract validation intent only.
+
+Transform into enterprise behavioral validation steps.
+
+Do NOT:
+- Start steps with "Verify that"
+- Copy AC sentence structure
+- Rephrase AC line-by-line
+
+============================================================
+CONTEXT
 ============================================================
 
 User Story ID:
@@ -94,23 +120,29 @@ Title:
 Description:
 {payload["description"]}
 
-Acceptance Criteria:
-{payload["ac"]}
-
-Channel:
-{payload["channel"]}
-
 Precondition:
 {payload["precondition"]}
 
 Historical Steps:
 {payload["historical_steps"]}
 
-Flow Intelligence:
-{payload["flow_intelligence"]}
-
 ============================================================
-Generate complete enterprise-grade behavioral test case now.
+OUTPUT FORMAT (STRICT)
+============================================================
+
+Each step must be written exactly as:
+
+Step XX | Description | Screen Name | Test Data | Expected Result | Requirement Mapping
+
+Rules:
+- Sequential numbering
+- One validation per step
+- Expected Result must start with "The system"
+- Login first step
+- Open Loan second step
+- Logout last step
+
+Generate the complete behavioral test case now.
 """
 
     # ---------------------------------------------------------
