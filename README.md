@@ -13,7 +13,7 @@ class ExcelExportAgent:
         self.output_dir = get("EXCEL_OUTPUT_DIR")
 
     # -------------------------------------------------
-    # STRICT PIPE FORMAT PARSER (NO REGEX)
+    # SAFE PIPE FORMAT PARSER
     # -------------------------------------------------
     def _parse_llm_output(self, llm_text: str):
 
@@ -31,11 +31,19 @@ class ExcelExportAgent:
                 continue
 
             if line.startswith("Test Scenario Description:") or line.startswith("Scenario:"):
-                scenario = line.replace("Test Scenario Description:", "").replace("Scenario:", "").strip()
+                scenario = (
+                    line.replace("Test Scenario Description:", "")
+                        .replace("Scenario:", "")
+                        .strip()
+                )
                 continue
 
-            if line.startswith("Script:") or line.startswith("Test Script Description:"):
-                script = line.replace("Script:", "").replace("Test Script Description:", "").strip()
+            if line.startswith("Test Script Description:") or line.startswith("Script:"):
+                script = (
+                    line.replace("Test Script Description:", "")
+                        .replace("Script:", "")
+                        .strip()
+                )
                 continue
 
             if line.startswith("Test Scenario Id:"):
@@ -46,8 +54,12 @@ class ExcelExportAgent:
 
                 parts = [p.strip() for p in line.split("|")]
 
-                if len(parts) != 6:
+                if len(parts) < 6:
+                    logger.warning(f"Skipping malformed step line: {line}")
                     continue
+
+                if len(parts) > 6:
+                    parts = parts[:5] + [" | ".join(parts[5:])]
 
                 steps.append({
                     "step_no": parts[0],
@@ -66,6 +78,28 @@ class ExcelExportAgent:
         }
 
     # -------------------------------------------------
+    # FILE VERSIONING LOGIC
+    # -------------------------------------------------
+    def _get_unique_output_path(self, base_filename: str) -> str:
+
+        base_path = os.path.join(self.output_dir, base_filename)
+
+        if not os.path.exists(base_path):
+            return base_path
+
+        name, ext = os.path.splitext(base_filename)
+        counter = 1
+
+        while True:
+            new_filename = f"{name}_{counter}{ext}"
+            new_path = os.path.join(self.output_dir, new_filename)
+
+            if not os.path.exists(new_path):
+                return new_path
+
+            counter += 1
+
+    # -------------------------------------------------
     # MAIN EXECUTION
     # -------------------------------------------------
     def run(self, state: dict) -> dict:
@@ -76,11 +110,9 @@ class ExcelExportAgent:
 
         wb = load_workbook(self.template_path)
 
-        # -------------------------------------------------
-        #  DELETE UNUSED SHEETS BASED ON CHANNEL DETECTION
-        # -------------------------------------------------
         detected_channels = state.get("channels", [])
 
+        # Remove unused sheets
         if detected_channels:
             for sheet_name in list(wb.sheetnames):
                 if sheet_name not in detected_channels:
@@ -90,41 +122,42 @@ class ExcelExportAgent:
 
         user_story_id = state["user_story_id"]
 
-        # -------------------------------------------------
-        # PROCESS EACH CHANNEL
-        # -------------------------------------------------
-        for channel, llm_text in state["llm_outputs"].items():
+        for channel, llm_text in state.get("llm_outputs", {}).items():
 
             if channel not in wb.sheetnames:
                 logger.warning(f"Sheet '{channel}' not found after cleanup.")
                 continue
 
+            # Save raw LLM output for debugging
+            debug_path = os.path.join(self.output_dir, f"llm_output_{channel}.txt")
+            with open(debug_path, "w", encoding="utf-8") as f:
+                f.write(llm_text)
+
             ws = wb[channel]
             row = 2
-
-            #  Reset counter per channel
             tc_counter = 1
 
             parsed = self._parse_llm_output(llm_text)
 
-            # logger.info(f"{channel} -> Parsed {len(parsed['steps'])} steps")
-
             if not parsed["steps"]:
+                logger.error(f"No valid steps parsed for channel {channel}")
                 continue
 
-            selected_preconditions = state.get("selected_preconditions", {})
-            precondition = selected_preconditions.get(channel, "")
+            scenario = parsed["scenario"] or f"Validate {state.get('user_story', '')}"
+            script = parsed["script"] or "Positive validation aligned to Acceptance Criteria."
+
+            channel_ctx = state.get("channel_context", {})
+            precondition = channel_ctx.get(channel, {}).get("precondition", "")
 
             tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
-
-            start_row = row  # for merging
+            start_row = row
 
             for idx, step in enumerate(parsed["steps"]):
 
                 ws.cell(row, 1).value = tc_id if idx == 0 else ""
                 ws.cell(row, 2).value = f"{user_story_id}-{channel}" if idx == 0 else ""
-                ws.cell(row, 3).value = parsed["scenario"] if idx == 0 else ""
-                ws.cell(row, 4).value = parsed["script"] if idx == 0 else ""
+                ws.cell(row, 3).value = scenario if idx == 0 else ""
+                ws.cell(row, 4).value = script if idx == 0 else ""
                 ws.cell(row, 5).value = precondition if idx == 0 else ""
 
                 ws.cell(row, 6).value = step["step_no"]
@@ -137,25 +170,27 @@ class ExcelExportAgent:
                 ws.cell(row, 12).value = ""
                 ws.cell(row, 13).value = ""
                 ws.cell(row, 14).value = ""
-                ws.cell(row, 15).value = parsed["requirement"] 
+                ws.cell(row, 15).value = step["requirement"]
 
                 row += 1
 
             end_row = row - 1
 
-            # -------------------------------------------------
-            # 🔥 MERGE TEST SCENARIO ID COLUMN (Column 2)
-            # -------------------------------------------------
             if end_row > start_row:
-                ws.merge_cells(start_row=start_row, start_column=2,
-                                end_row=end_row, end_column=2)
+                ws.merge_cells(
+                    start_row=start_row,
+                    start_column=2,
+                    end_row=end_row,
+                    end_column=2
+                )
 
             tc_counter += 1
 
-        output_file = os.path.join(
-            self.output_dir,
-            f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
-        )
+        # -------------------------------------------------
+        # OUTPUT FILE WITH AUTO VERSIONING
+        # -------------------------------------------------
+        base_filename = f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
+        output_file = self._get_unique_output_path(base_filename)
 
         wb.save(output_file)
 
