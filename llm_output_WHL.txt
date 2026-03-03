@@ -1,0 +1,167 @@
+### Test Case: Modernized Audit Additions - DIS > Generate Disclosures Fields
+
+---
+
+#### Test Case ID:  
+`TC_WHL_001_ModernizedAudit_DISFields`
+
+#### User Story:  
+Modernized Audit additions - DIS > Generate Disclosures Fields
+
+#### Description:  
+This test case validates the addition of new fields to the Modernized Audit functionality in the DIS > Generate Disclosures section. The fields include "HPML," "Intent to Proceed," "Mortgage Broker Fee/Compensation Agreement," and "Mortgage Broker License Type." The test ensures that these fields are rendered correctly, contain the expected options, and adhere to privilege restrictions where applicable.
+
+---
+
+### Precondition:  
+1. A loan must be created using a Mismo 3.4 XML file with the following details:  
+   - **Channel**: WHL  
+   - **Loan Purpose**: Purchase  
+   - **Loan Type**: Conventional  
+   - **Product**: CF30  
+   - **Stage**: Created  
+   - **Number of Borrowers**: Any  
+
+2. User must have appropriate privileges to access the DIS > Generate Disclosures section.
+
+---
+
+### Acceptance Criteria:  
+1. **HPML Field**:  
+   - Rendered as a dropdown.  
+   - Contains options: "Yes" and "No."  
+   - Not privilege restricted.  
+
+2. **Intent to Proceed Field**:  
+   - Rendered as a checkbox.  
+   - Can be checked and unchecked.  
+   - Not privilege restricted.  
+
+3. **Mortgage Broker Fee/Compensation Agreement Field**:  
+   - Rendered as a dropdown.  
+   - Contains options: "Yes" and "No."  
+   - Restricted based on user privilege.  
+
+4. **Mortgage Broker License Type Field**:  
+   - Rendered as a dropdown.  
+   - Contains options: "CFL," "DRE," and "RML."  
+   - Restricted based on user privilege.  
+
+---
+
+### Test Steps:
+
+#### Step 1: Login to the Application  
+- **Description**: Login to the H2O application in the UAT1 environment.  
+- **Expected Result**: Login should be successful, and the user should land on the dashboard.  
+
+---
+
+#### Step 2: Open the Loan  
+- **Description**: Open the loan created as per the precondition.  
+- **Expected Result**: Loan Summary screen should be displayed for the selected loan.  
+
+---
+
+#### Step 3: Navigate to DIS > Generate Disclosures > Generate Disclosure  
+- **Description**: Navigate to the "Generate Disclosure" section under DIS > Generate Disclosures.  
+- **Expected Result**: The "Generate Disclosure" screen should be displayed.  
+
+---
+
+#### Step 4: Verify the "HPML" Field  
+- **Description**: Verify the "HPML" field in the "Generate Disclosure" section.  
+  - Ensure the field is rendered as a dropdown.  
+  - Verify the dropdown contains the options: "Yes" and "No."  
+  - Confirm that the field is not privilege restricted.  
+- **Expected Result**:  
+  - "HPML" field should be rendered as a dropdown.  
+  - Dropdown should contain exactly two options: "Yes" and "No."  
+  - Field should not be privilege restricted.  
+
+---
+
+#### Step 5: Navigate to DIS > Generate Disclosures  
+- **Description**: Navigate to the "Generate Disclosures" section.  
+- **Expected Result**: The "Generate Disclosures" screen should be displayed.  
+
+---
+
+#### Step 6: Verify the "Intent to Proceed" Field  
+- **Description**: Verify the "Intent to Proceed" field in the "Generate Disclosures" section.  
+  - Ensure the field is rendered as a checkbox.  
+  - Verify that the checkbox can be checked and unchecked.  
+  - Confirm that the field is not privilege restricted.  
+- **Expected Result**:  
+  - "Intent to Proceed" field should be rendered as a checkbox.  
+  - Checkbox should be functional (can be checked and unchecked).  
+  - Field should not be privilege restricted.  
+
+---
+
+#### Step 7: Navigate to DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement  
+- **Description**: Navigate to the "Mortgage Broker Fee/Compensation Agreement" section under DIS > Generate Disclosures.  
+- **Expected Result**: The "Mortgage Broker Fee/Compensation Agreement" screen should be displayed.  
+
+---
+
+#### Step 8: Verify the "Mortgage Broker Fee/Compensation Agreement" Field  
+- **Description**: Verify the "Mortgage Broker Fee/Compensation Agreement" field.  
+  - Ensure the field is rendered as a dropdown.  
+  - Verify the dropdown contains the options: "Yes" and "No."  
+  - Confirm that the field is restricted based on user privilege.  
+- **Expected Result**:  
+  - "Mortgage Broker Fee/Compensation Agreement" field should be rendered as a dropdown.  
+  - Dropdown should contain exactly two options: "Yes" and "No."  
+  - Field should be restricted based on user privilege.  
+
+---
+
+#### Step 9: Verify the "Mortgage Broker License Type" Field  
+- **Description**: Verify the "Mortgage Broker License Type" field in the "Mortgage Broker Fee/Compensation Agreement" section.  
+  - Ensure the field is rendered as a dropdown.  
+  - Verify the dropdown contains the options: "CFL," "DRE," and "RML."  
+  - Confirm that the field is restricted based on user privilege.  
+- **Expected Result**:  
+  - "Mortgage Broker License Type" field should be rendered as a dropdown.  
+  - Dropdown should contain exactly three options: "CFL," "DRE," and "RML."  
+  - Field should be restricted based on user privilege.  
+
+---
+
+#### Step 10: Validate Privilege Restrictions  
+- **Description**: Attempt to access the "Mortgage Broker Fee/Compensation Agreement" and "Mortgage Broker License Type" fields with a user who does not have the required privileges.  
+- **Expected Result**:  
+  - Fields should not be accessible to users without the required privileges.  
+  - Appropriate error or restriction message should be displayed.  
+
+---
+
+#### Step 11: Validate Audit Logs  
+- **Description**: Navigate to Tools > Modernized Audit and verify the audit logs for changes made to the fields.  
+- **Expected Result**:  
+  - Audit logs should capture changes made to the "HPML," "Intent to Proceed," "Mortgage Broker Fee/Compensation Agreement," and "Mortgage Broker License Type" fields.  
+  - Logs should include previous and new values for each field.  
+
+---
+
+### Postcondition:  
+1. Ensure all changes made during the test are reverted.  
+2. Close all open screens and log out of the application.  
+
+---
+
+### Test Data:  
+- Loan details as per precondition.  
+- User credentials with and without required privileges.  
+
+---
+
+### Notes:  
+- Ensure that privilege restrictions are tested thoroughly for the "Mortgage Broker Fee/Compensation Agreement" and "Mortgage Broker License Type" fields.  
+- Validate dropdown options against the acceptance criteria.  
+- Verify audit logs for accuracy and completeness.  
+
+--- 
+
+### End of Test Case

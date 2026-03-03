@@ -1,0 +1,148 @@
+### Test Case: Verify Modernized Audit Additions - DIS > Generate Disclosures Fields
+
+---
+
+#### Test Case ID:  
+`MOD_AUDIT_DIS_001`
+
+#### User Story:  
+Modernized Audit additions - DIS > Generate Disclosures Fields
+
+#### Description:  
+This test case validates the addition of new fields to the Modernized Audit functionality in the DIS > Generate Disclosures section. The fields include HPML, Intent to Proceed, Mortgage Broker Fee/Compensation Agreement, and Mortgage Broker License Type. The test ensures proper rendering, dropdown options, privilege restrictions, and functionality of these fields.
+
+#### Precondition:  
+1. A loan is created in the Broker Portal with the following attributes:  
+   - Channel: CL1  
+   - Loan Purpose: Refinance  
+   - Loan Type: Conventional  
+   - Product: CF30  
+   - Loan Stage: Created  
+2. User has appropriate access to the DIS > Generate Disclosures section.
+
+---
+
+### Test Steps and Expected Results:
+
+#### **HPML Field Validation**
+
+1. **Step No:** 1  
+   **Description:** Log in to the H2O-A application in the UAT environment.  
+   **Expected Result:** Login should be successful.
+
+2. **Step No:** 2  
+   **Description:** Navigate to `DIS > Generate Disclosures > Generate Disclosure`.  
+   **Expected Result:** The "Generate Disclosure" screen should be displayed.
+
+3. **Step No:** 3  
+   **Description:** Verify that the "HPML" field is rendered as a Dropdown.  
+   **Expected Result:** The "HPML" field should be displayed as a dropdown.
+
+4. **Step No:** 4  
+   **Description:** Verify that the "HPML" dropdown contains exactly the following options:  
+   - Yes  
+   - No  
+   **Expected Result:** The dropdown should display only the options "Yes" and "No".
+
+5. **Step No:** 5  
+   **Description:** Verify that the "HPML" field is not privilege restricted.  
+   **Expected Result:** The field should be accessible to all users without privilege restrictions.
+
+---
+
+#### **Intent to Proceed Field Validation**
+
+6. **Step No:** 6  
+   **Description:** Navigate to `DIS > Generate Disclosures`.  
+   **Expected Result:** The "Generate Disclosures" screen should be displayed.
+
+7. **Step No:** 7  
+   **Description:** Verify that the "Intent to Proceed" field is rendered as a Checkbox.  
+   **Expected Result:** The "Intent to Proceed" field should be displayed as a checkbox.
+
+8. **Step No:** 8  
+   **Description:** Verify that the "Intent to Proceed" checkbox can be checked and unchecked.  
+   **Expected Result:** The checkbox should allow toggling between checked and unchecked states.
+
+9. **Step No:** 9  
+   **Description:** Verify that the "Intent to Proceed" field is not privilege restricted.  
+   **Expected Result:** The field should be accessible to all users without privilege restrictions.
+
+---
+
+#### **Mortgage Broker Fee/Compensation Agreement Field Validation**
+
+10. **Step No:** 10  
+    **Description:** Navigate to `DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement`.  
+    **Expected Result:** The "Mortgage Broker Fee/Compensation Agreement" screen should be displayed.
+
+11. **Step No:** 11  
+    **Description:** Verify that the "Mortgage Broker Fee/Compensation Agreement" field is rendered as a Dropdown.  
+    **Expected Result:** The "Mortgage Broker Fee/Compensation Agreement" field should be displayed as a dropdown.
+
+12. **Step No:** 12  
+    **Description:** Verify that the "Mortgage Broker Fee/Compensation Agreement" dropdown contains exactly the following options:  
+    - Yes  
+    - No  
+    **Expected Result:** The dropdown should display only the options "Yes" and "No".
+
+13. **Step No:** 13  
+    **Description:** Verify that the "Mortgage Broker Fee/Compensation Agreement" field is restricted based on user privilege.  
+    **Expected Result:** The field should only be accessible to users with the appropriate privileges.
+
+---
+
+#### **Mortgage Broker License Type Field Validation**
+
+14. **Step No:** 14  
+    **Description:** Navigate to `DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement`.  
+    **Expected Result:** The "Mortgage Broker Fee/Compensation Agreement" screen should be displayed.
+
+15. **Step No:** 15  
+    **Description:** Verify that the "Mortgage Broker License Type" field is rendered as a Dropdown.  
+    **Expected Result:** The "Mortgage Broker License Type" field should be displayed as a dropdown.
+
+16. **Step No:** 16  
+    **Description:** Verify that the "Mortgage Broker License Type" dropdown contains exactly the following options:  
+    - CFL  
+    - DRE  
+    - RML  
+    **Expected Result:** The dropdown should display only the options "CFL", "DRE", and "RML".
+
+17. **Step No:** 17  
+    **Description:** Verify that the "Mortgage Broker License Type" field is restricted based on user privilege.  
+    **Expected Result:** The field should only be accessible to users with the appropriate privileges.
+
+18. **Step No:** 18  
+    **Description:** Verify that the "Mortgage Broker License Type" field appears only when `SubPropState = CA`.  
+    **Expected Result:** The field should be displayed only when the SubPropState is set to "CA".
+
+---
+
+### Audit Trail Validation
+
+19. **Step No:** 19  
+    **Description:** Navigate to the `Audit Trail` tab and verify that an entry is created for any changes made to the fields.  
+    **Expected Result:** The audit trail should capture the following details for each field change:  
+    - User who made the change  
+    - Time Occurred  
+    - Previous Value  
+    - New Value  
+    - Field Name  
+
+---
+
+### Post-Condition:  
+1. Ensure all changes made during the test are reverted to their original state.  
+2. Log out of the H2O-A application.
+
+---
+
+### Notes:  
+- Privilege restrictions for "Mortgage Broker Fee/Compensation Agreement" and "Mortgage Broker License Type" fields should be validated with both privileged and non-privileged users.  
+- Ensure that the dropdown options are case-sensitive and match exactly as specified.  
+- Verify that the audit trail entries are accurate and complete for all field changes.  
+
+--- 
+
+### End of Test Case

@@ -1,0 +1,147 @@
+### Test Case: Modernized Audit Additions - DIS > Generate Disclosures Fields
+
+---
+
+#### Test Case ID:  
+`DTC_2024_001`
+
+#### Title:  
+Validation of Modernized Audit Additions for DIS > Generate Disclosures Fields
+
+#### User Story:  
+Modernized Audit additions - DIS > Generate Disclosures Fields
+
+#### Description:  
+This test case validates the addition of new fields to the Modernized Audit functionality in the DIS > Generate Disclosures section. The fields include "HPML," "Intent to Proceed," "Mortgage Broker Fee/Compensation Agreement," and "Mortgage Broker License Type." The test ensures that these fields are rendered correctly, contain the expected options, and adhere to privilege restrictions where applicable.
+
+---
+
+### Preconditions:
+1. A loan must be created using a Mismo 3.4 XML file with the following attributes:
+   - **Channel**: DTC  
+   - **Loan Type**: Conventional  
+   - **Document Type**: Full  
+   - **Loan Stage**: Application Accepted  
+   - **Product**: Any Fixed Buydown Product (Amount should NOT be split between different parties).  
+   - **Early Disclosures**: Generated and sent with the Fixed Buydown Product.  
+2. The loan must be created after the February 2024 release deployment.  
+3. The user must have access to the H2O-A system in the UAT1 environment.  
+4. Privilege rules for restricted fields must be configured in the system.  
+
+---
+
+### Acceptance Criteria:
+1. **HPML Field**:
+   - Verify that the "HPML" field is rendered as a dropdown.
+   - Verify that the dropdown contains the options: "Yes" and "No."
+   - Verify that the field is not privilege restricted.
+
+2. **Intent to Proceed Field**:
+   - Verify that the "Intent to Proceed" field is rendered as a checkbox.
+   - Verify that the checkbox can be checked and unchecked.
+   - Verify that the field is not privilege restricted.
+
+3. **Mortgage Broker Fee/Compensation Agreement Field**:
+   - Verify that the "Mortgage Broker Fee/Compensation Agreement" field is rendered as a dropdown.
+   - Verify that the dropdown contains the options: "Yes" and "No."
+   - Verify that the field is restricted based on user privilege.
+
+4. **Mortgage Broker License Type Field**:
+   - Verify that the "Mortgage Broker License Type" field is rendered as a dropdown.
+   - Verify that the dropdown contains the options: "CFL," "DRE," and "RML."
+   - Verify that the field is restricted based on user privilege.
+   - Verify that the field appears only when `SubPropState = CA`.
+
+---
+
+### Test Steps:
+
+#### Step 1: Log in to H2O-A
+- **Description**: Log in to the H2O-A system in the UAT1 environment using valid credentials.  
+- **Expected Result**: Login should be successful, and the user should land on the dashboard.
+
+---
+
+#### Step 2: Open the Loan
+- **Description**: Open the loan created as per the preconditions.  
+- **Expected Result**: The Loan Summary screen should be displayed.
+
+---
+
+#### Step 3: Navigate to DIS > Generate Disclosures > Generate Disclosure
+- **Description**: Navigate to the "Generate Disclosure" section under DIS > Generate Disclosures.  
+- **Expected Result**: The "Generate Disclosure" screen should be displayed.
+
+---
+
+#### Step 4: Validate the "HPML" Field
+- **Description**: Verify the "HPML" field.  
+  - Check that the field is rendered as a dropdown.  
+  - Verify that the dropdown contains the options: "Yes" and "No."  
+  - Confirm that the field is not privilege restricted.  
+- **Expected Result**:  
+  - The "HPML" field should be displayed as a dropdown.  
+  - The dropdown should contain the options: "Yes" and "No."  
+  - The field should not be privilege restricted.
+
+---
+
+#### Step 5: Validate the "Intent to Proceed" Field
+- **Description**: Verify the "Intent to Proceed" field.  
+  - Check that the field is rendered as a checkbox.  
+  - Verify that the checkbox can be checked and unchecked.  
+  - Confirm that the field is not privilege restricted.  
+- **Expected Result**:  
+  - The "Intent to Proceed" field should be displayed as a checkbox.  
+  - The checkbox should be functional (checkable and uncheckable).  
+  - The field should not be privilege restricted.
+
+---
+
+#### Step 6: Navigate to DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement
+- **Description**: Navigate to the "Mortgage Broker Fee/Compensation Agreement" section under DIS > Generate Disclosures.  
+- **Expected Result**: The "Mortgage Broker Fee/Compensation Agreement" screen should be displayed.
+
+---
+
+#### Step 7: Validate the "Mortgage Broker Fee/Compensation Agreement" Field
+- **Description**: Verify the "Mortgage Broker Fee/Compensation Agreement" field.  
+  - Check that the field is rendered as a dropdown.  
+  - Verify that the dropdown contains the options: "Yes" and "No."  
+  - Confirm that the field is restricted based on user privilege.  
+- **Expected Result**:  
+  - The "Mortgage Broker Fee/Compensation Agreement" field should be displayed as a dropdown.  
+  - The dropdown should contain the options: "Yes" and "No."  
+  - The field should be restricted based on user privilege.
+
+---
+
+#### Step 8: Validate the "Mortgage Broker License Type" Field
+- **Description**: Verify the "Mortgage Broker License Type" field.  
+  - Check that the field is rendered as a dropdown.  
+  - Verify that the dropdown contains the options: "CFL," "DRE," and "RML."  
+  - Confirm that the field is restricted based on user privilege.  
+  - Verify that the field appears only when `SubPropState = CA`.  
+- **Expected Result**:  
+  - The "Mortgage Broker License Type" field should be displayed as a dropdown.  
+  - The dropdown should contain the options: "CFL," "DRE," and "RML."  
+  - The field should be restricted based on user privilege.  
+  - The field should appear only when `SubPropState = CA`.
+
+---
+
+#### Step 9: Log Out
+- **Description**: Log out of the H2O-A system.  
+- **Expected Result**: Logout should be successful.
+
+---
+
+### Postconditions:
+1. Ensure that all changes made during the test are reverted (if applicable).  
+2. Verify that the loan remains in its original state as per the preconditions.  
+
+---
+
+### Notes:
+- Ensure that privilege rules are configured correctly before executing the test.  
+- If any field fails validation, log the issue with detailed steps to reproduce.
