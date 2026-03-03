@@ -1,56 +1,185 @@
-{
-  "story_id": "718521",
-  "channel": "RTL",
-  "title_used_for_search": "Modernized Audit additions - DIS > Generate Disclosures Fields",
-  "search_query_used": "Modernized OR Audit OR additions OR DIS OR Generate OR Disclosures OR Fields",
-  "retrieved_count": 10,
-  "retrieved_documents": [
-    {
-      "testCaseId": "586422_585804_RTL_06",
-      "content_preview": "\nTestCase: 586422_585804_RTL_06\nChannels: RTL\n\nPre-Condition & Assumptions:\nCreate a loan using Mismo 3.4 XML file.\n\n1. Channel: RTL\n2. Loan Type: Conventional\n3. Document type: Full\n4. Loan Stage: Application Accepted.\n5. Product: Any ARM Product. \nExample: CL5 or NRSEF30\n6. Early Disclosures should be generated and sent with any ARM Product.\n7. Loan should be after Feb 2024 release deployment.\n\n\n=========== TEST STEPS ===========\n\nStep 1\nDescription: Log in to H2O-A in UAT1 Environment\nScreen: Dashboard\nTest Data: https://qch2o.caliberdirect.com\nExpected Result: Login should be successful\n\nStep 2\nDescription: Open the loan which is created as per the Pre-Conditions.\nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan Summary screen should be opened\n\nStep 3\nDescription: Navigate to DIS> Generate Disclosure screen\nScreen: Generate Disclosure\nTest Data: nan\nExpected Result: Generate Disclosure screen should be displayed.\n\nStep 4\nDescription: Click on the 'View All COC Fields' button\nScreen: Generate Docs\nTest Data: nan\nExpected Result: 1. 'TRID Product Type' should be present in the Loan Attribute section of the grid.\n2. Sent Disclosure, Last Disclosure and Loan columns should display 'ARM' as the product assigned was a ARM Product.\n3. Lock column should display 'NA' as Lock column will not be applicable for this attribute.\n\nStep 5\nDescription: Click on Close button.\nScreen: Generate Docs\nTest Data: nan\nExpected Result: Change Of Circumstance field comparison Modal should be closed.\n\nStep 6\nDescription: Stage the Loan to Closing Disclosures Ordered and Navigate to DOCS> Generate Docs \nScreen: Generate Docs\nTest Data: nan\nExpected Result: Generate Docs screen should be displayed.\n\nStep 7\nDescription: Generate and send CD - Initial Borrower Package.\nNote:\nCD - Settlement Agent Approval should be generated and posted.\nCredit, AUS and Fee Quote and should be completed as per the process prior this step execution.\nScreen: Generate Docs\nTest Data: nan\nExpected Result"
-    },
-    {
-      "testCaseId": "567672_RTL_01",
-      "content_preview": "\nTestCase: 567672_RTL_01\nChannels: RTL\n\nPre-Condition & Assumptions:\nPre-Conditions:\n1. Channel: RTL\n2. Loan should have the below Audit entries starting from 7/14/2022 to 7/15/2023(within the given dates)\n>Property Type\n>Appraisal Type\n>Underwriting Method\n>Impounds Type\n\nReference Screens:\n>Property Type : 1008>Appraisal & Property>Property Information>Type of Property.\n>Appraisal Type : 1008>Appraisal & Property>Appraisal Type\n>Underwriting Method : 1008>UW Analysis>AU/Audit Findings>Radio button or checkbox selection \n>Impounds Type : 1003>Loan Summary>Loan Details>Impounds\n\n=========== TEST STEPS ===========\n\nStep 1\nDescription: Log in to UAT1 H2O-A\nScreen: https://qch2o.caliberdirect.com\nTest Data: nan\nExpected Result: Login should be successful\n\nStep 2\nDescription: Open a Loan which is created or existing as per the preconditions  \nScreen: Dashboard\nTest Data: nan\nExpected Result: Loan should be opened and Loan summary page should be opened.\n\nStep 3\nDescription: Hover over 'Tools' and verify the new Item 'Modernized Audit' is displayed.\nScreen: Loan Header\nTest Data: nan\nExpected Result: The New Item 'Modernized Audit' should be displayed to the user when user hover over 'Tools'\n\nStep 4\nDescription: Click on the new Item 'Modernized Audit'.\nScreen: Modernized Audit window\nTest Data: nan\nExpected Result: Verify the system opens a New Window.\n\nStep 5\nDescription: Type 'Property Type' in Search field and click on Search Button\nScreen: Modernized Audit window\nTest Data: nan\nExpected Result: Audit records of Property Type should be displayed\n\nStep 6\nDescription: Note down the Previous value and New value.\nScreen: Modernized Audit window\nTest Data: nan\nExpected Result: Previous value and New value should be noted down.\n\nStep 7\nDescription: Type Appraisal Type in Search field and click on Search Button.\nScreen: Modernized Audit window\nTest Data: nan\nExpected Result: Audit records of Appraisal Type should be displayed\n\nStep 8\nDescription: Note down the Previous value"
-    },
-    {
-      "testCaseId": "586422_585804_RTL_01",
-      "content_preview": "\nTestCase: 586422_585804_RTL_01\nChannels: RTL\n\nPre-Condition & Assumptions:\nCreate a loan using Mismo 3.4 XML file.\n\n1. Channel: RTL\n2. Loan Type: Conventional\n3. Document type: Full\n4. Loan Stage: Application Accepted.\n5. Product: CF30\n6. Early Disclosures should be generated and sent with CF30 Product.\n7. Loan should be after Feb 2024 release deployment.\n\n=========== TEST STEPS ===========\n\nStep 1\nDescription: Log in to H2O-A in UAT1 Environment\nScreen: Dashboard\nTest Data: https://qch2o.caliberdirect.com\nExpected Result: Login should be successful\n\nStep 2\nDescription: Open the loan which is created as per the Pre-Conditions.\nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan Summary screen should be opened\n\nStep 3\nDescription: Navigate to DIS> Generate Disclosure screen\nScreen: Generate Disclosure\nTest Data: nan\nExpected Result: Generate Disclosure screen should be displayed.\n\nStep 4\nDescription: Click on the 'View All COC Fields' button\nScreen: Generate Docs\nTest Data: nan\nExpected Result: 1. 'TRID Product Type' should be present in the Loan Attribute section of the grid.\n2. Sent Disclosure, Last Disclosure and Loan columns should display 'Fixed' as the product assigned was CF30 which is a fixed product.\n3. Lock column should display 'NA' as Lock column will not be applicable for this attribute.\n\nStep 5\nDescription: Click on Close button.\nScreen: Generate Docs\nTest Data: nan\nExpected Result: Change Of Circumstance field comparison Modal should be closed.\n\nStep 6\nDescription: Stage the Loan to UW Submitted and complete below tasks for Auto CD Order\n\u2022 Loan is locked\n\u2022 Loan is approved \n\u2022 All Prior to CD conditions have been cleared (Data Validations will run to ensure these have been met) \n\u2022 The Estimated Closing Date is within 14 calendar days\nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan stage should be UW Submitted and sub status should be Closing Disclosure Ordered.\n\nStep 7\nDescription: Navigate to DOCS> Generate Docs \nScreen: Generate Docs\n"
-    },
-    {
-      "testCaseId": "586422_585804_RTL_05",
-      "content_preview": "\nTestCase: 586422_585804_RTL_05\nChannels: RTL\n\nPre-Condition & Assumptions:\nCreate a loan using Mismo 3.4 XML file.\n\n1. Channel: RTL\n2. Loan Type: Conventional\n3. Document type: Full\n4. Loan Stage: Application Accepted.\n5. Product: CF30\n6. Early Disclosures should be generated and sent with CF30 Product.\n7. Loan should be after Feb 2024 release deployment.\n\n\n=========== TEST STEPS ===========\n\nStep 1\nDescription: Log in to H2O-A in UAT1 Environment\nScreen: Dashboard\nTest Data: https://qch2o.caliberdirect.com\nExpected Result: Login should be successful\n\nStep 2\nDescription: Open the loan which is created as per the Pre-Conditions.\nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan Summary screen should be opened\n\nStep 3\nDescription: Stage the loan to UW Submitted and Manual order CD.\nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan stage should be UW Submitted and sub status should be Closing Disclosure Ordered.\n\nStep 4\nDescription: Navigate to DOCS> Generate Docs \nScreen: Generate Docs\nTest Data: nan\nExpected Result: Generate Docs screen should be displayed.\n\nStep 5\nDescription: Generate and send CD - Initial Borrower Package Via USPS.\nNote:\nCD - Settlement Agent Approval should be generated and posted Prior to this step.\n\nScreen: Generate Docs\nTest Data: nan\nExpected Result: CD - Initial Borrower Package should be generated and sent.\n\nStep 6\nDescription: Navigate to Docs > CD Fees Screen and Increase any Fee.\nScreen: CD Fees Screen\nTest Data: nan\nExpected Result: Fee should be Increased.\n\nStep 7\nDescription: Wait till Nightly batch process to be completed\nOR\nRun the task Master Job.\nNote: This process will happen everyday 2pm IST\nScreen: nan\nTest Data: nan\nExpected Result: Nightly batch process or Task Master Job should be completed.\n\nStep 8\nDescription: Navigate to Left panel > File Flow tab and verify the tasks.\nScreen:  File Flow tab\nTest Data: nan\nExpected Result: CDP \u2013 Change Circumstance - CDP should be triggered for the buydown change.\n\nStep 9"
-    },
-    {
-      "testCaseId": "718524_RTL_01",
-      "content_preview": "\nTestCase: 718524_RTL_01\nChannels: RTL\n\nPre-Condition & Assumptions:\nCreate Loan from Customer Portal with below pre-conditions.\n1. Channel: RTL\n2. Loan Purpose: Purchase\n3. Loan Type: Conventional\n4. Product: CF30.\n5. Loan stage: Application Accepted.\n6.  DIS > LE Fees > Rate Information-\n\"Borrower will receive a __  %  /  $  \n$0.00 __ Lender Credit for the interest rate of __ % \" radio button should be selected.\n\n=========== TEST STEPS ===========\n\nStep 01\nDescription: Log in to UAT1 H2O-A\nScreen: Login page\nTest Data: https://uath2o.newrez.com/\nExpected Result: Login should be successful\n\nStep 02\nDescription: Open a Loan which is created as per the preconditions.\nScreen: Dashboard\nTest Data: nan\nExpected Result: Loan should be opened and Loan summary page should be opened.\n\nStep 03\nDescription: Navigate to Audit and Search field YSPPointsAtNoLock in search box\nScreen: Audit\nTest Data: nan\nExpected Result: YSPPointsAtNoLock should be present as Field name along with User, Time Occurred, Previous Value, New Value and New value should match the percent value entered in Rate information.\n\nStep 04\nDescription: Navigate to DIS > LE Fees screen and change the rate information value and click on master Save.\nScreen: nan\nTest Data: nan\nExpected Result: Rate information value should be changed and saved.\n\nStep 05\nDescription: Navigate to Audit and Search field YSPPointsAtNoLock in search box\nScreen: Audit\nTest Data: nan\nExpected Result: YSPPointsAtNoLock should be present as Field name along with User, Time Occurred, Previous Value, New Value and New value should match the percent value entered in Rate information.\n\nStep 06\nDescription: Search field YSPPointsAtNoLock in search box ApplicationTakenByMediumID.\u00a0\nScreen: Audit\nTest Data: nan\nExpected Result: ApplicationTakenByMediumID should be present as Field name along with User, Time Occurred, Previous Value, New Value and Previous Value should be blank and New Value should be 2 by default.\n\nStep 07\nDescription: Navigate t"
-    },
-    {
-      "testCaseId": "573135_RTL_01",
-      "content_preview": "\nTestCase: 573135_RTL_01\nChannels: RTL\n\nPre-Condition & Assumptions:\nCreate a loan using Mismo 3.4 XML file.\nPre-Conditions:\n1. Channel: RTL\n2. Loan Purpose: Purchase\n3. Loan Type: Conventional\n4. Document type: Full\n5. Loan Stage: \"Application Accepted\" \n6. Product: CF30\n\n\n\n\n\n=========== TEST STEPS ===========\n\nStep 01\nDescription: Log in to H2O-A in UAT Environment\nScreen: nan\nTest Data: https://qch2o.caliberdirect.com\nExpected Result: Login should be successful \n\nStep 02\nDescription: Open the loan which is created as per the Pre-Conditions.\nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan Summary screen should be opened\n\nStep 03\nDescription: Navigate to Tools->Modernized Audit.\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Modernized Audit screen should be opened in the new window\n\nStep 04\nDescription: Verify the Fields in new Modernized Audit Screen\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: The following Fields should be available in the new Modernized Audit screen:\n1. Search Frame under Audit \n2. View dropdown with default selection as \"Loan\" \n3. Search text field labeled as Field \n4. \"Date Occurred, From\" Field \n5. \"Date Occurred, To\" Field\n6. Search Button\n7. Reset Filters Button\n\nStep 05\nDescription: Click on calendar icon next to \"Date Occurred, From\"\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Calendar control should be opened\n\nStep 06\nDescription: Select a date on the Calendar \n\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Date selected in Calendar should be loaded in \"Date Occurred, From\" field\n\nStep 07\nDescription: Click on Search Button\nScreen: Modernized Audit\nTest Data: nan\nExpected Result:  \"Date Occurred, To can not be empty while Date Occurred, From is not. Please select both the dates or remove both\" UI message should be displayed\n\nStep 08\nDescription: Click on Ok\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Modernized Audit screen should be displayed\n\nStep 09\nDescription: Re"
-    },
-    {
-      "testCaseId": "718523_RTL_01",
-      "content_preview": "\nTestCase: 718523_RTL_01\nChannels: RTL\n\nPre-Condition & Assumptions:\nCreate a loan from Customer Portal:\n1. Channel: RTL\n2. Loan Purpose: Refinance\n3. Loan Type: Conventional\n4. Product Code: Any\n5. Loan stage should be UW Submitted\n6. Early Disclosure should be generated, sent via eSign ,Esign should be completed and disclosure should be received. \n\n\n=========== TEST STEPS ===========\n\nStep 1\nDescription: Log in to H2O-A in UAT Environment\nScreen: Login Page\nTest Data: https://uath2o.newrez.com\nExpected Result: Login should be successful\n\nStep 2\nDescription: Open the created loan which meets the Pre-Condition column \nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan Summary screen should be opened for the loan.\n\nStep 3\nDescription: Navigate to DOCS --> Closing Details and check the below dates:\n\u2022 Earliest Consummation Date\n\u2022 Most Recent LE Receipt Date\n\u2022 Rescission Date\n\u2022 Agent Disbursement Date\nNote: Enter some date in Agent Disbursement date if date is not present.\nScreen: DOCS --> Closing Details\nTest Data: nan\nExpected Result: Mentioned dates should be present under DOCS --> Closing Details.\n\nStep 4\nDescription: Navigate to Tools --> Modernized Audit and verify the below field values:\n\u2022 Earliest Consummation Date\n\u2022 Most Recent LE Receipt Date\n\u2022 Rescission Date\n\u2022 Agent Disbursement Date\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Previous values should be displayed as blank and New values should be displayed as per step 3\n\nStep 5\nDescription: Navigate to DIS --> Generate Disclosure and change the \"Receipt Date:\" under Transaction History.\nScreen: DIS --> Generate Disclosure\nTest Data: nan\nExpected Result: \"Receipt Date\" should be changed.\n\nStep 6\nDescription: Navigate to DOCS --> Closing Details and verify the \"Most Recent LE Receipt Date\" is same as \"Receipt Date\". Again change the Agent Disbursement Date and Recession date by entering a different date.\nScreen: DOCS --> Closing Details\nTest Data: nan\nExpected Result: Dates should be updated"
-    },
-    {
-      "testCaseId": "573135_RTL_02",
-      "content_preview": "\nTestCase: 573135_RTL_02\nChannels: RTL\n\nPre-Condition & Assumptions:\nCreate a loan using Mismo 3.4 XML file.\nPre-Conditions:\n1. Channel: RTL\n2. Loan Purpose: Purchase\n3. Loan Type: Conventional\n4. Product Code: CF30\n5. Loan Stage: \"Created\"\n6. No. of Application: 2\n7. No. of Borrowers in 1st Application: 2\n8. No. of Borrowers in 2nd Application:2\nFor e.g.: 1st application has Andy \nAmerica and Amy America, and 2nd Application has Alice Firstimer and Ken Customer\n\n\n\n\n=========== TEST STEPS ===========\n\nStep 01\nDescription: Log in to H2O-A in UAT Environment\nScreen: nan\nTest Data: https://qch2o.caliberdirect.com\nExpected Result: Login should be successful \n\nStep 02\nDescription: Open the loan which is created as per the Pre-Conditions.\nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan Summary screen should be opened\n\nStep 03\nDescription: Navigate to Tools->Modernized Audit.\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Modernized Audit screen should be opened in the new window\n\nStep 04\nDescription: Verify the Fields in new Modernized Audit Screen\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: The following Fields should be available in the new Modernized Audit screen:\n1. Search Frame under Audit \n2. View dropdown with default selection as \"Loan\" \n3. Search text field labeled as Field \n4. \"Date Occurred, From\" Field \n5. \"Date Occurred, To\" Field\n6. Search Button\n7. Reset Filters Button\n\nStep 05\nDescription: Click on \"View\" dropdown.\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: \"(P)\" should be displayed before primary borrower of 1st application and \"View\" dropdown should display following options in the order:\n\u2022 Select\n\u2022 Loan\n\u2022 (P) Name of Primary Borrower of 1st Application\n\u2022 Name of Co-Borrower of 1st Application\n\u2022 Name of Borrower of 2nd Application.\n\u2022 Name of Co-borrower of 2nd application.\n\nStep 06\nDescription: Select \"Loan\" from \"View\" dropdown.\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: \"Loan\" from \"View\" dro"
-    },
-    {
-      "testCaseId": "623485_623489_RTL_01",
-      "content_preview": "\nTestCase: 623485_623489_RTL_01\nChannels: RTL\n\nPre-Condition & Assumptions:\n1. Channel: Retail.\n2. Loan Purpose: Purchase.\n3. Loan Type: Conventional..\n4. Product: CF30.\n5. Loan Stage: \"Application Accepted\".\n\nUser should have privilege 1280.\nLoan should be created after Nov release deployment.\n\n=========== TEST STEPS ===========\n\nStep 01\nDescription: Log in to H2O-A in UAT environment.\nScreen: Dashboard\nTest Data: https://qch2o.caliberdirect.com\nExpected Result: Login should be successful.\n\nStep 02\nDescription: Open the loan which is created as per the Pre-Conditions.\nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan summary screen should be opened.\n\nStep 03\nDescription: Navigate to Screens > Pre-Underwriting > Pre-Underwriting main > Expiration Dates and verify the fields.\nScreen: Pre-Underwriting main\nTest Data: nan\nExpected Result: Below new fields should be displayed under Expiration Dates section.\n\u2022 Income Document Date\n\u2022 Assets Document Date\n\nStep 04\nDescription: Click on the text box for \"Income Document Date\" and \"Asset Document Date\" field.\nScreen: Pre-Underwriting main\nTest Data: nan\nExpected Result: Calendar should be opened.\n\nStep 05\nDescription: Select the dates for each field and click on save.\nScreen: Pre-Underwriting main\nTest Data: nan\nExpected Result: Dates should be selected for each field.\n\nStep 06\nDescription: Navigate to Tools > Modernized Audit and verify the 'Income Document Expiration' & 'Assets Document Date' record\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Records should be display pervious value and new value correctly.\n\nStep 07\nDescription: Close the Mod Audit and Navigate to Tools >  Audit and verify the 'Income Document Expiration'& 'Assets Document Date' record\nScreen: Audit pop up\nTest Data: nan\nExpected Result: Records should be display pervious value and new value correctly.\n\nStep 08\nDescription: Navigate to 1008 > UW analysis > Expiration Dates and verify below fields.\n\u2022 Income Document Date\n\u2022 Assets Docume"
-    },
-    {
-      "testCaseId": "573135_RTL_03",
-      "content_preview": "\nTestCase: 573135_RTL_03\nChannels: RTL\n\nPre-Condition & Assumptions:\nCreate a loan using Mismo 3.4 XML file.\nPre-Conditions:\n1. Channel: RTL\n2. Loan Purpose: Purchase\n3. Loan Type: VA\n4. Document type: Full\n5. Loan Stage: \"Application Accepted\" \n6. Product: VF30\n\nNote: Changes has been made in the loan to display minimum 60 Audit Logs\n\n\n\n=========== TEST STEPS ===========\n\nStep 01\nDescription: Log in to H2O-A in UAT Environment\nScreen: nan\nTest Data: https://qch2o.caliberdirect.com\nExpected Result: Login should be successful \n\nStep 02\nDescription: Open the loan which is created as per the Pre-Conditions.\nScreen: Loan Summary\nTest Data: nan\nExpected Result: Loan Summary screen should be opened\n\nStep 03\nDescription: Navigate to Tools->Modernized Audit.\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Modernized Audit screen should be opened in the new window\n\nStep 04\nDescription: Verify the Fields in new Modernized Audit Screen\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: The following Fields should be available in the new Modernized Audit screen:\n1. Search Frame under Audit \n2. View dropdown with default selection as \"Loan\" \n3. Search text field labeled as Field \n4. \"Date Occurred, From\" Field \n5. \"Date Occurred, To\" Field\n6. Search Button\n7. Reset Filters Button\n\nStep 05\nDescription: Verify the Audit Logs\nScreen: Modernized Audit\nTest Data: nan\nExpected Result: 50 loan level audited entries should be displayed in Audit logs by default\n\nNote: For loan having less than 50 loan level audit records, only those number of records should be displayed.  \n\nStep 06\nDescription: Verify Records per page dropdown at footer \nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Records per page dropdown at footer should be defaulted with value of 50  \n\nStep 07\nDescription: Change per page dropdown selection for Records per page and verify dropdown changes \nScreen: Modernized Audit\nTest Data: nan\nExpected Result: Screen size should load records based on the "
-    }
-  ],
-  "flow_intelligence": {
-    "audit_behavioral_pattern": true,
-    "requires_save_cycle": true,
-    "value_transition_pattern": false,
-    "has_checkbox_pattern": true,
-    "has_dropdown_pattern": true
-  }
-}
+import logging
+from typing import Dict
+from langchain_openai import AzureChatOpenAI
+from config.config import get
+
+logger = logging.getLogger(__name__)
+
+
+class LLMTestcaseGeneratorAgent:
+
+    def __init__(self):
+
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
+            temperature=0
+        )
+
+    # ---------------------------------------------------------
+    # BUILD INTELLIGENT MULTI-CLUSTER PROMPT
+    # ---------------------------------------------------------
+    def _build_prompt(self, payload: Dict) -> str:
+
+        return f"""
+You are a Senior Mortgage QA Analyst generating structured enterprise LOS test cases.
+
+============================================================
+ARCHITECTURE PRINCIPLE
+============================================================
+
+1. Acceptance Criteria defines WHAT must be validated.
+2. Historical Workflow Clusters define HOW validation is typically performed.
+3. Historical Precondition Candidates define setup structure.
+4. You must intelligently combine these.
+5. Do NOT copy Acceptance Criteria sentences.
+6. Do NOT invent setup values.
+7. Do NOT hardcode behavior.
+
+============================================================
+WORKFLOW CLUSTERS (INSTITUTIONAL MEMORY)
+============================================================
+
+{payload["workflow_clusters"]}
+
+Instructions:
+- Analyze all clusters.
+- Select cluster(s) that align with validation intent.
+- Preserve full ordered sequence of selected cluster.
+- If cluster contains modify → save → audit → previous/new validation,
+  apply entire behavioral chain.
+- Do NOT partially apply cluster in a way that breaks logical order.
+- Do NOT apply unrelated cluster patterns.
+
+============================================================
+PRECONDITION CANDIDATES
+============================================================
+
+{payload["precondition_candidates"]}
+
+Instructions:
+- Select the precondition aligned with chosen workflow cluster.
+- Prefer preconditions referencing relevant functional area (e.g., DIS, Disclosure, Audit).
+- Preserve structured numbered list format.
+- Do NOT merge multiple unrelated preconditions.
+- Do NOT invent environment URLs or product codes.
+
+============================================================
+CHANNEL ENFORCEMENT
+============================================================
+
+Channel: {payload["channel"]}
+
+If channel is RTL or DTC:
+- Mortgage Broker entities do not exist.
+- Do NOT generate broker validation.
+- Do NOT mention broker fields.
+- Ignore broker-related AC content entirely.
+
+If channel is WHL or CL1:
+- Include broker validations only if present in Acceptance Criteria.
+
+============================================================
+AC TRANSFORMATION RULE
+============================================================
+
+Acceptance Criteria:
+{payload["ac"]}
+
+- Extract validation intent only.
+- Transform into behavioral enterprise test steps.
+- Do NOT start steps with "Verify".
+- Do NOT copy AC wording.
+- Do NOT produce static-only validation when workflow implies behavioral sequence.
+
+============================================================
+SCENARIO & SCRIPT DESCRIPTION RULES
+============================================================
+
+Test Scenario Description:
+- One sentence.
+- Business objective only.
+- Max 25 words.
+- No technical details.
+- No AC sentence reuse.
+
+Test Script Description:
+- 2–3 sentences.
+- Summarize validation coverage.
+- Mention workflow behavior if applicable.
+- Do NOT restate AC.
+
+============================================================
+CONTEXT
+============================================================
+
+User Story:
+{payload["user_story"]}
+
+Description:
+{payload["description"]}
+
+============================================================
+OUTPUT FORMAT (STRICT)
+============================================================
+
+Test Case ID / Test Script ID: {payload["user_story_id"]}_{payload["channel"]}_01
+Test Scenario Id: {payload["user_story_id"]}_SC_01
+Test Scenario Description: <one sentence>
+Test Script Description: <2-3 sentences>
+Pre-Condition & Assumptions:
+<structured numbered precondition>
+
+Then steps strictly as:
+
+Step XX | Description | Screen Name | Test Data | Expected Result | Requirement Mapping
+
+Rules:
+- Step 01: Login
+- Step 02: Open Loan
+- Business steps
+- Last step: Logout
+- One validation per step
+- Expected Result must begin with "The system"
+- No markdown
+- No notes
+- No explanations
+- No extra commentary
+
+Generate complete enterprise-grade test case now.
+"""
+
+    # ---------------------------------------------------------
+    # MAIN EXECUTION
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("LLM Intelligent Testcase Generation Started")
+
+        outputs = {}
+
+        for channel, ctx in state["channel_context"].items():
+
+            payload = {
+                "user_story_id": state["user_story_id"],
+                "user_story": state["user_story"],
+                "description": state["description"],
+                "ac": state["acceptance_criteria"],
+                "channel": channel,
+                "workflow_clusters": ctx.get("workflow_clusters", []),
+                "precondition_candidates": ctx.get("precondition_candidates", [])
+            }
+
+            prompt = self._build_prompt(payload)
+
+            response = self.llm.invoke(prompt)
+
+            outputs[channel] = response.content.strip()
+
+        state["llm_outputs"] = outputs
+
+        logger.info("LLM Intelligent Testcase Generation Completed")
+
+        return state
