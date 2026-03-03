@@ -1,185 +1,35 @@
-import logging
-from typing import Dict
-from langchain_openai import AzureChatOpenAI
-from config.config import get
+**Test Case ID / Test Script ID:** 718521_RTL_01  
+**Test Scenario Id:** 718521_SC_01  
+**Test Scenario Description:** Validate the rendering and behavior of newly added fields in DIS > Generate Disclosures for RTL channel.  
+**Test Script Description:** This script validates the rendering, dropdown options, and privilege restrictions of the HPML and Intent to Proceed fields. It ensures proper workflow behavior for RTL channel users.  
 
-logger = logging.getLogger(__name__)
+**Pre-Condition & Assumptions:**  
+1. User has valid credentials and access to the DIS module.  
+2. Loan is in a state where disclosures can be generated.  
+3. Channel is RTL, and broker-related fields are excluded.  
 
+**Steps:**  
 
-class LLMTestcaseGeneratorAgent:
+Step 01 | Login | Login Screen | Valid User Credentials | The system grants access to the user dashboard. | Requirement Mapping: 718521_RTL_01  
 
-    def __init__(self):
+Step 02 | Open Loan | Loan Dashboard | Loan ID: [Test Loan ID] | The system opens the loan details page. | Requirement Mapping: 718521_RTL_01  
 
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
+Step 03 | Navigate to Generate Disclosures | Loan Details Page | N/A | The system displays the Generate Disclosures screen. | Requirement Mapping: 718521_RTL_01  
 
-    # ---------------------------------------------------------
-    # BUILD INTELLIGENT MULTI-CLUSTER PROMPT
-    # ---------------------------------------------------------
-    def _build_prompt(self, payload: Dict) -> str:
+Step 04 | Select Generate Disclosure | Generate Disclosures Screen | N/A | The system displays the Generate Disclosure section. | Requirement Mapping: 718521_RTL_01  
 
-        return f"""
-You are a Senior Mortgage QA Analyst generating structured enterprise LOS test cases.
+Step 05 | Validate HPML field rendering | Generate Disclosure Section | N/A | The system renders the HPML field as a dropdown. | Requirement Mapping: 718521_RTL_01  
 
-============================================================
-ARCHITECTURE PRINCIPLE
-============================================================
+Step 06 | Validate HPML dropdown options | Generate Disclosure Section | N/A | The system displays the dropdown options: Yes, No. | Requirement Mapping: 718521_RTL_01  
 
-1. Acceptance Criteria defines WHAT must be validated.
-2. Historical Workflow Clusters define HOW validation is typically performed.
-3. Historical Precondition Candidates define setup structure.
-4. You must intelligently combine these.
-5. Do NOT copy Acceptance Criteria sentences.
-6. Do NOT invent setup values.
-7. Do NOT hardcode behavior.
+Step 07 | Validate HPML privilege restriction | Generate Disclosure Section | N/A | The system ensures the HPML field is not privilege restricted. | Requirement Mapping: 718521_RTL_01  
 
-============================================================
-WORKFLOW CLUSTERS (INSTITUTIONAL MEMORY)
-============================================================
+Step 08 | Navigate to Intent to Proceed | Generate Disclosures Screen | N/A | The system displays the Intent to Proceed section. | Requirement Mapping: 718521_RTL_01  
 
-{payload["workflow_clusters"]}
+Step 09 | Validate Intent to Proceed field rendering | Intent to Proceed Section | N/A | The system renders the Intent to Proceed field as a checkbox. | Requirement Mapping: 718521_RTL_01  
 
-Instructions:
-- Analyze all clusters.
-- Select cluster(s) that align with validation intent.
-- Preserve full ordered sequence of selected cluster.
-- If cluster contains modify → save → audit → previous/new validation,
-  apply entire behavioral chain.
-- Do NOT partially apply cluster in a way that breaks logical order.
-- Do NOT apply unrelated cluster patterns.
+Step 10 | Validate Intent to Proceed checkbox behavior | Intent to Proceed Section | N/A | The system allows the checkbox to be checked and unchecked. | Requirement Mapping: 718521_RTL_01  
 
-============================================================
-PRECONDITION CANDIDATES
-============================================================
+Step 11 | Validate Intent to Proceed privilege restriction | Intent to Proceed Section | N/A | The system ensures the Intent to Proceed field is not privilege restricted. | Requirement Mapping: 718521_RTL_01  
 
-{payload["precondition_candidates"]}
-
-Instructions:
-- Select the precondition aligned with chosen workflow cluster.
-- Prefer preconditions referencing relevant functional area (e.g., DIS, Disclosure, Audit).
-- Preserve structured numbered list format.
-- Do NOT merge multiple unrelated preconditions.
-- Do NOT invent environment URLs or product codes.
-
-============================================================
-CHANNEL ENFORCEMENT
-============================================================
-
-Channel: {payload["channel"]}
-
-If channel is RTL or DTC:
-- Mortgage Broker entities do not exist.
-- Do NOT generate broker validation.
-- Do NOT mention broker fields.
-- Ignore broker-related AC content entirely.
-
-If channel is WHL or CL1:
-- Include broker validations only if present in Acceptance Criteria.
-
-============================================================
-AC TRANSFORMATION RULE
-============================================================
-
-Acceptance Criteria:
-{payload["ac"]}
-
-- Extract validation intent only.
-- Transform into behavioral enterprise test steps.
-- Do NOT start steps with "Verify".
-- Do NOT copy AC wording.
-- Do NOT produce static-only validation when workflow implies behavioral sequence.
-
-============================================================
-SCENARIO & SCRIPT DESCRIPTION RULES
-============================================================
-
-Test Scenario Description:
-- One sentence.
-- Business objective only.
-- Max 25 words.
-- No technical details.
-- No AC sentence reuse.
-
-Test Script Description:
-- 2–3 sentences.
-- Summarize validation coverage.
-- Mention workflow behavior if applicable.
-- Do NOT restate AC.
-
-============================================================
-CONTEXT
-============================================================
-
-User Story:
-{payload["user_story"]}
-
-Description:
-{payload["description"]}
-
-============================================================
-OUTPUT FORMAT (STRICT)
-============================================================
-
-Test Case ID / Test Script ID: {payload["user_story_id"]}_{payload["channel"]}_01
-Test Scenario Id: {payload["user_story_id"]}_SC_01
-Test Scenario Description: <one sentence>
-Test Script Description: <2-3 sentences>
-Pre-Condition & Assumptions:
-<structured numbered precondition>
-
-Then steps strictly as:
-
-Step XX | Description | Screen Name | Test Data | Expected Result | Requirement Mapping
-
-Rules:
-- Step 01: Login
-- Step 02: Open Loan
-- Business steps
-- Last step: Logout
-- One validation per step
-- Expected Result must begin with "The system"
-- No markdown
-- No notes
-- No explanations
-- No extra commentary
-
-Generate complete enterprise-grade test case now.
-"""
-
-    # ---------------------------------------------------------
-    # MAIN EXECUTION
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("LLM Intelligent Testcase Generation Started")
-
-        outputs = {}
-
-        for channel, ctx in state["channel_context"].items():
-
-            payload = {
-                "user_story_id": state["user_story_id"],
-                "user_story": state["user_story"],
-                "description": state["description"],
-                "ac": state["acceptance_criteria"],
-                "channel": channel,
-                "workflow_clusters": ctx.get("workflow_clusters", []),
-                "precondition_candidates": ctx.get("precondition_candidates", [])
-            }
-
-            prompt = self._build_prompt(payload)
-
-            response = self.llm.invoke(prompt)
-
-            outputs[channel] = response.content.strip()
-
-        state["llm_outputs"] = outputs
-
-        logger.info("LLM Intelligent Testcase Generation Completed")
-
-        return state
+Step 12 | Logout | User Dashboard | N/A | The system logs the user out and displays the login screen. | Requirement Mapping: 718521_RTL_01
