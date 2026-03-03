@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 from openpyxl import load_workbook
 from config.config import get
 
@@ -13,91 +14,58 @@ class ExcelExportAgent:
         self.output_dir = get("EXCEL_OUTPUT_DIR")
 
     # -------------------------------------------------
-    # SAFE PIPE FORMAT PARSER
+    # MARKDOWN STEP PARSER
     # -------------------------------------------------
-    def _parse_llm_output(self, llm_text: str):
+    def _parse_markdown_steps(self, llm_text: str):
 
         scenario = ""
         script = ""
-        requirement = ""
         steps = []
 
         lines = llm_text.splitlines()
 
+        current_step = None
+
         for line in lines:
             line = line.strip()
 
-            if not line:
+            # Scenario
+            if "Test Scenario Description" in line:
+                scenario = line.split(":", 1)[-1].strip()
+
+            if "Test Script Description" in line:
+                script = line.split(":", 1)[-1].strip()
+
+            # Detect Step
+            step_match = re.match(r".*Step\s+(\d+)", line, re.IGNORECASE)
+
+            if step_match:
+                if current_step:
+                    steps.append(current_step)
+
+                current_step = {
+                    "step_no": f"Step {int(step_match.group(1)):02d}",
+                    "desc": "",
+                    "expected": ""
+                }
                 continue
 
-            if line.startswith("Test Scenario Description:") or line.startswith("Scenario:"):
-                scenario = (
-                    line.replace("Test Scenario Description:", "")
-                        .replace("Scenario:", "")
-                        .strip()
-                )
-                continue
+            # Capture Description
+            if line.lower().startswith("- description"):
+                current_step["desc"] = line.split(":", 1)[-1].strip()
 
-            if line.startswith("Test Script Description:") or line.startswith("Script:"):
-                script = (
-                    line.replace("Test Script Description:", "")
-                        .replace("Script:", "")
-                        .strip()
-                )
-                continue
+            # Capture Expected
+            if line.lower().startswith("- expected"):
+                current_step["expected"] = line.split(":", 1)[-1].strip()
 
-            if line.startswith("Test Scenario Id:"):
-                requirement = line.replace("Test Scenario Id:", "").strip()
-                continue
-
-            if line.lower().startswith("step") and "|" in line:
-
-                parts = [p.strip() for p in line.split("|")]
-
-                if len(parts) < 6:
-                    logger.warning(f"Skipping malformed step line: {line}")
-                    continue
-
-                if len(parts) > 6:
-                    parts = parts[:5] + [" | ".join(parts[5:])]
-
-                steps.append({
-                    "step_no": parts[0],
-                    "desc": parts[1],
-                    "screen": parts[2],
-                    "data": parts[3],
-                    "expected": parts[4],
-                    "requirement": parts[5]
-                })
+        if current_step:
+            steps.append(current_step)
 
         return {
             "scenario": scenario,
             "script": script,
-            "requirement": requirement,
             "steps": steps
         }
-
-    # -------------------------------------------------
-    # FILE VERSIONING LOGIC
-    # -------------------------------------------------
-    def _get_unique_output_path(self, base_filename: str) -> str:
-
-        base_path = os.path.join(self.output_dir, base_filename)
-
-        if not os.path.exists(base_path):
-            return base_path
-
-        name, ext = os.path.splitext(base_filename)
-        counter = 1
-
-        while True:
-            new_filename = f"{name}_{counter}{ext}"
-            new_path = os.path.join(self.output_dir, new_filename)
-
-            if not os.path.exists(new_path):
-                return new_path
-
-            counter += 1
 
     # -------------------------------------------------
     # MAIN EXECUTION
@@ -118,39 +86,26 @@ class ExcelExportAgent:
                 if sheet_name not in detected_channels:
                     wb.remove(wb[sheet_name])
 
-        logger.info(f"Sheets after cleanup: {wb.sheetnames}")
-
         user_story_id = state["user_story_id"]
 
         for channel, llm_text in state.get("llm_outputs", {}).items():
 
             if channel not in wb.sheetnames:
-                logger.warning(f"Sheet '{channel}' not found after cleanup.")
                 continue
-
-            # Save raw LLM output for debugging
-            debug_path = os.path.join(self.output_dir, f"llm_output_{channel}.txt")
-            with open(debug_path, "w", encoding="utf-8") as f:
-                f.write(llm_text)
 
             ws = wb[channel]
             row = 2
-            tc_counter = 1
 
-            parsed = self._parse_llm_output(llm_text)
+            parsed = self._parse_markdown_steps(llm_text)
 
             if not parsed["steps"]:
-                logger.error(f"No valid steps parsed for channel {channel}")
+                logger.error(f"No steps parsed for {channel}")
                 continue
 
-            scenario = parsed["scenario"] or f"Validate {state.get('user_story', '')}"
-            script = parsed["script"] or "Positive validation aligned to Acceptance Criteria."
+            scenario = parsed["scenario"] or state.get("user_story", "")
+            script = parsed["script"] or "Generated test validation."
 
-            channel_ctx = state.get("channel_context", {})
-            precondition = channel_ctx.get(channel, {}).get("precondition", "")
-
-            tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
-            start_row = row
+            tc_id = f"US_{user_story_id}_{channel}_TC_01"
 
             for idx, step in enumerate(parsed["steps"]):
 
@@ -158,39 +113,20 @@ class ExcelExportAgent:
                 ws.cell(row, 2).value = f"{user_story_id}-{channel}" if idx == 0 else ""
                 ws.cell(row, 3).value = scenario if idx == 0 else ""
                 ws.cell(row, 4).value = script if idx == 0 else ""
-                ws.cell(row, 5).value = precondition if idx == 0 else ""
+                ws.cell(row, 5).value = ""
 
                 ws.cell(row, 6).value = step["step_no"]
                 ws.cell(row, 7).value = step["desc"]
-                ws.cell(row, 8).value = step["screen"]
-                ws.cell(row, 9).value = step["data"]
+                ws.cell(row, 8).value = "Derived Screen"
+                ws.cell(row, 9).value = "NA"
                 ws.cell(row, 10).value = step["expected"]
 
-                ws.cell(row, 11).value = ""
-                ws.cell(row, 12).value = ""
-                ws.cell(row, 13).value = ""
-                ws.cell(row, 14).value = ""
-                ws.cell(row, 15).value = step["requirement"]
+                ws.cell(row, 15).value = f"{user_story_id}_AC"
 
                 row += 1
 
-            end_row = row - 1
-
-            if end_row > start_row:
-                ws.merge_cells(
-                    start_row=start_row,
-                    start_column=2,
-                    end_row=end_row,
-                    end_column=2
-                )
-
-            tc_counter += 1
-
-        # -------------------------------------------------
-        # OUTPUT FILE WITH AUTO VERSIONING
-        # -------------------------------------------------
-        base_filename = f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
-        output_file = self._get_unique_output_path(base_filename)
+        base_filename = f"Indiv_US_{user_story_id}_Test_Scripts.xlsx"
+        output_file = os.path.join(self.output_dir, base_filename)
 
         wb.save(output_file)
 
