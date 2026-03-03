@@ -1,43 +1,194 @@
-### Behavioral Test Case for User Story ID: 718521  
-**Title:** Modernized Audit additions - DIS > Generate Disclosures Fields  
+import logging
+import json
+import os
+from typing import Dict, List
+from datetime import datetime
 
----
+from azure.search.documents import SearchClient
+from azure.search.documents.models import VectorizedQuery
+from azure.core.credentials import AzureKeyCredential
+from openai import AzureOpenAI
+from config.config import get
 
-#### Precondition:  
-Create a loan using Mismo 3.4 XML file.  
+logger = logging.getLogger(__name__)
 
----
 
-### Test Case Steps  
+class RetrievalIntelligenceAgent:
 
-**Step 01** | **Description:** Log in to H2O-A in UAT1 Environment. | **Screen Name:** Dashboard | **Test Data:** https://qch2o.caliberdirect.com | **Expected Result:** The system should successfully log in to the application. | **Requirement Mapping:** Historical Step 1  
+    def __init__(self):
 
-**Step 02** | **Description:** Open the loan created as per the precondition. | **Screen Name:** Loan Summary | **Test Data:** N/A | **Expected Result:** The system should display the Loan Summary screen for the selected loan. | **Requirement Mapping:** Historical Step 2  
+        self.openai = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+        )
 
-**Step 03** | **Description:** Navigate to DIS > Generate Disclosures screen. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should display the Generate Disclosure screen. | **Requirement Mapping:** Historical Step 3  
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
 
-**Step 04** | **Description:** Locate the "Description" field in the H2O UI. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should render the "Description" field as a text field without privilege restrictions. | **Requirement Mapping:** AC Transformation  
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
+        )
 
-**Step 05** | **Description:** Locate the "HPML" field in the Generate Disclosure section. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should render the "HPML" field as a dropdown containing options "Yes" and "No" without privilege restrictions. | **Requirement Mapping:** AC Transformation  
+        self.log_dir = get("RETRIEVAL_LOG_DIR")
+        os.makedirs(self.log_dir, exist_ok=True)
 
-**Step 06** | **Description:** Locate the "Intent to Proceed" field in the Generate Disclosure section. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should render the "Intent to Proceed" field as a checkbox that can be toggled on and off without privilege restrictions. | **Requirement Mapping:** AC Transformation  
+    # ---------------------------------------------------------
+    # Embed Title
+    # ---------------------------------------------------------
+    def _embed(self, text: str) -> List[float]:
+        response = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text[:8000]
+        )
+        return response.data[0].embedding
 
-**Step 07** | **Description:** Save changes made to the "Intent to Proceed" field. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should save the changes successfully. | **Requirement Mapping:** Flow Intelligence  
+    # ---------------------------------------------------------
+    # Build Keyword OR Query Dynamically
+    # ---------------------------------------------------------
+    def _build_query(self, title: str) -> str:
 
-**Step 08** | **Description:** Perform audit validation for the "Intent to Proceed" field. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should log the audit trail for the changes made to the "Intent to Proceed" field. | **Requirement Mapping:** Flow Intelligence  
+        tokens = [
+            t.strip()
+            for t in title.replace(">", " ")
+                           .replace("-", " ")
+                           .replace("/", " ")
+                           .split()
+            if len(t.strip()) > 2
+        ]
 
-**Step 09** | **Description:** Confirm that the "Mortgage Broker Fee Agreement" field is not displayed for the RTL channel. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should not display the "Mortgage Broker Fee Agreement" field for the RTL channel. | **Requirement Mapping:** Channel Entity Enforcement  
+        unique = list(dict.fromkeys(tokens))
+        return " OR ".join(unique) if unique else title
 
-**Step 10** | **Description:** Confirm that the "Mortgage Broker License Type" field is not displayed for the RTL channel. | **Screen Name:** Generate Disclosure | **Test Data:** N/A | **Expected Result:** The system should not display the "Mortgage Broker License Type" field for the RTL channel. | **Requirement Mapping:** Channel Entity Enforcement  
+    # ---------------------------------------------------------
+    # Hybrid Search
+    # ---------------------------------------------------------
+    def _hybrid_search(self, title: str, channel: str, topk: int = 8):
 
-**Step 11** | **Description:** Log out of the application. | **Screen Name:** Dashboard | **Test Data:** N/A | **Expected Result:** The system should log out successfully. | **Requirement Mapping:** Logout Step  
+        search_query = self._build_query(title)
 
----
+        vector_query = VectorizedQuery(
+            vector=self._embed(title),
+            fields="embedding",
+            k_nearest_neighbors=topk
+        )
 
-### Notes:  
-- Steps related to "Mortgage Broker Fee Agreement" and "Mortgage Broker License Type" are excluded due to RTL channel enforcement rules.  
-- Behavioral patterns such as save cycles and audit validations are applied where applicable.  
-- Dropdown and checkbox interactions are included based on Flow Intelligence.  
+        filter_query = f"channels/any(c: c eq '{channel}')"
 
----  
-**End of Test Case**
+        results = list(
+            self.search_client.search(
+                search_text=search_query,
+                vector_queries=[vector_query],
+                filter=filter_query,
+                select=["testCaseId", "content"],
+                top=topk
+            )
+        )
+
+        return search_query, results
+
+    # ---------------------------------------------------------
+    # Extract Dominant Workflow Pattern (Single LLM Call)
+    # ---------------------------------------------------------
+    def _extract_workflow_intelligence(self, combined_content: str) -> Dict:
+
+        prompt = f"""
+Analyze historical LOS test steps and extract dominant workflow pattern.
+
+Return JSON:
+
+{{
+  "precondition": "",
+  "workflow_pattern_summary": "",
+  "navigation_sequence": [],
+  "dominant_step_ordering": []
+}}
+
+Content:
+{combined_content[:12000]}
+"""
+
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": "You analyze QA workflow patterns."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        try:
+            return json.loads(response.choices[0].message.content)
+        except Exception:
+            return {
+                "precondition": "",
+                "workflow_pattern_summary": "",
+                "navigation_sequence": [],
+                "dominant_step_ordering": []
+            }
+
+    # ---------------------------------------------------------
+    # Save Retrieval Log
+    # ---------------------------------------------------------
+    def _save_log(self, story_id, channel, search_query, results, workflow_summary):
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        log_file = os.path.join(
+            self.log_dir,
+            f"retrieval_{story_id}_{channel}_{timestamp}.json"
+        )
+
+        log_data = {
+            "search_query": search_query,
+            "retrieved_count": len(results),
+            "retrieved_ids": [doc.get("testCaseId") for doc in results],
+            "workflow_summary": workflow_summary
+        }
+
+        with open(log_file, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, indent=2)
+
+    # ---------------------------------------------------------
+    # MAIN EXECUTION
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+
+        title = state["user_story"]
+        story_id = state["user_story_id"]
+
+        channel_context = {}
+
+        for channel in state["channels"]:
+
+            search_query, docs = self._hybrid_search(title, channel)
+
+            if not docs:
+                continue
+
+            combined_content = "\n\n".join(
+                [doc.get("content", "")[:4000] for doc in docs]
+            )
+
+            workflow_data = self._extract_workflow_intelligence(combined_content)
+
+            channel_context[channel] = {
+                "precondition": workflow_data.get("precondition", ""),
+                "workflow_pattern_summary": workflow_data.get("workflow_pattern_summary", ""),
+                "navigation_sequence": workflow_data.get("navigation_sequence", []),
+                "dominant_step_ordering": workflow_data.get("dominant_step_ordering", [])
+            }
+
+            self._save_log(
+                story_id,
+                channel,
+                search_query,
+                docs,
+                workflow_data
+            )
+
+        state["channel_context"] = channel_context
+        return state
