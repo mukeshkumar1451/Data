@@ -1,11 +1,15 @@
 import logging
+import os
 from typing import Dict, List
+from datetime import datetime
+import json
+
 from azure.search.documents import SearchClient
 from azure.search.documents.models import VectorizedQuery
 from azure.core.credentials import AzureKeyCredential
 from openai import AzureOpenAI
 from config.config import get
-import json
+
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +18,7 @@ class RetrievalIntelligenceAgent:
 
     def __init__(self):
 
+        # Azure OpenAI
         self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
@@ -23,11 +28,23 @@ class RetrievalIntelligenceAgent:
         self.embed_model = get("EMBEDDING_MODEL")
         self.chat_model = get("CHAT_MODEL")
 
+        # Azure AI Search
         self.search_client = SearchClient(
             endpoint=get("AZURE_SEARCH_ENDPOINT"),
             index_name=get("AZURE_SEARCH_INDEX"),
             credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
         )
+
+        # Create retrieval log directory
+        self.log_dir = "retrieval_logs"
+        os.makedirs(self.log_dir, exist_ok=True)
+
+    # ---------------------------------------------------------
+    # Create Log File
+    # ---------------------------------------------------------
+    def _get_log_file_path(self, story_id: str):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return os.path.join(self.log_dir, f"retrieval_{story_id}_{timestamp}.log")
 
     # ---------------------------------------------------------
     # Embed Story Text
@@ -63,15 +80,6 @@ class RetrievalIntelligenceAgent:
                 top=topk
             )
         )
-
-        logger.info(f"\n🔎 {channel} → Retrieved {len(results)} documents from Vector DB")
-
-        # 🔥 PRINT RAW RETRIEVED DOCUMENTS
-        for i, doc in enumerate(results, 1):
-            logger.info(f"\n----- RAW DOC {i} -----")
-            logger.info(f"TestCaseId: {doc.get('testCaseId')}")
-            logger.info(f"Content Preview:\n{doc.get('content')[:800]}")
-            logger.info("----------------------")
 
         return results
 
@@ -115,10 +123,6 @@ Documents:
                 if 0 <= idx < len(docs):
                     ordered_docs.append(docs[idx])
 
-        logger.info("\n📊 RERANKED ORDER:")
-        for i, doc in enumerate(ordered_docs, 1):
-            logger.info(f"Rank {i}: {doc.get('testCaseId')}")
-
         return ordered_docs if ordered_docs else docs
 
     # ---------------------------------------------------------
@@ -160,13 +164,7 @@ Content:
 
         try:
             structured = json.loads(response.choices[0].message.content)
-
-            # 🔥 PRINT STRUCTURED EXTRACTION RESULT
-            logger.info("\n🧠 STRUCTURED EXTRACTION RESULT:")
-            logger.info(json.dumps(structured, indent=2))
-
-        except Exception as e:
-            logger.error(f"Structured extraction failed: {e}")
+        except Exception:
             structured = {
                 "scenario": "",
                 "script": "",
@@ -181,57 +179,88 @@ Content:
     # ---------------------------------------------------------
     def run(self, state: Dict) -> Dict:
 
-        logger.info("\n🚀 Retrieval Intelligence Agent Running")
+        story_id = state.get("user_story_id", "unknown")
+        log_file_path = self._get_log_file_path(story_id)
 
-        full_story = f"""
+        with open(log_file_path, "w", encoding="utf-8") as log_file:
+
+            log_file.write("===== RETRIEVAL DEBUG LOG =====\n\n")
+
+            full_story = f"""
 User Story: {state['user_story']}
 Description: {state['description']}
 Acceptance Criteria: {state['acceptance_criteria']}
 """
 
-        logger.info("\n📌 QUERY SENT TO VECTOR SEARCH:")
-        logger.info(full_story)
+            log_file.write("----- QUERY SENT TO VECTOR DB -----\n")
+            log_file.write(full_story + "\n\n")
 
-        channel_context = {}
+            channel_context = {}
 
-        for channel in state["channels"]:
+            for channel in state["channels"]:
 
-            logger.info(f"\n==============================")
-            logger.info(f"🔵 Processing Channel: {channel}")
-            logger.info(f"==============================")
+                log_file.write("\n====================================\n")
+                log_file.write(f"CHANNEL: {channel}\n")
+                log_file.write("====================================\n\n")
 
-            docs = self._hybrid_search(full_story, channel)
+                # 1️⃣ Hybrid Search
+                docs = self._hybrid_search(full_story, channel)
 
-            reranked_docs = self._rerank(full_story, docs)
+                log_file.write(f"Retrieved {len(docs)} documents\n\n")
 
-            best_structured = None
+                for i, doc in enumerate(docs, 1):
+                    log_file.write(f"\n--- RAW DOC {i} ---\n")
+                    log_file.write(f"TestCaseId: {doc.get('testCaseId')}\n")
+                    log_file.write("Content Preview:\n")
+                    log_file.write(doc.get("content", "")[:2000] + "\n")
 
-            for doc in reranked_docs:
+                # 2️⃣ Rerank
+                reranked_docs = self._rerank(full_story, docs)
 
-                content = doc.get("content", "")
-                structured = self._extract_structured_content(content)
+                log_file.write("\n--- RERANKED ORDER ---\n")
+                for i, doc in enumerate(reranked_docs, 1):
+                    log_file.write(f"Rank {i}: {doc.get('testCaseId')}\n")
 
-                if structured.get("precondition") or structured.get("steps"):
-                    best_structured = structured
-                    break
+                best_structured = None
 
-            if not best_structured:
-                logger.warning(f"{channel} → No structured data found.")
-                best_structured = {
-                    "scenario": "",
-                    "script": "",
-                    "precondition": "Precondition not found in historical data.",
-                    "steps": []
+                # 3️⃣ Structured Extraction
+                for doc in reranked_docs:
+
+                    content = doc.get("content", "")
+                    structured = self._extract_structured_content(content)
+
+                    log_file.write("\n--- STRUCTURED EXTRACTION ---\n")
+                    log_file.write(json.dumps(structured, indent=2))
+                    log_file.write("\n")
+
+                    if structured.get("precondition") or structured.get("steps"):
+                        best_structured = structured
+                        break
+
+                # 4️⃣ Fallback
+                if not best_structured:
+                    log_file.write("\nNo structured content found. Using fallback.\n")
+                    best_structured = {
+                        "scenario": "",
+                        "script": "",
+                        "precondition": "Precondition not found in historical data.",
+                        "steps": []
+                    }
+
+                log_file.write("\n--- FINAL SELECTED STRUCTURED DOC ---\n")
+                log_file.write(json.dumps(best_structured, indent=2))
+                log_file.write("\n")
+
+                channel_context[channel] = {
+                    "precondition": best_structured["precondition"],
+                    "historical_scenario": best_structured["scenario"],
+                    "historical_script": best_structured["script"],
+                    "historical_steps": best_structured["steps"]
                 }
 
-            channel_context[channel] = {
-                "precondition": best_structured["precondition"],
-                "historical_scenario": best_structured["scenario"],
-                "historical_script": best_structured["script"],
-                "historical_steps": best_structured["steps"]
-            }
+            log_file.write("\n===== RETRIEVAL COMPLETED =====\n")
+
+        print(f"\nRetrieval debug log saved at: {log_file_path}")
 
         state["channel_context"] = channel_context
-
-        logger.info("\n✅ Retrieval Intelligence Agent Completed")
         return state
