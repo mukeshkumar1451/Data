@@ -1,92 +1,17 @@
-import logging
-from typing import Dict
-from langchain_openai import AzureChatOpenAI
-from config.config import get
-
-logger = logging.getLogger(__name__)
-
-
-class LLMTestcaseGeneratorAgent:
-
-    def __init__(self):
-
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
-
-    def _build_prompt(self, payload: Dict) -> str:
-
-        return f"""
-You are a Senior Mortgage QA Analyst.
-
-Acceptance Criteria defines validation scope.
-Historical workflow defines behavioral sequence.
-
-Do NOT copy AC wording.
-Transform validation intent into enterprise workflow steps.
-
-Apply the following dominant workflow pattern:
-
-{payload["workflow_pattern_summary"]}
-
-Navigation Sequence Observed:
-{payload["navigation_sequence"]}
-
-Dominant Step Ordering:
-{payload["dominant_step_ordering"]}
-
-User Story:
-{payload["user_story"]}
-
-Description:
-{payload["description"]}
-
-Acceptance Criteria:
-{payload["ac"]}
-
-Channel:
-{payload["channel"]}
-
-Precondition:
-{payload["precondition"]}
-
-Output format strictly:
-
-Step XX | Description | Screen Name | Test Data | Expected Result | Requirement Mapping
-
-No markdown.
-No notes.
-No extra text.
-Login first.
-Logout last.
-"""
-
-    def run(self, state: Dict) -> Dict:
-
-        outputs = {}
-
-        for channel, ctx in state["channel_context"].items():
-
-            payload = {
-                "user_story": state["user_story"],
-                "description": state["description"],
-                "ac": state["acceptance_criteria"],
-                "channel": channel,
-                "precondition": ctx.get("precondition", ""),
-                "workflow_pattern_summary": ctx.get("workflow_pattern_summary", ""),
-                "navigation_sequence": ctx.get("navigation_sequence", []),
-                "dominant_step_ordering": ctx.get("dominant_step_ordering", [])
-            }
-
-            prompt = self._build_prompt(payload)
-
-            response = self.llm.invoke(prompt)
-
-            outputs[channel] = response.content.strip()
-
-        state["llm_outputs"] = outputs
-        return state
+Step 01 | Log in to the system | Login Screen | Valid user credentials | User is successfully logged into the system | N/A  
+Step 02 | Open the loan based on preconditions | Dashboard | Loan ID meeting preconditions | Loan is successfully opened | Precondition  
+Step 03 | Navigate to Generate Disclosure screen | Loan Summary | Loan ID | User is navigated to the Generate Disclosure screen | AC: HPML, Intent to Proceed  
+Step 04 | Verify "HPML" field is rendered as a Dropdown | Generate Disclosure | N/A | "HPML" field is displayed as a Dropdown | AC: HPML  
+Step 05 | Verify "HPML" dropdown contains options "Yes" and "No" | Generate Disclosure | N/A | Dropdown contains exactly "Yes" and "No" options | AC: HPML  
+Step 06 | Verify "HPML" field is not privilege restricted | Generate Disclosure | N/A | Field is accessible to all users | AC: HPML  
+Step 07 | Verify "Intent to Proceed" field is rendered as a Checkbox | Generate Disclosure | N/A | "Intent to Proceed" field is displayed as a Checkbox | AC: Intent to Proceed  
+Step 08 | Verify "Intent to Proceed" checkbox can be checked and unchecked | Generate Disclosure | N/A | Checkbox can be toggled | AC: Intent to Proceed  
+Step 09 | Verify "Intent to Proceed" field is not privilege restricted | Generate Disclosure | N/A | Field is accessible to all users | AC: Intent to Proceed  
+Step 10 | Navigate to Mortgage Broker Fee/Compensation Agreement screen | Generate Disclosure | N/A | User is navigated to the Mortgage Broker Fee/Compensation Agreement screen | AC: Mortgage Broker Fee Agreement, Mortgage Broker License Type  
+Step 11 | Verify "Mortgage Broker Fee Agreement" field is rendered as a Dropdown | Mortgage Broker Fee/Compensation Agreement | N/A | "Mortgage Broker Fee Agreement" field is displayed as a Dropdown | AC: Mortgage Broker Fee Agreement  
+Step 12 | Verify "Mortgage Broker Fee Agreement" dropdown contains options "Yes" and "No" | Mortgage Broker Fee/Compensation Agreement | N/A | Dropdown contains exactly "Yes" and "No" options | AC: Mortgage Broker Fee Agreement  
+Step 13 | Verify "Mortgage Broker Fee Agreement" field is restricted based on user privilege | Mortgage Broker Fee/Compensation Agreement | N/A | Field is accessible only to privileged users | AC: Mortgage Broker Fee Agreement  
+Step 14 | Verify "Mortgage Broker License Type" field is rendered as a Dropdown | Mortgage Broker Fee/Compensation Agreement | N/A | "Mortgage Broker License Type" field is displayed as a Dropdown | AC: Mortgage Broker License Type  
+Step 15 | Verify "Mortgage Broker License Type" dropdown contains options "CFL", "DRE", and "RML" | Mortgage Broker Fee/Compensation Agreement | N/A | Dropdown contains exactly "CFL", "DRE", and "RML" options | AC: Mortgage Broker License Type  
+Step 16 | Verify "Mortgage Broker License Type" field is restricted based on user privilege | Mortgage Broker Fee/Compensation Agreement | N/A | Field is accessible only to privileged users | AC: Mortgage Broker License Type  
+Step 17 | Log out of the system | Logout Screen | N/A | User is successfully logged out of the system | N/A
