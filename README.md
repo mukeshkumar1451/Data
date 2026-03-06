@@ -1,378 +1,228 @@
-import os
-import re
-import base64
 import logging
-import requests
+from typing import Dict, List
+import json
+import os
 
-from bs4 import BeautifulSoup
-from PIL import Image
-from dotenv import load_dotenv
+from azure.search.documents import SearchClient
+from azure.search.documents.models import VectorizedQuery
+from azure.core.credentials import AzureKeyCredential
 from openai import AzureOpenAI
-
 from config.config import get
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
 
-ADO_PAT = os.getenv("ADO_PAT")
-
-MAX_WIDTH = 1200
-JPEG_QUALITY = 85
-
-
-class ImageExtractor:
+class RetrievalIntelligenceAgent:
 
     def __init__(self):
 
-        self.client = AzureOpenAI(
+        self.openai = AzureOpenAI(
             api_key=get("AZURE_OPENAI_KEY"),
             azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
             api_version=get("AZURE_OPENAI_API_VERSION"),
         )
 
-        self.model = get("CHAT_MODEL")
+        self.embed_model = get("EMBEDDING_MODEL")
+        self.chat_model = get("CHAT_MODEL")
 
-    # ------------------------------------------------
-    # CLEAN HTML
-    # ------------------------------------------------
-    def clean_html(self, html):
+        self.search_client = SearchClient(
+            endpoint=get("AZURE_SEARCH_ENDPOINT"),
+            index_name=get("AZURE_SEARCH_INDEX"),
+            credential=AzureKeyCredential(get("AZURE_SEARCH_KEY")),
+        )
 
-        soup = BeautifulSoup(html, "html.parser")
+    # ---------------------------------------------------------
+    # Embed Query
+    # ---------------------------------------------------------
+    def _embed(self, text: str) -> List[float]:
 
-        for tag in soup(["script", "style"]):
-            tag.decompose()
+        response = self.openai.embeddings.create(
+            model=self.embed_model,
+            input=text[:8000]
+        )
 
-        text = soup.get_text(" ")
+        return response.data[0].embedding
 
-        text = re.sub(r"\s+", " ", text).strip()
+    # ---------------------------------------------------------
+    # Hybrid Search
+    # ---------------------------------------------------------
+    def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
 
-        text = text.replace("s a user", "As a user")
+        vector_query = VectorizedQuery(
+            vector=self._embed(query_text),
+            fields="embedding",
+            k_nearest_neighbors=topk
+        )
 
-        return text
+        filter_query = f"channels/any(c: c eq '{channel}')"
 
-    # ------------------------------------------------
-    # FORMAT DESCRIPTION
-    # ------------------------------------------------
-    def format_description(self, text):
+        results = list(self.search_client.search(
+            search_text=query_text,
+            vector_queries=[vector_query],
+            filter=filter_query,
+            select=["testCaseId", "content"],
+            top=topk
+        ))
 
-        text = text.replace(" As a user", "\nAs a user")
-        text = text.replace(" I want", "\nI want")
-        text = text.replace(" So that", "\nSo that")
-        text = text.replace(" Issue #", "\n\nIssue #")
-        text = text.replace("-Steps to recreate", "\n\nSteps to recreate")
+        logger.info(f"{channel} → Retrieved {len(results)} docs")
 
-        return text.strip()
+        # Save results to a JSON log file
+        self._save_log(channel, [
+            {"testCaseId": r["testCaseId"], "content": r["content"]} for r in results
+        ])
 
-    # ------------------------------------------------
-    # FORMAT ACCEPTANCE CRITERIA
-    # ------------------------------------------------
-    def format_acceptance_criteria(self, text):
+        return results
 
-        replacements = [
-            (" Given ", "\nGiven "),
-            (" When ", "\nWhen "),
-            (" Then ", "\nThen "),
-            (" AND ", "\nAND "),
-            (" AC1:", "\nAC1:"),
-            (" AC2:", "\n\nAC2:")
-        ]
+    def _save_log(self, channel: str, data: List[Dict]):
+        """Save retrieved data to a JSON log file per channel."""
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, f"{channel}_retrieval_log.json")
 
-        for old, new in replacements:
-            text = text.replace(old, new)
+        with open(log_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
-        return text.strip()
+    # ---------------------------------------------------------
+    # Robust Precondition Extraction
+    # ---------------------------------------------------------
+    def _extract_precondition(self, content: str) -> str:
 
-    # ------------------------------------------------
-    # DOWNLOAD IMAGE
-    # ------------------------------------------------
-    def download_image(self, url, save_path):
+        lines = content.splitlines()
+        capture = False
+        collected = []
 
-        try:
+        for line in lines:
 
-            response = requests.get(url, auth=("", ADO_PAT))
-            response.raise_for_status()
+            lower = line.lower().strip()
 
-            with open(save_path, "wb") as f:
-                f.write(response.content)
+            # START capture
+            if (
+                "pre-condition" in lower or
+                "precondition" in lower or
+                "pre condition" in lower
+            ):
+                capture = True
+                collected.append(line)
+                continue
 
-            return save_path
+            # STOP capture
+            if capture and (
+                lower.startswith("step") or
+                "test steps" in lower or
+                "=========== test steps" in lower
+            ):
+                break
 
-        except Exception as e:
+            if capture:
+                collected.append(line)
 
-            logger.error(f"Image download failed: {e}")
-            return ""
+        result = "\n".join(collected).strip()
+        if result.lower().startswith("pre-condition")or result.lower().startswith("precondition") or result.lower().startswith("pre condition"): 
+            lines = result.splitlines()
+            result = "\n".join(lines[1:]).strip()
+        return result   
 
-    # ------------------------------------------------
-    # RESIZE IMAGE
-    # ------------------------------------------------
-    def resize_image(self, image_path):
+    # ---------------------------------------------------------
+    # LLM Rerank
+    # ---------------------------------------------------------
+    def _rerank(self, story_text: str, docs: List[Dict]) -> List[Dict]:
 
-        try:
+        if not docs:
+            return []
 
-            with Image.open(image_path) as img:
-
-                width, height = img.size
-
-                if width <= MAX_WIDTH:
-                    return image_path
-
-                ratio = MAX_WIDTH / float(width)
-                new_height = int(height * ratio)
-
-                resized = img.resize((MAX_WIDTH, new_height), Image.LANCZOS)
-
-                base, _ = os.path.splitext(image_path)
-
-                resized_path = base + "_resized.jpg"
-
-                resized.convert("RGB").save(
-                    resized_path,
-                    "JPEG",
-                    quality=JPEG_QUALITY,
-                    optimize=True
-                )
-
-                return resized_path
-
-        except Exception as e:
-
-            logger.error(f"Resize failed: {e}")
-            return image_path
-
-    # ------------------------------------------------
-    # BASE64 ENCODE IMAGE
-    # ------------------------------------------------
-    def encode_image(self, path):
-
-        try:
-
-            with open(path, "rb") as f:
-                return base64.b64encode(f.read()).decode("utf-8")
-
-        except Exception as e:
-
-            logger.error(f"Base64 encode failed: {e}")
-            return ""
-
-    # ------------------------------------------------
-    # ANALYZE IMAGE
-    # ------------------------------------------------
-    def analyze_image(self, image_path, description):
-
-        encoded = self.encode_image(image_path)
+        combined = ""
+        for idx, d in enumerate(docs, 1):
+            combined += f"\nDoc {idx}\n{d.get('content')[:1500]}\n"
 
         prompt = f"""
-You are a Mortgage QA Analyst.
+Rank the below documents by relevance to this story.
+Return only numbers in order separated by space.
 
-Analyze the screenshot and extract only UI information related to this story.
+Story:
+{story_text}
 
-User Story:
-{description}
-
-Return only:
-
-Section:
-Fields:
-Buttons:
-Values:
+Documents:
+{combined}
 """
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Analyze screenshot"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{encoded}"
-                            }
-                        }
-                    ]
-                }
-            ]
+        response = self.openai.chat.completions.create(
+            model=self.chat_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
         )
 
-        return response.choices[0].message.content
+        ranking_text = response.choices[0].message.content.strip()
+        ranking_tokens = ranking_text.split()
 
-    # ------------------------------------------------
-    # PROCESS HTML
-    # ------------------------------------------------
-    def process_html(self, html, story_id):
+        ordered_docs = []
 
-        soup = BeautifulSoup(html, "html.parser")
+        for token in ranking_tokens:
+            if token.isdigit():
+                idx = int(token) - 1
+                if 0 <= idx < len(docs):
+                    ordered_docs.append(docs[idx])
 
-        img_folder = os.path.join("downloads", str(story_id))
-        os.makedirs(img_folder, exist_ok=True)
+        return ordered_docs if ordered_docs else docs
 
-        blocks = []
-        img_index = 1
+    # ---------------------------------------------------------
+    # Main Execution
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
 
-        for element in soup.descendants:
-
-            if element.name in ["p", "div", "li", "span"]:
-
-                text = element.get_text(strip=True)
-
-                if text:
-                    blocks.append({
-                        "type": "text",
-                        "value": text
-                    })
-
-            elif element.name == "img":
-
-                src = element.get("src")
-
-                if src:
-
-                    save_path = os.path.join(
-                        img_folder,
-                        f"image_{img_index}.png"
-                    )
-
-                    downloaded = self.download_image(src, save_path)
-
-                    if downloaded:
-
-                        blocks.append({
-                            "type": "image",
-                            "path": downloaded
-                        })
-
-                    img_index += 1
-
-        return blocks
-=========================================================================
-========================================================================
-import logging
-
-from ado.ado_client import fetch_from_ado
-from utils.image_extractor import ImageExtractor
-from utils.output_writer import save_final_txt
-from utils.channel_detector import detect_channels
-
-logger = logging.getLogger(__name__)
+        logger.info("🚀 Retrieval Agent Running")
 
 
-class ADOIntelligenceAgent:
 
-    def __init__(self):
+        channel_context = {}
+        selected_preconditions = {}
 
-        self.extractor = ImageExtractor()
 
-    def run(self, state: dict):
+        for channel in state["channels"]:
+            # Use only the user story title for vector DB search
+            docs = self._hybrid_search(state["user_story"], channel)
+            reranked_docs = self._rerank(state["user_story"], docs)
 
-        logger.info("ADO Intelligence Agent started")
+            best_precondition = ""
+            historical_steps = ""
 
-        story_id = state["user_story_id"]
+            # Try to extract precondition from reranked docs
+            for doc in reranked_docs:
 
-        story = fetch_from_ado(story_id)
+                content = doc.get("content", "")
 
-        raw_description = story.get("description", "")
-        raw_ac = story.get("acceptance_criteria", "")
+                if not best_precondition:
+                    extracted = self._extract_precondition(content)
+                    if extracted:
+                        best_precondition = extracted
 
-        # CLEAN DESCRIPTION
-        clean_description = self.extractor.clean_html(raw_description)
-        clean_description = self.extractor.format_description(clean_description)
+                historical_steps += "\n" + content[:1000]
 
-        # CLEAN AC
-        clean_ac = self.extractor.clean_html(raw_ac)
-        clean_ac = self.extractor.format_acceptance_criteria(clean_ac)
+                if best_precondition:
+                    break
 
-        # PROCESS HTML
-        blocks = self.extractor.process_html(
-            raw_ac,
-            story_id
-        )
+            # 🔥 Fallback if nothing found
+            if not best_precondition and reranked_docs:
+                logger.warning(f"{channel} → No precondition found. Using first doc fallback.")
+                best_precondition = "Precondition not found in historical data."
 
-        final_ac = ""
+            channel_context[channel] = {
+                "precondition": best_precondition,
+                "historical_steps": historical_steps[:4000]
+            }
 
-        for block in blocks:
+            selected_preconditions[channel] = best_precondition
 
-            if block["type"] == "text":
+            # logger.info(
+            #     f"{channel} → Selected Precondition:\n{best_precondition}\n"
+            # )
 
-                final_ac += block["value"] + "\n\n"
+        # 🔥 Store BOTH maps in state
+        state["channel_context"] = channel_context
+        state["selected_preconditions"] = selected_preconditions
 
-            elif block["type"] == "image":
+        # logger.info("Selected Preconditions Map:")
+        # logger.info(selected_preconditions)
 
-                resized = self.extractor.resize_image(block["path"])
-
-                analysis = self.extractor.analyze_image(
-                    resized,
-                    clean_description
-                )
-
-                final_ac += "[Image Analysis]\n"
-                final_ac += analysis + "\n\n"
-
-        channels = detect_channels(final_ac)
-
-        save_final_txt(
-            story_id,
-            story.get("title"),
-            clean_description,
-            final_ac
-        )
-
-        state["story_id"] = story_id
-        state["title"] = story.get("title")
-        state["description"] = clean_description
-        state["acceptance_criteria"] = final_ac
-        state["channels"] = channels
-
-        logger.info("ADO Intelligence Agent completed")
+        logger.info("✅ Retrieval Completed")
 
         return state
-===========================================================
-=============================================================
-def analyze_image(self, image_path, description):
-
-    encoded = self.encode_image(image_path)
-
-    prompt = f"""
-You are a QA Analyst analyzing a UI screenshot.
-
-User Story Context:
-{description}
-
-Extract UI elements from the screenshot.
-
-Return ONLY in this format:
-
-Section:
-Fields:
-Buttons:
-Values:
-
-Do not include explanations.
-"""
-
-    response = self.client.chat.completions.create(
-        model=self.model,
-        temperature=0,
-        messages=[
-            {"role": "system", "content": prompt},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Analyze screenshot"},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{encoded}"
-                        }
-                    }
-                ]
-            }
-        ]
-    )
-
-    return response.choices[0].message.content
-        
-        
