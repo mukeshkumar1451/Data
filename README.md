@@ -1,5 +1,4 @@
 import os
-import re
 import base64
 import logging
 import requests
@@ -9,9 +8,6 @@ from PIL import Image
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 
-from ado.ado_client import fetch_from_ado
-from utils.output_writer import save_final_txt
-from utils.channel_detector import detect_channels
 from config.config import get
 
 logger = logging.getLogger(__name__)
@@ -24,7 +20,7 @@ MAX_WIDTH = 1200
 JPEG_QUALITY = 85
 
 
-class ADOIntelligenceAgent:
+class ImageExtractor:
 
     def __init__(self):
 
@@ -36,9 +32,9 @@ class ADOIntelligenceAgent:
 
         self.model = get("CHAT_MODEL")
 
-    # ---------------------------------------------
+    # ------------------------------------------------
     # CLEAN HTML
-    # ---------------------------------------------
+    # ------------------------------------------------
     def clean_html(self, html):
 
         soup = BeautifulSoup(html, "html.parser")
@@ -48,9 +44,9 @@ class ADOIntelligenceAgent:
 
         return soup.get_text(separator="\n").strip()
 
-    # ---------------------------------------------
+    # ------------------------------------------------
     # DOWNLOAD IMAGE FROM ADO
-    # ---------------------------------------------
+    # ------------------------------------------------
     def download_image(self, url, save_path):
 
         try:
@@ -64,13 +60,12 @@ class ADOIntelligenceAgent:
             return save_path
 
         except Exception as e:
-
             logger.error(f"Image download failed: {e}")
             return ""
 
-    # ---------------------------------------------
+    # ------------------------------------------------
     # RESIZE IMAGE
-    # ---------------------------------------------
+    # ------------------------------------------------
     def resize_image(self, image_path):
 
         try:
@@ -83,7 +78,6 @@ class ADOIntelligenceAgent:
                     return image_path
 
                 ratio = MAX_WIDTH / float(width)
-
                 new_height = int(height * ratio)
 
                 resized = img.resize(
@@ -109,27 +103,25 @@ class ADOIntelligenceAgent:
             logger.error(f"Resize failed: {e}")
             return image_path
 
-    # ---------------------------------------------
-    # BASE64 ENCODE IMAGE
-    # ---------------------------------------------
+    # ------------------------------------------------
+    # BASE64 ENCODE
+    # ------------------------------------------------
     def encode_image(self, path):
 
         try:
 
             with open(path, "rb") as f:
-
                 return base64.b64encode(
                     f.read()
                 ).decode("utf-8")
 
         except Exception as e:
-
             logger.error(f"Base64 encode failed: {e}")
             return ""
 
-    # ---------------------------------------------
+    # ------------------------------------------------
     # EXTRACT STORY KEYWORDS
-    # ---------------------------------------------
+    # ------------------------------------------------
     def extract_keywords(self, description, ac):
 
         prompt = f"""
@@ -139,6 +131,7 @@ Focus on:
 - UI sections
 - field names
 - buttons
+- navigation paths
 
 Description:
 {description}
@@ -155,11 +148,11 @@ Return comma separated keywords.
             messages=[{"role": "user", "content": prompt}]
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content.strip()
 
-    # ---------------------------------------------
-    # IMAGE ANALYSIS WITH LLM
-    # ---------------------------------------------
+    # ------------------------------------------------
+    # ANALYZE IMAGE WITH LLM
+    # ------------------------------------------------
     def analyze_image(self, image_path, description, keywords):
 
         encoded = self.encode_image(image_path)
@@ -167,17 +160,17 @@ Return comma separated keywords.
         prompt = f"""
 You are a Mortgage QA Analyst.
 
-Analyze this screenshot ONLY for elements related to this story.
+Analyze this screenshot ONLY for UI elements related to this story.
 
 User Story:
 {description}
 
-Relevant Keywords:
+Relevant UI keywords:
 {keywords}
 
-Focus only on relevant UI fields.
+Focus only on fields related to the story.
 
-Ignore unrelated UI components.
+Ignore unrelated UI elements.
 """
 
         response = self.client.chat.completions.create(
@@ -202,9 +195,9 @@ Ignore unrelated UI components.
 
         return response.choices[0].message.content
 
-    # ---------------------------------------------
-    # PROCESS HTML (TEXT + IMAGE POSITION)
-    # ---------------------------------------------
+    # ------------------------------------------------
+    # PROCESS HTML AND PRESERVE IMAGE POSITION
+    # ------------------------------------------------
     def process_html(self, html, story_id):
 
         soup = BeautifulSoup(html, "html.parser")
@@ -248,7 +241,6 @@ Ignore unrelated UI components.
                     )
 
                     if downloaded:
-
                         blocks.append({
                             "type": "image",
                             "path": downloaded
@@ -257,11 +249,27 @@ Ignore unrelated UI components.
                     img_index += 1
 
         return blocks
+-------------------------------------------------------------------------------------------------------------------------
+import logging
 
-    # ---------------------------------------------
-    # MAIN RUN
-    # ---------------------------------------------
-    def run(self, state):
+from ado.ado_client import fetch_from_ado
+from utils.image_extractor import ImageExtractor
+from utils.output_writer import save_final_txt
+from utils.channel_detector import detect_channels
+
+logger = logging.getLogger(__name__)
+
+
+class ADOIntelligenceAgent:
+
+    def __init__(self):
+
+        self.extractor = ImageExtractor()
+
+    # ---------------------------------------------------------
+    # MAIN EXECUTION
+    # ---------------------------------------------------------
+    def run(self, state: dict):
 
         logger.info("ADO Intelligence Agent started")
 
@@ -272,17 +280,20 @@ Ignore unrelated UI components.
         raw_description = story.get("description", "")
         raw_ac = story.get("acceptance_criteria", "")
 
-        clean_description = self.clean_html(raw_description)
-        clean_ac = self.clean_html(raw_ac)
+        # CLEAN HTML
+        clean_description = self.extractor.clean_html(raw_description)
+        clean_ac = self.extractor.clean_html(raw_ac)
 
-        keywords = self.extract_keywords(
+        # EXTRACT UI KEYWORDS
+        keywords = self.extractor.extract_keywords(
             clean_description,
             clean_ac
         )
 
-        logger.info(f"Keywords: {keywords}")
+        logger.info(f"Detected Keywords: {keywords}")
 
-        blocks = self.process_html(
+        # PROCESS HTML BLOCKS
+        blocks = self.extractor.process_html(
             raw_ac,
             story_id
         )
@@ -297,11 +308,11 @@ Ignore unrelated UI components.
 
             elif block["type"] == "image":
 
-                resized = self.resize_image(
+                resized = self.extractor.resize_image(
                     block["path"]
                 )
 
-                analysis = self.analyze_image(
+                analysis = self.extractor.analyze_image(
                     resized,
                     clean_description,
                     keywords
@@ -324,7 +335,10 @@ Ignore unrelated UI components.
         state["description"] = clean_description
         state["acceptance_criteria"] = final_ac
         state["channels"] = channels
+        state["keywords"] = keywords
 
         logger.info("ADO Intelligence Agent completed")
 
         return state
+        
+        
