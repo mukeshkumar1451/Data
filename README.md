@@ -1,162 +1,70 @@
-import logging
-import os
-import re
-from typing import Dict, List
+# graph/graph_builder.py
 
-from langchain_openai import AzureChatOpenAI
-from langchain_core.prompts import PromptTemplate
-from config.config import get
+from langgraph.graph import StateGraph, END
 
-logger = logging.getLogger(__name__)
+from state.rag_state import RAGState
+
+from agents.ado_intelligence_agent import ADOIntelligenceAgent
+from agents.retrieval_intelligence_agent import RetrievalIntelligenceAgent
+from agents.llm_testcase_generator_agent import LLMTestcaseGeneratorAgent
+from agents.excel_export_agent import ExcelExportAgent
 
 
-class ReviewAgent:
 
-    def __init__(self):
+def build_graph():
 
-        prompt_path = get("REVIEW_PROMPT_PATH")
+    graph = StateGraph(RAGState)
 
-        if not os.path.exists(prompt_path):
-            raise FileNotFoundError(f"Review prompt not found: {prompt_path}")
+    # Initialize agents
+    ado_agent = ADOIntelligenceAgent()
+    retrieval_agent = RetrievalIntelligenceAgent()
+    llm_agent = LLMTestcaseGeneratorAgent()
+    excel_agent = ExcelExportAgent()
+    
 
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            prompt_text = f.read()
+    # Add nodes
+    graph.add_node("ado_agent", ado_agent.run)
+    graph.add_node("retrieval_agent", retrieval_agent.run)
+    graph.add_node("llm_agent", llm_agent.run)
+    graph.add_node("excel_agent", excel_agent.run)
+     
 
-        self.prompt = PromptTemplate(
-            input_variables=[
-                "channel",
-                "title",
-                "description",
-                "ac",
-                "historical_steps",
-                "testcase",
-                "missing_keywords"
-            ],
-            template=prompt_text
-        )
+    # Define flow
+    graph.set_entry_point("ado_agent")
 
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
+    graph.add_edge("ado_agent", "retrieval_agent")
+    graph.add_edge("retrieval_agent", "llm_agent")
+    graph.add_edge("llm_agent", "excel_agent")
+    graph.add_edge("excel_agent", END)
 
-        self.chain = self.prompt | self.llm
+    return graph.compile()
+===============================================
+from typing import TypedDict, Dict, List
 
-        logger.info("Review Agent initialized")
 
-    # ---------------------------------------------------------
-    # Keyword Extraction
-    # ---------------------------------------------------------
-    def _extract_keywords(self, text: str) -> List[str]:
+class HistoricalContext(TypedDict, total=False):
+    precondition: str
+    historical_scenario: str
+    historical_script: str
+    historical_steps: List[Dict[str, str]]
 
-        text = text.lower()
 
-        text = re.sub(r"[^\w\s]", " ", text)
+class RAGState(TypedDict, total=False):
+    user_story_id: str
 
-        words = text.split()
+    # ADO Agent outputs
+    user_story: str
+    description: str
+    acceptance_criteria: str
+    channels: List[str]
+    story: Dict
 
-        stop_words = {
-            "the","is","a","an","to","of","and","in",
-            "when","then","given","should","be","on",
-            "for","that","with","from","as","user"
-        }
+    # Retrieval Agent outputs
+    retrieved_docs: Dict[str, List[Dict]]  # Raw search docs (optional debug)
+    channel_context: Dict[str, HistoricalContext]
 
-        keywords = [
-            w for w in words
-            if w not in stop_words and len(w) > 3
-        ]
+    # LLM Agent outputs
+    llm_outputs: Dict[str, str]
 
-        return list(set(keywords))
-
-    # ---------------------------------------------------------
-    # Find Missing Keywords
-    # ---------------------------------------------------------
-    def _find_missing(self, keywords, testcase):
-
-        testcase = testcase.lower()
-
-        missing = []
-
-        for k in keywords:
-            if k not in testcase:
-                missing.append(k)
-
-        return missing
-
-    # ---------------------------------------------------------
-    # Main Execution
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("Review Agent Running")
-
-        story_text = (
-            state.get("title","") + " " +
-            state.get("description","") + " " +
-            state.get("acceptance_criteria","")
-        )
-
-        keywords = self._extract_keywords(story_text)
-
-        logger.info(f"Extracted {len(keywords)} keywords from story")
-
-        max_attempts = 3
-
-        for channel, testcase in state["llm_outputs"].items():
-
-            logger.info(f"Reviewing channel → {channel}")
-
-            attempt = 1
-
-            while attempt <= max_attempts:
-
-                missing = self._find_missing(keywords, testcase)
-
-                if not missing:
-
-                    logger.info(
-                        f"{channel} → Keyword coverage satisfied"
-                    )
-                    break
-
-                logger.warning(
-                    f"{channel} → Missing keywords: {missing}"
-                )
-
-                payload = {
-                    "channel": channel,
-                    "title": state.get("title",""),
-                    "description": state.get("description",""),
-                    "ac": state.get("acceptance_criteria",""),
-                    "historical_steps": state["channel_context"][channel]["historical_steps"],
-                    "testcase": testcase,
-                    "missing_keywords": ", ".join(missing)
-                }
-
-                result = self.chain.invoke(payload)
-
-                content = result.content.strip()
-
-                if "REVIEW STATUS: PASSED" in content:
-
-                    logger.info(
-                        f"{channel} → testcase validated"
-                    )
-                    break
-
-                if "Corrected Test Case:" in content:
-
-                    testcase = content.split(
-                        "Corrected Test Case:"
-                    )[-1].strip()
-
-                attempt += 1
-
-            state["llm_outputs"][channel] = testcase
-
-        logger.info("Review Completed")
-
-        return state
+    # Excel Agent outputs
+    excel_output: str
