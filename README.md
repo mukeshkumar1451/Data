@@ -1,41 +1,15 @@
-from PIL import Image
-import os
-
-MAX_WIDTH = 1200
-JPEG_QUALITY = 85
-
-
-def resize_image_if_needed(image_path: str):
-
-    try:
-
-        with Image.open(image_path) as img:
-
-            width, height = img.size
-
-            if width <= MAX_WIDTH:
-                return image_path
-
-            ratio = MAX_WIDTH / float(width)
-            new_height = int(height * ratio)
-
-            resized = img.resize(
-                (MAX_WIDTH, new_height),
-                Image.LANCZOS
-            )
-
-            base, _ = os.path.splitext(image_path)
-
-            resized_path = base + "_resized.jpg"
-
-            resized.convert("RGB").save(
-                resized_path,
-                "JPEG",
-                quality=JPEG_QUALITY,
-                optimize=True
-            )
-
-            return resized_path
-
-    except Exception:
-        return image_path
+Successfully fetched work item 734893 from ADO with title: Buydown Modal When Copying Fees from LE displays a null reference and description  <div><div style="box-sizing:border-box;"><b>s a</b> user<br> </div><div style="box-sizing:border-box;"><b>
+I want</b> the Buydown Split section on the CD Fees screen to correctly display the 'Paid By' fields when copying fees from the LE Fees screen<br><b>
+So that</b> I do not encounter a null reference and can ensure accurate split allocation without additional manual steps<br> </div><div style="box-sizing:border-box;"><br> </div><div style="box-sizing:border-box;"><br> </div><div style="box-sizing:border-box;">Issue #2: </div><div style="box-sizing:border-box;"><br style="box-sizing:border-box;"> </div><div style="box-sizing:border-box;">This seems to 
+be existing. When we copy LE fees to the CD Fees screen, the below is displayed. 
+</div><div style="box-sizing:border-box;"><br style="box-sizing:border-box;"> </div><div style="box-sizing:border-box;"><img src="https://dev.azure.com/chl-vsts/accd61a0-a463-4192-98cb-6a091645dcc1/_apis/wit/attachments/397b0b41-9e45-43c7-b8eb-f91362193243?fileName=image.png" alt=Image style="box-sizing:border-box;max-width:100%;align-self:center;"> </div><div style="box-sizing:border-box;"><br> </div> </div><div><span style="background-color:rgb(128, 255, 255);"><b>-Steps to recreate&nbsp;</b></span> </div><div><b><br></b> </div><div><ul><li><span style="background-color:rgb(128, 255, 255);"><b>On the LE
+Fees screen, Buydown Split is incomplete. No values entered in the 'Borrower', 'Lender', or 'Seller' fields.&nbsp;</b></span> </li> </ul><b>&nbsp;<img src="https://dev.azure.com/chl-vsts/accd61a0-a463-4192-98cb-6a091645dcc1/_apis/wit/attachments/74132422-2a6a-4a73-8a16-1abaf0d405d8?fileName=image.png" alt=Image><br></b><ul><li><span style="background-color:rgb(128, 255, 255);"><b>Go to the CD
+Fees screen and click Copy Fees from LE, ‘Lender’ displays as ‘null’</b></span> </li> </ul><b>&nbsp;<img src="https://dev.azure.com/chl-vsts/accd61a0-a463-4192-98cb-6a091645dcc1/_apis/wit/attachments/e4263512-819e-47d5-9c6a-fa8877871164?fileName=image.png" alt=Image></b><br> </div><div><div style="box-sizing:border-box;"><br> </div><br> </div> and acceptance criteria <div><b>AC1:&nbsp;Paid By Field Names Displayed When Buydown Split is Incomplete on LE</b> </div><div><div style="font-weight:400;box-sizing:border-box;"><b style="box-sizing:border-box;">Given<span>&nbsp;</span></b>the user is on the DIS &gt; LE Fees screen &gt; Interest Rate 
+Details &gt; Temporary Buydown Subsidy&nbsp; </div><blockquote style="font-weight:400;box-sizing:border-box;margin:0px 0px 0px 40px;border:none;"><div style="box-sizing:border-box;"><b style="box-sizing:border-box;">AND&nbsp;</b>the Paid By split fields are not completed&nbsp; </div></blockquote><div style="font-weight:400;box-sizing:border-box;"><b style="box-sizing:border-box;">When<span>&nbsp;</span></b>the user navigates to the DOCS &gt; CD Fees screen </div><blockquote style="font-weight:400;box-sizing:border-box;margin:0px 0px 0px 40px;border:none;"><div 
+style="box-sizing:border-box;"><b style="box-sizing:border-box;">AND&nbsp;</b>clicks &quot;Copy Fees from LE&quot;&nbsp; </div></blockquote><div style="font-weight:400;box-sizing:border-box;"><b style="box-sizing:border-box;">Then<span>&nbsp;</span></b>the Buydown Subsidy on the CD Fees screen <span style="box-sizing:border-box;display:inline !important;"><span style="box-sizing:border-box;">&nbsp;</span>&gt; Interest Rate Details &gt; Temporary Buydown Subsidy</span><span style="display:inline !important;">&nbsp;</span>should display the correct 'Paid By' field names without a null reference </div><div style="font-weight:400;box-sizing:border-box;"><br> </div><div style="font-weight:bold;box-sizing:border-box;">-UI Mockup </div><div style="box-sizing:border-box;"><ul><li>When Buydown Product is assigned, the 'Temporary Buydown Subsidy' section appears on the DIS &gt; LE Fees screen </li><li>Do not enter any values in the 'Paid By' modal </li> </ul><img src="https://dev.azure.com/chl-vsts/accd61a0-a463-4192-98cb-6a091645dcc1/_apis/wit/attachments/4aa75081-7f5c-4030-b837-a8ecec9d5448?fileName=image.png" alt=Image><br><ul><li>Go to the DOCS &gt; CD Fees screen and click Copy Fees from LE and Temporary Buydown Subsidy section should appear displaying the Paid By field names&nbsp; </li> </ul><img src="https://dev.azure.com/chl-vsts/accd61a0-a463-4192-98cb-6a091645dcc1/_apis/wit/attachments/2805f1a9-7ff1-4669-8fad-fb563b1cd794?fileName=image.png" alt=Image><br><img src="https://dev.azure.com/chl-vsts/accd61a0-a463-4192-98cb-6a091645dcc1/_apis/wit/attachments/8384b4aa-088e-426f-93d2-f53ce191cae5?fileName=image.png" alt=Image><br> </div><br> </div><div><b><br></b> </div><div><b>AC2: Regression - Paid By Field Names Displayed When Buydown Split is Complete on 
+LE</b> </div><div><b>Given </b>the user is<span style="display:inline !important;"><span>&nbsp;</span>on the DIS &gt; LE Fees screen &gt; Interest Rate Details &gt; Temporary Buydown Subsidy&nbsp;</span> </div><blockquote style="margin:0 0 0 40px;border:none;"><div><b>AND&nbsp;</b>the Paid By split fields are completed&nbsp; </div></blockquote><div><b>When </b>the user navigates to the<span style="display:inline !important;"><span>&nbsp;</span>DOCS &gt; CD Fees screen</span> </div><blockquote style="margin:0 0 0 40px;border:none;"><div><b>AND&nbsp;</b>clicks &quot;Copy Fees from LE&quot;&nbsp; </div></blockquote><div><b>Then&nbsp;</b><span 
+style="font-weight:400;display:inline !important;">the Buydown Subsidy on the CD 
+Fees screen<span>&nbsp;</span></span><span style="box-sizing:border-box;font-weight:400;display:inline !important;"><span style="box-sizing:border-box;">&nbsp;</span>&gt; Interest Rate Details &gt; Temporary Buydown Subsidy should&nbsp;</span>display the correct 'Paid By' field names without a null reference<br> </div><div><br> </div><div><br> </div><div><span style="background-color:rgb(128, 255, 255);"><b>**Note to Dev**</b></span> </div><div><span style="background-color:rgb(128, 255, 255);">AC2 is existing so no changes should be made for this scenario&nbsp;</span> </div><div><br> </div><div><span style="background-color:rgb(128, 255, 255);"><b>**Note For Testing**</b></span> </div><div><span style="background-color:rgb(128, 255, 255);">In order to test, loan will need to have a Buydown Product 
+assigned. Some examples would be CF30B3, </span><span style="background-color:rgb(128, 255, 255);">CF30B2,&nbsp;</span><span style="background-color:rgb(128, 255, 255);">CF30B1, </span><span style="background-color:rgb(128, 255, 255);">CHBF30B1,</span><span style="background-color:rgb(128, 255, 255);">CHRF30B1, etc</span><span style="background-color:rgb(128, 255, 255);">. 'Paid By' field names appear 
+based on </span><span style="background-color:rgb(128, 255, 255);">Purpose of Loan</span><span style="background-color:rgb(128, 255, 255);">. Paid By = Seller would not typically appear on loans where Purpose of Loan = Refinance.&nbsp;</span> 
+</div>
