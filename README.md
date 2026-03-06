@@ -1,212 +1,53 @@
-import logging
-import os
-import json
-import re
-from typing import Dict, List
+```
+Test Case ID / Test Script ID: 718523_RTL_01  
+Test Scenario Id: 718523_SC_01  
+Test Scenario Description: Validate the addition of new fields in the Modernized Audit under Generate Disclosures section, including "Modernized Audit additions."  
+Test Script Description: This test case validates the presence, functionality, and behavior of the newly added fields in the Modernized Audit under the Generate Disclosures section. It ensures that the fields are displayed correctly, are functional, and adhere to the business rules defined in the acceptance criteria.  
+Pre-Condition & Assumptions: Refer to provided precondition context.  
 
-from langchain_openai import AzureChatOpenAI
-from config.config import get
+Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping  
 
-logger = logging.getLogger(__name__)
+Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA  
 
+Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA  
 
-class ReviewAgent:
+Step 03 | Navigate to the "Generate Disclosures" section under the "DIS" menu | Loan Navigation Menu | NA | The system displays the Generate Disclosures page with all available fields and options | 718523_AC_01  
 
-    def __init__(self):
+Step 04 | Verify the presence of the "Intent to Proceed" checkbox | Generate Disclosures | NA | The system displays the "Intent to Proceed" checkbox in the Generate Disclosures section | 718523_AC_02  
 
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
+Step 05 | Select the "Intent to Proceed" checkbox | Generate Disclosures | NA | The system allows the checkbox to be selected and retains the selection | 718523_AC_02  
 
-        logger.info("Review Agent initialized")
+Step 06 | Verify the presence of the "Higher Priced Mortgage Loan" dropdown | Generate Disclosures | NA | The system displays the "Higher Priced Mortgage Loan" dropdown with options: Select..., Yes, No | 718523_AC_03  
 
-    # ---------------------------------------------------------
-    # Extract keywords ONLY from Title
-    # ---------------------------------------------------------
-    def extract_title_keywords(self, title: str) -> List[str]:
+Step 07 | Select "Yes" from the "Higher Priced Mortgage Loan" dropdown | Generate Disclosures | Yes | The system allows the selection and retains the value | 718523_AC_03  
 
-        if not title:
-            return []
+Step 08 | Verify the presence of the "HPML DV Override" checkbox | Generate Disclosures | NA | The system displays the "HPML DV Override" checkbox in the Generate Disclosures section | 718523_AC_04  
 
-        phrases = re.findall(
-            r"[A-Z][a-zA-Z]+(?:\s[A-Za-z]+){0,3}",
-            title
-        )
+Step 09 | Select the "HPML DV Override" checkbox | Generate Disclosures | NA | The system allows the checkbox to be selected and retains the selection | 718523_AC_04  
 
-        return list(set(phrases))
+Step 10 | Verify the presence of the "Send Via" dropdown | Generate Disclosures | NA | The system displays the "Send Via" dropdown with options: eSign | 718523_AC_05  
 
-    # ---------------------------------------------------------
-    # Find missing keywords in testcase
-    # ---------------------------------------------------------
-    def find_missing_keywords(self, keywords, testcase):
+Step 11 | Select "eSign" from the "Send Via" dropdown | Generate Disclosures | eSign | The system allows the selection and retains the value | 718523_AC_05  
 
-        testcase_lower = testcase.lower()
+Step 12 | Verify the presence of the "Mortgage Broker Fee/Compensation Agreement" section | Mortgage Broker Fee/Compensation Agreement | NA | The system displays the "Mortgage Broker Fee/Compensation Agreement" section with all relevant fields | 718523_AC_06  
 
-        missing = []
+Step 13 | Verify the presence of the "Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?" field | Mortgage Broker Fee/Compensation Agreement | NA | The system displays the field with options: Select..., Yes, No | 718523_AC_06  
 
-        for k in keywords:
-            if k.lower() not in testcase_lower:
-                missing.append(k)
+Step 14 | Select "Yes" for the "Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?" field | Mortgage Broker Fee/Compensation Agreement | Yes | The system allows the selection and retains the value | 718523_AC_06  
 
-        return missing
+Step 15 | Verify the presence of the "Mortgage Broker License Type" field | Mortgage Broker Fee/Compensation Agreement | NA | The system displays the "Mortgage Broker License Type" field with options: Select..., CFL, DRE, RML | 718523_AC_07  
 
-    # ---------------------------------------------------------
-    # Regenerate testcase using LLM
-    # ---------------------------------------------------------
-    def regenerate_testcase(self, state, channel, testcase, missing_keywords):
+Step 16 | Select "CFL" for the "Mortgage Broker License Type" field | Mortgage Broker Fee/Compensation Agreement | CFL | The system allows the selection and retains the value | 718523_AC_07  
 
-        logger.info(
-            f"{channel} → regenerating testcase due to missing keywords"
-        )
+Step 17 | Verify that the "Mortgage Broker License Type" field appears only when SubPropState = CA | Mortgage Broker Fee/Compensation Agreement | SubPropState = CA | The system displays the "Mortgage Broker License Type" field only when SubPropState = CA | 718523_AC_08  
 
-        prompt = f"""
-Rewrite the testcase below.
+Step 18 | Verify that the "Mortgage Broker License Type" field is privilege restricted | Mortgage Broker Fee/Compensation Agreement | NA | The system restricts access to the field based on user privileges | 718523_AC_09  
 
-Missing keywords from title:
-{missing_keywords}
+Step 19 | Verify the presence of the "Generate Disclosures Fields" section | Generate Disclosures | NA | The system displays all fields under the "Generate Disclosures Fields" section, including "Intent to Proceed," "Higher Priced Mortgage Loan," and "HPML DV Override" | 718523_AC_10  
 
-Ensure these keywords are validated in the test steps.
+Step 20 | Verify that all fields under "Generate Disclosures Fields" adhere to the business rules | Generate Disclosures | NA | The system ensures that all fields under "Generate Disclosures Fields" are functional and adhere to the defined business rules | 718523_AC_11  
 
-User Story:
-{state['title']}
+Step 21 | Verify the addition of "Modernized Audit additions" in the Generate Disclosures section | Generate Disclosures | NA | The system displays the "Modernized Audit additions" fields as per the acceptance criteria | 718523_AC_12  
 
-Description:
-{state['description']}
-
-Acceptance Criteria:
-{state['acceptance_criteria']}
-
-Historical Workflow Reference:
-{state['channel_context'][channel]['historical_steps']}
-
-Existing Testcase:
-{testcase}
-
-Instructions:
-• Maintain navigation flow using historical workflow
-• Ensure missing keywords appear in steps
-• Keep step numbering correct
-• Return only the corrected testcase
-"""
-
-        response = self.llm.invoke(prompt)
-
-        return response.content.strip()
-
-    # ---------------------------------------------------------
-    # Save review logs
-    # ---------------------------------------------------------
-    def save_review_log(self, state, review_data):
-
-        log_dir = "logs"
-        os.makedirs(log_dir, exist_ok=True)
-
-        file_path = os.path.join(
-            log_dir,
-            f"{state['user_story_id']}_review_log.json"
-        )
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(review_data, f, indent=4)
-
-    # ---------------------------------------------------------
-    # Save final testcase output
-    # ---------------------------------------------------------
-    def save_testcase_output(self, state, channel, testcase):
-
-        log_dir = "logs"
-        os.makedirs(log_dir, exist_ok=True)
-
-        file_path = os.path.join(
-            log_dir,
-            f"{state['user_story_id']}_{channel}_testcase.txt"
-        )
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(testcase)
-
-    # ---------------------------------------------------------
-    # Main Execution
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("Review Agent Running")
-
-        title = state.get("title", "")
-
-        keywords = self.extract_title_keywords(title)
-
-        logger.info(f"Extracted title keywords: {keywords}")
-
-        review_log = {
-            "user_story_id": state["user_story_id"],
-            "title_keywords": keywords,
-            "channels": {}
-        }
-
-        max_attempts = 3
-
-        for channel, testcase in state["llm_outputs"].items():
-
-            logger.info(f"Reviewing channel → {channel}")
-
-            attempt = 1
-
-            initial_missing = []
-
-            while attempt <= max_attempts:
-
-                missing = self.find_missing_keywords(
-                    keywords,
-                    testcase
-                )
-
-                if attempt == 1:
-                    initial_missing = missing
-
-                if not missing:
-
-                    logger.info(
-                        f"{channel} → all keywords covered"
-                    )
-                    break
-
-                logger.warning(
-                    f"{channel} → missing keywords: {missing}"
-                )
-
-                testcase = self.regenerate_testcase(
-                    state,
-                    channel,
-                    testcase,
-                    missing
-                )
-
-                attempt += 1
-
-            # Save updated testcase
-            state["llm_outputs"][channel] = testcase
-
-            # Save testcase output
-            self.save_testcase_output(
-                state,
-                channel,
-                testcase
-            )
-
-            review_log["channels"][channel] = {
-                "attempts": attempt,
-                "missing_keywords_initial": initial_missing,
-                "review_status": "PASSED" if not missing else "FAILED"
-            }
-
-        # Save review log
-        self.save_review_log(state, review_log)
-
-        logger.info("Review Completed")
-
-        return state
+Step 22 | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA  
+```
