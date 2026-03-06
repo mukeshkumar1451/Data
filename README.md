@@ -32,19 +32,21 @@ class RetrievalIntelligenceAgent:
         )
 
     # ---------------------------------------------------------
-    # Embed Query
+    # EMBEDDING
     # ---------------------------------------------------------
     def _embed(self, text: str) -> List[float]:
 
+        text = text[:2000]
+
         response = self.openai.embeddings.create(
             model=self.embed_model,
-            input=text[:8000]
+            input=text
         )
 
         return response.data[0].embedding
 
     # ---------------------------------------------------------
-    # Hybrid Search
+    # HYBRID SEARCH
     # ---------------------------------------------------------
     def _hybrid_search(self, query_text: str, channel: str, topk: int = 20):
 
@@ -66,24 +68,31 @@ class RetrievalIntelligenceAgent:
 
         logger.info(f"{channel} → Retrieved {len(results)} docs")
 
-        # Save results to a JSON log file
         self._save_log(channel, [
-            {"testCaseId": r["testCaseId"], "content": r["content"]} for r in results
+            {"testCaseId": r["testCaseId"], "content": r["content"]}
+            for r in results
         ])
 
         return results
 
+    # ---------------------------------------------------------
+    # SAVE RETRIEVAL LOG
+    # ---------------------------------------------------------
     def _save_log(self, channel: str, data: List[Dict]):
-        """Save retrieved data to a JSON log file per channel."""
+
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, f"{channel}_retrieval_log.json")
+
+        log_file = os.path.join(
+            log_dir,
+            f"{channel}_retrieval_log.json"
+        )
 
         with open(log_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
     # ---------------------------------------------------------
-    # Robust Precondition Extraction
+    # PRECONDITION EXTRACTION
     # ---------------------------------------------------------
     def _extract_precondition(self, content: str) -> str:
 
@@ -95,7 +104,6 @@ class RetrievalIntelligenceAgent:
 
             lower = line.lower().strip()
 
-            # START capture
             if (
                 "pre-condition" in lower or
                 "precondition" in lower or
@@ -105,7 +113,6 @@ class RetrievalIntelligenceAgent:
                 collected.append(line)
                 continue
 
-            # STOP capture
             if capture and (
                 lower.startswith("step") or
                 "test steps" in lower or
@@ -117,13 +124,15 @@ class RetrievalIntelligenceAgent:
                 collected.append(line)
 
         result = "\n".join(collected).strip()
-        if result.lower().startswith("pre-condition")or result.lower().startswith("precondition") or result.lower().startswith("pre condition"): 
+
+        if result.lower().startswith(("pre-condition", "precondition", "pre condition")):
             lines = result.splitlines()
             result = "\n".join(lines[1:]).strip()
-        return result   
+
+        return result
 
     # ---------------------------------------------------------
-    # LLM Rerank
+    # LLM RERANK
     # ---------------------------------------------------------
     def _rerank(self, story_text: str, docs: List[Dict]) -> List[Dict]:
 
@@ -131,15 +140,22 @@ class RetrievalIntelligenceAgent:
             return []
 
         combined = ""
+
         for idx, d in enumerate(docs, 1):
-            combined += f"\nDoc {idx}\n{d.get('content')[:1500]}\n"
+            combined += f"\nDocument {idx}\n{d.get('content')[:1500]}\n"
 
         prompt = f"""
-Rank the below documents by relevance to this story.
-Return only numbers in order separated by space.
+You are ranking historical test cases.
 
-Story:
+User Story:
 {story_text}
+
+Rank the documents by relevance to the user story.
+
+Return ONLY document numbers separated by space.
+
+Example:
+3 1 4 2
 
 Documents:
 {combined}
@@ -157,52 +173,73 @@ Documents:
         ordered_docs = []
 
         for token in ranking_tokens:
+
             if token.isdigit():
+
                 idx = int(token) - 1
+
                 if 0 <= idx < len(docs):
                     ordered_docs.append(docs[idx])
+
+        logger.info(f"Reranked docs → {len(ordered_docs)}")
 
         return ordered_docs if ordered_docs else docs
 
     # ---------------------------------------------------------
-    # Main Execution
+    # MAIN EXECUTION
     # ---------------------------------------------------------
     def run(self, state: Dict) -> Dict:
 
         logger.info("🚀 Retrieval Agent Running")
 
-
-
         channel_context = {}
         selected_preconditions = {}
 
+        # -----------------------------------------------------
+        # BUILD QUERY FROM STORY DATA
+        # -----------------------------------------------------
+        query_text = f"""
+Title:
+{state.get("title","")}
+
+Description:
+{state.get("description","")}
+
+Acceptance Criteria:
+{state.get("acceptance_criteria","")}
+"""
 
         for channel in state["channels"]:
-            # Use only the user story title for vector DB search
-            docs = self._hybrid_search(state["user_story"], channel)
-            reranked_docs = self._rerank(state["user_story"], docs)
+
+            docs = self._hybrid_search(query_text, channel)
+
+            reranked_docs = self._rerank(query_text, docs)[:5]
 
             best_precondition = ""
             historical_steps = ""
 
-            # Try to extract precondition from reranked docs
             for doc in reranked_docs:
 
                 content = doc.get("content", "")
 
                 if not best_precondition:
+
                     extracted = self._extract_precondition(content)
+
                     if extracted:
                         best_precondition = extracted
 
-                historical_steps += "\n" + content[:1000]
+                historical_steps += "\n" + content[:600]
 
                 if best_precondition:
                     break
 
-            # 🔥 Fallback if nothing found
             if not best_precondition and reranked_docs:
-                logger.warning(f"{channel} → No precondition found. Using first doc fallback.")
+
+                logger.warning(
+                    f"{channel} → No precondition found. Using fallback."
+                )
+
                 best_precondition = "Precondition not found in historical data."
 
             channel_context[channel] = {
@@ -212,16 +249,8 @@ Documents:
 
             selected_preconditions[channel] = best_precondition
 
-            # logger.info(
-            #     f"{channel} → Selected Precondition:\n{best_precondition}\n"
-            # )
-
-        # 🔥 Store BOTH maps in state
         state["channel_context"] = channel_context
         state["selected_preconditions"] = selected_preconditions
-
-        # logger.info("Selected Preconditions Map:")
-        # logger.info(selected_preconditions)
 
         logger.info("✅ Retrieval Completed")
 
