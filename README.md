@@ -1,13 +1,284 @@
-=====================================
-ADO INTELLIGENCE ANALYSIS OUTPUT
-=====================================
+import os
+import re
+import base64
+import logging
+import requests
+
+from bs4 import BeautifulSoup
+from PIL import Image
+from dotenv import load_dotenv
+from openai import AzureOpenAI
+
+from config.config import get
+
+logger = logging.getLogger(__name__)
+
+load_dotenv()
+
+ADO_PAT = os.getenv("ADO_PAT")
+
+MAX_WIDTH = 1200
+JPEG_QUALITY = 85
 
 
-Story ID: 734893
-Title: Buydown Modal When Copying Fees from LE displays a null reference
-Timestamp: 20260306_140005
------------- DESCRIPTION ------------
-As a user I want the Buydown Split section on the CD Fees screen to correctly display the 'Paid By' fields when copying fees from the LE Fees screen So that I do not encounter a null reference and can ensure accurate split allocation without additional manual steps Issue #2: This seems to be existing. When we copy LE fees to the CD Fees screen, the below is displayed. -Steps to recreate On the LE Fees screen, Buydown Split is incomplete. No values entered in the 'Borrower', 'Lender', or 'Seller' fields. Go to the CD Fees screen and click Copy Fees from LE, ‘Lender’ displays as ‘null’
------- ACCEPTANCE CRITERIA ----------
-AC1: Paid By Field Names Displayed When Buydown Split is Incomplete on LE Given the user is on the DIS > LE Fees screen > Interest Rate Details > Temporary Buydown Subsidy AND the Paid By split fields are not completed When the user navigates to the DOCS > CD Fees screen AND clicks "Copy Fees from LE" Then the Buydown Subsidy on the CD Fees screen > Interest Rate Details > Temporary Buydown Subsidy should display the correct 'Paid By' field names without a null reference -UI Mockup When Buydown Product is assigned, the 'Temporary Buydown Subsidy' section appears on the DIS > LE Fees screen Do not enter any values in the 'Paid By' modal Go to the DOCS > CD Fees screen and click Copy Fees from LE and Temporary Buydown Subsidy section should appear displaying the Paid By field names AC2: Regression - Paid By Field Names Displayed When Buydown Split is Complete on LE Given the user is on the DIS > LE Fees screen > Interest Rate Details > Temporary Buydown Subsidy AND the Paid By split fields are completed When the user navigates to the DOCS > CD Fees screen AND clicks "Copy Fees from LE" Then the Buydown Subsidy on the CD Fees screen > Interest Rate Details > Temporary Buydown Subsidy should display the correct 'Paid By' field names without a null reference **Note to Dev** AC2 is existing so no changes should be made for this scenario **Note For Testing** In order to test, loan will need to have a Buydown Product assigned. Some examples would be CF30B3, CF30B2, CF30B1, CHBF30B1, CHRF30B1, etc . 'Paid By' field names appear based on Purpose of Loan . Paid By = Seller would not typically appear on loans where Purpose of Loan = Refinance.
+class ImageExtractor:
 
+    def __init__(self):
+
+        self.client = AzureOpenAI(
+            api_key=get("AZURE_OPENAI_KEY"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+        )
+
+        self.model = get("CHAT_MODEL")
+
+    # ---------------------------------------------
+    # CLEAN HTML
+    # ---------------------------------------------
+    def clean_html(self, html):
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        for tag in soup(["script", "style"]):
+            tag.decompose()
+
+        text = soup.get_text(" ")
+
+        text = re.sub(r"\s+", " ", text).strip()
+
+        text = text.replace("s a user", "As a user")
+
+        return text
+
+    # ---------------------------------------------
+    # FORMAT USER STORY DESCRIPTION
+    # ---------------------------------------------
+    def format_description(self, text):
+
+        text = text.replace(" As a user", "\nAs a user")
+        text = text.replace(" I want", "\nI want")
+        text = text.replace(" So that", "\nSo that")
+
+        return text.strip()
+
+    # ---------------------------------------------
+    # FORMAT ACCEPTANCE CRITERIA
+    # ---------------------------------------------
+    def format_acceptance_criteria(self, text):
+
+        replacements = [
+            (" Given ", "\nGiven "),
+            (" When ", "\nWhen "),
+            (" Then ", "\nThen "),
+            (" AND ", "\nAND "),
+            (" AC1:", "\nAC1:"),
+            (" AC2:", "\n\nAC2:")
+        ]
+
+        for old, new in replacements:
+            text = text.replace(old, new)
+
+        return text.strip()
+
+    # ---------------------------------------------
+    # DOWNLOAD IMAGE FROM ADO
+    # ---------------------------------------------
+    def download_image(self, url, save_path):
+
+        try:
+
+            response = requests.get(url, auth=("", ADO_PAT))
+            response.raise_for_status()
+
+            with open(save_path, "wb") as f:
+                f.write(response.content)
+
+            return save_path
+
+        except Exception as e:
+
+            logger.error(f"Image download failed: {e}")
+            return ""
+
+    # ---------------------------------------------
+    # RESIZE IMAGE
+    # ---------------------------------------------
+    def resize_image(self, image_path):
+
+        try:
+
+            with Image.open(image_path) as img:
+
+                width, height = img.size
+
+                if width <= MAX_WIDTH:
+                    return image_path
+
+                ratio = MAX_WIDTH / float(width)
+                new_height = int(height * ratio)
+
+                resized = img.resize((MAX_WIDTH, new_height), Image.LANCZOS)
+
+                base, _ = os.path.splitext(image_path)
+
+                resized_path = base + "_resized.jpg"
+
+                resized.convert("RGB").save(
+                    resized_path,
+                    "JPEG",
+                    quality=JPEG_QUALITY,
+                    optimize=True
+                )
+
+                return resized_path
+
+        except Exception as e:
+
+            logger.error(f"Resize failed: {e}")
+            return image_path
+
+    # ---------------------------------------------
+    # BASE64 ENCODE IMAGE
+    # ---------------------------------------------
+    def encode_image(self, path):
+
+        try:
+
+            with open(path, "rb") as f:
+                return base64.b64encode(f.read()).decode("utf-8")
+
+        except Exception as e:
+            logger.error(f"Base64 encode failed: {e}")
+            return ""
+
+    # ---------------------------------------------
+    # EXTRACT UI KEYWORDS
+    # ---------------------------------------------
+    def extract_keywords(self, description, ac):
+
+        prompt = f"""
+Extract UI keywords from this user story.
+
+Focus on:
+- UI sections
+- field names
+- buttons
+- navigation paths
+
+Description:
+{description}
+
+Acceptance Criteria:
+{ac}
+
+Return comma separated keywords only.
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response.choices[0].message.content.strip()
+
+    # ---------------------------------------------
+    # IMAGE ANALYSIS USING GPT VISION
+    # ---------------------------------------------
+    def analyze_image(self, image_path, description, keywords):
+
+        encoded = self.encode_image(image_path)
+
+        prompt = f"""
+You are a Mortgage QA Analyst.
+
+Analyze the screenshot ONLY for UI elements related to this story.
+
+User Story:
+{description}
+
+Relevant UI Keywords:
+{keywords}
+
+Return ONLY:
+
+• UI section name
+• field names
+• button names
+• values shown
+
+Do NOT return recommendations or explanations.
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Analyze screenshot"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{encoded}"
+                            }
+                        }
+                    ]
+                }
+            ]
+        )
+
+        return response.choices[0].message.content
+
+    # ---------------------------------------------
+    # PROCESS HTML AND PRESERVE IMAGE POSITION
+    # ---------------------------------------------
+    def process_html(self, html, story_id):
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        img_folder = os.path.join("downloads", str(story_id))
+        os.makedirs(img_folder, exist_ok=True)
+
+        blocks = []
+        img_index = 1
+
+        for element in soup.descendants:
+
+            if element.name == "p":
+
+                text = element.get_text(strip=True)
+
+                if text:
+
+                    blocks.append({
+                        "type": "text",
+                        "value": text
+                    })
+
+            elif element.name == "img":
+
+                src = element.get("src")
+
+                if src:
+
+                    save_path = os.path.join(
+                        img_folder,
+                        f"image_{img_index}.png"
+                    )
+
+                    downloaded = self.download_image(src, save_path)
+
+                    if downloaded:
+
+                        blocks.append({
+                            "type": "image",
+                            "path": downloaded
+                        })
+
+                    img_index += 1
+
+        return blocks
