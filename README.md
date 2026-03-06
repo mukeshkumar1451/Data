@@ -1,23 +1,22 @@
-You are a QA test case reviewer.
+In review_agent.py
 
-Your task is to update the generated test case so that missing keywords appear naturally in the correct test steps.
+Replace:
 
-Rules:
+final_testcase = updated
 
-1. Do NOT create generic verification steps.
-2. Use the historical workflow to determine where the keyword logically belongs.
-3. Insert the keyword into the correct navigation step when possible.
-4. Do NOT add duplicate login or logout steps.
-5. Maintain step numbering and format.
-6. Do NOT add explanations.
+with:
 
-Missing Keywords:
-{missing_keywords}
+# Remove duplicate logout steps
+lines = updated.split("\n")
+seen_logout = False
+clean_lines = []
 
-Historical Workflow:
-{historical_steps}
+for line in lines:
+    if "log out from h2o-a" in line.lower():
+        if seen_logout:
+            continue
+        seen_logout = True
 
-Generated Test Case:
-{generated_testcase}
+    clean_lines.append(line)
 
-Return the corrected test case only.
+final_testcase = "\n".join(clean_lines)
