@@ -1,97 +1,79 @@
-import logging
-import os
-from typing import Dict
-
-from langchain_openai import AzureChatOpenAI
-from langchain_core.prompts import PromptTemplate
-from config.config import get
-
-logger = logging.getLogger(__name__)
-
-
-class LLMTestcaseGeneratorAgent:
-
-    def __init__(self):
-
-        # ---------------------------------------------------------
-        # Load Prompt Template
-        # ---------------------------------------------------------
-        prompt_path = get("PROMPT_TEMPLATE_PATH")
-
-        if not os.path.exists(prompt_path):
-            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
-
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            prompt_text = f.read()
-
-        self.prompt = PromptTemplate(
-            input_variables=[
-                "user_story_id",
-                "title",
-                "description",
-                "ac",
-                "channel",
-                "precondition",
-                "historical_steps"
-            ],
-            template=prompt_text
-        )
-
-        # ---------------------------------------------------------
-        # Azure OpenAI LLM
-        # ---------------------------------------------------------
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
-
-        self.chain = self.prompt | self.llm
-
-        logger.info("✅ LLM Testcase Generator initialized")
-
-    # ---------------------------------------------------------
-    # LangGraph Entry
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("🤖 LLM Generator Running")
-
-        new_state = dict(state)
-
-        outputs = {}
-
-        # ---------------------------------------------------------
-        # Generate Testcases Per Channel
-        # ---------------------------------------------------------
-        for channel, ctx in state["channel_context"].items():
-
-            payload = {
-                "user_story_id": state["user_story_id"],
-                "title": state.get("title", ""),
-                "description": state.get("description", ""),
-                "ac": state.get("acceptance_criteria", ""),
-                "channel": channel,
-                "precondition": ctx.get("precondition", ""),
-                "historical_steps": ctx.get("historical_steps", "")
-            }
-
-            logger.info(f"Generating testcases for channel → {channel}")
-
-            result = self.chain.invoke(payload)
-
-            # Safe extraction
-            output_text = getattr(result, "content", str(result)).strip()
-
-            outputs[channel] = output_text
-
-        # ---------------------------------------------------------
-        # Store LLM Outputs
-        # ---------------------------------------------------------
-        new_state["llm_outputs"] = outputs
-
-        logger.info("✅ LLM Generation Completed")
-
-        return new_state
+INFO:agents.llm_testcase_generator_agent:Generating testcases for channel → RTL  
+Traceback (most recent call last):
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 24, in <module>
+    run("734893")
+    ~~~^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\run_agent.py", line 16, in run        
+    final_state = app.invoke(initial_state)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3071, in invoke
+    for chunk in self.stream(
+                 ~~~~~~~~~~~^
+        input,
+        ^^^^^^
+    ...<10 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\main.py", line 2646, in stream
+    for _ in runner.tick(
+             ~~~~~~~~~~~^
+        [t for t in loop.tasks.values() if not t.writes],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        schedule_task=loop.accept_push,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 167, in tick
+    run_with_retry(
+    ~~~~~~~~~~~~~~^
+        t,
+        ^^
+    ...<10 lines>...
+        },
+        ^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 42, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
+    ret = self.func(*args, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\agents\llm_testcase_generator_agent.py", line 83, in run
+    result = self.chain.invoke(payload)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 3155, in invoke
+    input_ = context.run(step.invoke, input_, config, **kwargs)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 223, in invoke
+    return self._call_with_config(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        self._format_prompt_with_error_handling,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        serialized=self._serialized,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 2060, in _call_with_config
+    context.run(
+    ~~~~~~~~~~~^
+        call_func_with_variable_args,  # type: ignore[arg-type]
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ),
+    ^
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\runnables\config.py", line 452, in call_func_with_variable_args
+    return func(input, **kwargs)  # type: ignore[call-arg]
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 196, in _format_prompt_with_error_handling
+    inner_input_ = self._validate_input(inner_input)
+  File "C:\Users\h84609n\Desktop\AgenticAI\.venv\Lib\site-packages\langchain_core\prompts\base.py", line 190, in _validate_input
+    raise KeyError(
+        create_message(message=msg, error_code=ErrorCode.INVALID_PROMPT_INPUT)   
+    )
+KeyError: "Input to PromptTemplate is missing variables {'user_story'}.  Expected: ['ac', 'channel', 'description', 'precondition', 'user_story', 'user_story_id'] Received: ['user_story_id', 'title', 'description', 'ac', 'channel', 'precondition', 'historical_steps']\nNote: if you intended {user_story} to be part of the string and not a variable, please escape it with double curly braces like: '{{user_story}}'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT "
+During task with name 'llm_agent' and id 'dcf3eea7-bd11-0466-46a0-4501cae10527'  
+(.venv) PS C:\Users\h84609n\Desktop\AgenticAI> 
