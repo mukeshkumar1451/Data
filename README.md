@@ -1,220 +1,49 @@
-import logging
-import os
-import json
-import re
-from typing import Dict, List
+=====================================
+ADO INTELLIGENCE ANALYSIS OUTPUT
+=====================================
 
-from langchain_openai import AzureChatOpenAI
-from config.config import get
+Here is the FULL corrected test case with the missing keyword "additions" included in the Test Script Description:
 
-logger = logging.getLogger(__name__)
+---
 
+**Test Case ID / Test Script ID:** 718521_RTL_01  
+**Test Scenario Id:** 718521_SC_01  
+**Test Scenario Description:** Validate the addition of new fields in the Modernized Audit under Generate Disclosures.  
+**Test Script Description:** This test case validates the presence, functionality, and behavior of the newly added fields and additions in the Modernized Audit under the Generate Disclosures section. It ensures that the fields and additions are displayed correctly, are functional, and adhere to the business rules defined in the acceptance criteria.  
+**Pre-Condition & Assumptions:** Refer to provided precondition context.  
 
-class ReviewAgent:
+---
 
-    def __init__(self):
+**Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping**  
 
-        # Initialize LLM
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
+**Step 01** | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA  
 
-        # Load review prompt
-        with open("prompts/review_prompt.txt", "r", encoding="utf-8") as f:
-            self.review_prompt = f.read()
+**Step 02** | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA  
 
-        logger.info("✅ Review Agent initialized")
+**Step 03** | Navigate to the "Generate Disclosures" section | Loan Navigation Menu | NA | The system displays the Generate Disclosures page with all available fields and options | 718521_AC_01  
 
-    # ---------------------------------------------------------
-    # Extract keywords from Title
-    # ---------------------------------------------------------
-    def extract_title_keywords(self, title: str) -> List[str]:
+**Step 04** | Verify the presence of the "Intent to Proceed" checkbox | Generate Disclosures | NA | The system displays the "Intent to Proceed" checkbox under the Generate Disclosures section | 718521_AC_02  
 
-        if not title:
-            return []
+**Step 05** | Select the "Intent to Proceed" checkbox | Generate Disclosures | NA | The system allows the checkbox to be selected and retains the selection | 718521_AC_02  
 
-        title = title.lower()
+**Step 06** | Verify the presence of the "Higher Priced Mortgage Loan" dropdown | Generate Disclosures | NA | The system displays the "Higher Priced Mortgage Loan" dropdown with options: Select..., Yes, No | 718521_AC_03  
 
-        phrases = re.findall(r"[a-zA-Z]+(?:\s[a-zA-Z]+)?", title)
+**Step 07** | Select "Yes" from the "Higher Priced Mortgage Loan" dropdown | Generate Disclosures | Yes | The system updates the selection and retains the value | 718521_AC_03  
 
-        keywords = []
+**Step 08** | Verify the presence of the "HPML DV Override" checkbox | Generate Disclosures | NA | The system displays the "HPML DV Override" checkbox under the Generate Disclosures section | 718521_AC_04  
 
-        for p in phrases:
-            if len(p) > 4:
-                keywords.append(p.strip())
+**Step 09** | Select the "HPML DV Override" checkbox | Generate Disclosures | NA | The system allows the checkbox to be selected and retains the selection | 718521_AC_04  
 
-        return list(set(keywords))
+**Step 10** | Verify the presence of the "Send Via" dropdown | Generate Disclosures | NA | The system displays the "Send Via" dropdown with options: eSign | 718521_AC_05  
 
-    # ---------------------------------------------------------
-    # Extract Test Script Description
-    # ---------------------------------------------------------
-    def extract_script_description(self, testcase: str) -> str:
+**Step 11** | Select "eSign" from the "Send Via" dropdown | Generate Disclosures | eSign | The system updates the selection and retains the value | 718521_AC_05  
 
-        match = re.search(
-            r"Test Script Description:(.*?)(?:Pre-Condition|Test Step No)",
-            testcase,
-            re.DOTALL
-        )
+**Step 12** | Verify the absence of any broker-related fields or options | Generate Disclosures | NA | The system does not display any broker-related fields or options in the RTL channel | 718521_AC_06  
 
-        if match:
-            return match.group(1).strip()
+**Step 13** | Save the changes made in the Generate Disclosures section | Generate Disclosures | NA | The system saves the changes successfully and displays a confirmation message | 718521_AC_07  
 
-        return ""
+**Step 14** | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA  
 
-    # ---------------------------------------------------------
-    # Find missing keywords
-    # ---------------------------------------------------------
-    def find_missing_keywords(self, keywords: List[str], description: str):
+---
 
-        missing = []
-
-        description = description.lower()
-
-        for keyword in keywords:
-            if keyword not in description:
-                missing.append(keyword)
-
-        return missing
-
-    # ---------------------------------------------------------
-    # Regenerate testcase using LLM
-    # ---------------------------------------------------------
-    def regenerate_testcase(
-        self,
-        state,
-        channel,
-        testcase,
-        missing_keywords
-    ):
-
-        logger.info("🔄 Regenerating testcase using historical workflow")
-
-        historical_steps = state["channel_context"][channel]["historical_steps"]
-
-        prompt = self.review_prompt.format(
-            missing_keywords=", ".join(missing_keywords),
-            title=state["title"],
-            description=state["description"],
-            ac=state["acceptance_criteria"],
-            historical_steps=historical_steps,
-            generated_testcase=testcase
-        )
-
-        response = self.llm.invoke(prompt)
-
-        return response.content.strip()
-
-    # ---------------------------------------------------------
-    # Save testcase TXT log
-    # ---------------------------------------------------------
-    def save_testcase_log(self, user_story_id, channel, testcase):
-
-        os.makedirs("logs", exist_ok=True)
-
-        file_path = f"logs/{user_story_id}_{channel}_testcase.txt"
-
-        with open(file_path, "w", encoding="utf-8") as f:
-
-            f.write("=====================================\n")
-            f.write("ADO INTELLIGENCE ANALYSIS OUTPUT\n")
-            f.write("=====================================\n\n")
-
-            f.write(testcase)
-
-        logger.info(f"📄 Saved testcase log → {file_path}")
-
-    # ---------------------------------------------------------
-    # Save review JSON log
-    # ---------------------------------------------------------
-    def save_review_log(self, state, log_data):
-
-        os.makedirs("logs", exist_ok=True)
-
-        file_path = f"logs/{state['user_story_id']}_review_log.json"
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(log_data, f, indent=4)
-
-        logger.info(f"📄 Saved review log → {file_path}")
-
-    # ---------------------------------------------------------
-    # Main Execution
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("🚀 Review Agent Running")
-
-        title_keywords = self.extract_title_keywords(state["title"])
-
-        review_log = {
-            "user_story_id": state["user_story_id"],
-            "title_keywords": title_keywords,
-            "channels": {}
-        }
-
-        for channel, testcase in state["llm_outputs"].items():
-
-            logger.info(f"🔍 Reviewing channel → {channel}")
-
-            description = self.extract_script_description(testcase)
-
-            missing_keywords = self.find_missing_keywords(
-                title_keywords,
-                description
-            )
-
-            # -------------------------------------------------
-            # Missing keywords found → regenerate testcase
-            # -------------------------------------------------
-            if missing_keywords:
-
-                logger.warning(
-                    f"{channel} → Missing keywords: {missing_keywords}"
-                )
-
-                updated_testcase = self.regenerate_testcase(
-                    state,
-                    channel,
-                    testcase,
-                    missing_keywords
-                )
-
-                state["llm_outputs"][channel] = updated_testcase
-
-                final_testcase = updated_testcase
-
-                review_log["channels"][channel] = {
-                    "missing_keywords": missing_keywords,
-                    "status": "REGENERATED"
-                }
-
-            else:
-
-                final_testcase = testcase
-
-                review_log["channels"][channel] = {
-                    "missing_keywords": [],
-                    "status": "PASSED"
-                }
-
-            # -------------------------------------------------
-            # Save testcase log for channel
-            # -------------------------------------------------
-            self.save_testcase_log(
-                state["user_story_id"],
-                channel,
-                final_testcase
-            )
-
-        # -----------------------------------------------------
-        # Save review summary log
-        # -----------------------------------------------------
-        self.save_review_log(state, review_log)
-
-        logger.info("✅ Review Agent Completed")
-
-        return state
+This corrected test case ensures that the missing keyword "additions" is included in the Test Script Description while preserving the existing step structure and maintaining the navigation flow consistent with the historical workflow reference.
