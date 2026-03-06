@@ -1,62 +1,112 @@
-# utils/channel_detector.py
-import re
 import logging
+from typing import Dict
+
+from ado.ado_client import fetch_from_ado
+from utils.image_extractor import ImageExtractor
+from utils.channel_detector import detect_channels
+from utils.output_writer import save_final_txt
 
 logger = logging.getLogger(__name__)
 
-ALL_CHANNELS = ["RTL", "WHL", "DTC", "CL1"]
 
+class ADOIntelligenceAgent:
 
-# -------------------------------------------------
-# Behavioral Channel Detection
-# -------------------------------------------------
-def detect_channels(text: str) -> list:
+    def __init__(self):
 
-    logger.info("Behavioral channel detection started...")
+        self.extractor = ImageExtractor()
 
-    #  Defensive handling
-    if not text:
-        logger.warning("detect_channels received empty or None text → defaulting to ALL channels")
-        return ALL_CHANNELS
+    # ---------------------------------------------------------
+    # MAIN EXECUTION
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
 
-    if not isinstance(text, str):
-        logger.warning(f"detect_channels received non-string type: {type(text)} → converting to string")
-        text = str(text)
+        logger.info("🚀 ADO Intelligence Agent Started")
 
-    t = text.upper()
+        story_id = state["user_story_id"]
 
-    # ---------------------------
-    # 1. Persona Detection (strongest signal)
-    # ---------------------------
-    if "NON-BROKER USER IN H2O" in t or "INTERNAL USER" in t:
-        logger.info("Detected INTERNAL H2O user → WHL")
-        return ["WHL"]
+        # -----------------------------------------------------
+        # Fetch ADO Work Item
+        # -----------------------------------------------------
+        story = fetch_from_ado(story_id)
 
-    if "BROKER PORTAL" in t or "BROKER LO" in t:
-        logger.info("Detected Broker persona → WHL")
-        return ["WHL"]
+        raw_description = story.get("description", "")
+        raw_ac = story.get("acceptance_criteria", "")
 
-    if "CUSTOMER PORTAL" in t or "BORROWER" in t:
-        logger.info("Detected Borrower persona → RTL")
-        return ["RTL"]
+        # -----------------------------------------------------
+        # Clean Description
+        # -----------------------------------------------------
+        clean_description = self.extractor.clean_html(raw_description)
+        clean_description = self.extractor.format_description(clean_description)
 
-    if "IGNITE" in t or "DIRECT TO CONSUMER" in t:
-        logger.info("Detected Ignite flow → DTC")
-        return ["DTC"]
+        # -----------------------------------------------------
+        # Clean Acceptance Criteria
+        # -----------------------------------------------------
+        clean_ac = self.extractor.clean_html(raw_ac)
+        clean_ac = self.extractor.format_acceptance_criteria(clean_ac)
 
-    if "CORRESPONDENT" in t or "CL1" in t:
-        logger.info("Detected Correspondent → CL1")
-        return ["CL1"]
+        # -----------------------------------------------------
+        # Process HTML Blocks (Text + Images)
+        # -----------------------------------------------------
+        blocks = self.extractor.process_html(raw_ac, story_id)
 
-    # ---------------------------
-    # 2. Feature based detection
-    # ---------------------------
-    if "BUSINESS UNIT" in t or "CREATE LOAN ON BEHALF OF" in t:
-        logger.info("Detected internal operations feature → WHL")
-        return ["WHL"]
+        final_ac = ""
 
-    # ---------------------------
-    # Fallback
-    # ---------------------------
-    logger.info("No strong signal → using ALL channels")
-    return ALL_CHANNELS
+        for block in blocks:
+
+            # ---------------------------------------------
+            # TEXT BLOCK
+            # ---------------------------------------------
+            if block["type"] == "text":
+
+                final_ac += block["value"] + "\n\n"
+
+            # ---------------------------------------------
+            # IMAGE BLOCK
+            # ---------------------------------------------
+            elif block["type"] == "image":
+
+                resized = self.extractor.resize_image(block["path"])
+
+                analysis = self.extractor.analyze_image(
+                    resized,
+                    clean_description
+                )
+
+                final_ac += "[Image Analysis]\n"
+                final_ac += analysis + "\n\n"
+
+        # -----------------------------------------------------
+        # Channel Detection
+        # -----------------------------------------------------
+        channel_text = f"""
+        {clean_description}
+
+        {clean_ac}
+        """
+
+        channels = detect_channels(channel_text)
+
+        logger.info(f"Detected channels: {channels}")
+
+        # -----------------------------------------------------
+        # Save Output File (optional debugging)
+        # -----------------------------------------------------
+        save_final_txt(
+            story_id,
+            story.get("title"),
+            clean_description,
+            final_ac
+        )
+
+        # -----------------------------------------------------
+        # Update State for Next Agents
+        # -----------------------------------------------------
+        state["story_id"] = story_id
+        state["title"] = story.get("title")
+        state["description"] = clean_description
+        state["acceptance_criteria"] = final_ac
+        state["channels"] = channels
+
+        logger.info("✅ ADO Intelligence Agent Completed")
+
+        return state
