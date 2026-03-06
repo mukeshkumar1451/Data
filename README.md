@@ -1,88 +1,13 @@
-import logging
-
-from ado.ado_client import fetch_from_ado
-from utils.image_extractor import ImageExtractor
-from utils.output_writer import save_final_txt
-from utils.channel_detector import detect_channels
-
-logger = logging.getLogger(__name__)
+=====================================
+ADO INTELLIGENCE ANALYSIS OUTPUT
+=====================================
 
 
-class ADOIntelligenceAgent:
+Story ID: 734893
+Title: Buydown Modal When Copying Fees from LE displays a null reference
+Timestamp: 20260306_140005
+------------ DESCRIPTION ------------
+As a user I want the Buydown Split section on the CD Fees screen to correctly display the 'Paid By' fields when copying fees from the LE Fees screen So that I do not encounter a null reference and can ensure accurate split allocation without additional manual steps Issue #2: This seems to be existing. When we copy LE fees to the CD Fees screen, the below is displayed. -Steps to recreate On the LE Fees screen, Buydown Split is incomplete. No values entered in the 'Borrower', 'Lender', or 'Seller' fields. Go to the CD Fees screen and click Copy Fees from LE, ‘Lender’ displays as ‘null’
+------ ACCEPTANCE CRITERIA ----------
+AC1: Paid By Field Names Displayed When Buydown Split is Incomplete on LE Given the user is on the DIS > LE Fees screen > Interest Rate Details > Temporary Buydown Subsidy AND the Paid By split fields are not completed When the user navigates to the DOCS > CD Fees screen AND clicks "Copy Fees from LE" Then the Buydown Subsidy on the CD Fees screen > Interest Rate Details > Temporary Buydown Subsidy should display the correct 'Paid By' field names without a null reference -UI Mockup When Buydown Product is assigned, the 'Temporary Buydown Subsidy' section appears on the DIS > LE Fees screen Do not enter any values in the 'Paid By' modal Go to the DOCS > CD Fees screen and click Copy Fees from LE and Temporary Buydown Subsidy section should appear displaying the Paid By field names AC2: Regression - Paid By Field Names Displayed When Buydown Split is Complete on LE Given the user is on the DIS > LE Fees screen > Interest Rate Details > Temporary Buydown Subsidy AND the Paid By split fields are completed When the user navigates to the DOCS > CD Fees screen AND clicks "Copy Fees from LE" Then the Buydown Subsidy on the CD Fees screen > Interest Rate Details > Temporary Buydown Subsidy should display the correct 'Paid By' field names without a null reference **Note to Dev** AC2 is existing so no changes should be made for this scenario **Note For Testing** In order to test, loan will need to have a Buydown Product assigned. Some examples would be CF30B3, CF30B2, CF30B1, CHBF30B1, CHRF30B1, etc . 'Paid By' field names appear based on Purpose of Loan . Paid By = Seller would not typically appear on loans where Purpose of Loan = Refinance.
 
-    def __init__(self):
-
-        self.extractor = ImageExtractor()
-
-    # ---------------------------------------------------------
-    # MAIN EXECUTION
-    # ---------------------------------------------------------
-    def run(self, state: dict):
-
-        logger.info("ADO Intelligence Agent started")
-
-        story_id = state["user_story_id"]
-
-        story = fetch_from_ado(story_id)
-
-        raw_description = story.get("description", "")
-        raw_ac = story.get("acceptance_criteria", "")
-
-        # CLEAN HTML
-        clean_description = self.extractor.clean_html(raw_description)
-
-        clean_ac = self.extractor.clean_html(raw_ac)
-        clean_ac = self.extractor.format_acceptance_criteria(clean_ac)
-
-        # EXTRACT UI KEYWORDS
-        keywords = self.extractor.extract_keywords(
-            clean_description,
-            clean_ac
-        )
-
-        logger.info(f"Detected UI Keywords: {keywords}")
-
-        # PROCESS HTML TO GET TEXT + IMAGE BLOCKS
-        blocks = self.extractor.process_html(
-            raw_ac,
-            story_id
-        )
-
-        final_ac = clean_ac + "\n\n"
-
-        for block in blocks:
-
-            if block["type"] == "image":
-
-                resized = self.extractor.resize_image(
-                    block["path"]
-                )
-
-                analysis = self.extractor.analyze_image(
-                    resized,
-                    clean_description,
-                    keywords
-                )
-
-                final_ac += "[Image Analysis]\n"
-                final_ac += analysis + "\n\n"
-
-        channels = detect_channels(final_ac)
-
-        save_final_txt(
-            story_id,
-            story.get("title"),
-            clean_description,
-            final_ac
-        )
-
-        state["story_id"] = story_id
-        state["title"] = story.get("title")
-        state["description"] = clean_description
-        state["acceptance_criteria"] = final_ac
-        state["channels"] = channels
-        state["keywords"] = keywords
-
-        logger.info("ADO Intelligence Agent completed")
-
-        return state
