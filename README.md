@@ -1,62 +1,58 @@
-# utils/channel_detector.py
-import re
+# channel_detector.py
+ALL_CHANNELS = ["WHL", "RTL", "DTC", "CL1"]
+
 import logging
 
 logger = logging.getLogger(__name__)
 
-ALL_CHANNELS = ["RTL", "WHL", "DTC", "CL1"]
+CHANNEL_KEYWORDS = {
+    "RTL": ["RTL", "RETAIL","RET"],
+    "WHL": ["WHL", "WHOLESALE"],
+    "DTC": ["DTC", "DIRECT TO CUSTOMER"],
+    "CL1": ["CL1", "CORRESPONDENT"]
+}
 
 
-# -------------------------------------------------
-# Behavioral Channel Detection
-# -------------------------------------------------
-def detect_channels(text: str) -> list:
+def detect_channels(acceptance_criteria: str) -> list:
+    logger.info("\n🔎 Detecting channels from Acceptance Criteria...\n")
 
-    logger.info("Behavioral channel detection started...")
+    text = acceptance_criteria.upper()
 
-    #  Defensive handling
-    if not text:
-        logger.warning("detect_channels received empty or None text → defaulting to ALL channels")
+    detected = set()
+
+    # -------------------------------------------
+    # Step 1: Basic keyword detection
+    # -------------------------------------------
+    for channel, words in CHANNEL_KEYWORDS.items():
+        for w in words:
+            if w in text:
+                detected.add(channel)
+
+    logger.info(f"🦬 Raw detected channels: {detected}")
+
+    # -------------------------------------------
+    # Step 2: Business rules mapping
+    # -------------------------------------------
+    final_channels = set()
+
+    if not detected:
+        logger.info("⚠️ No channel mentioned → Using ALL channels")
         return ALL_CHANNELS
 
-    if not isinstance(text, str):
-        logger.warning(f"detect_channels received non-string type: {type(text)} → converting to string")
-        text = str(text)
+    # Rule 1
+    if "RTL" in detected:
+        final_channels.update(["RTL", "DTC"])
 
-    t = text.upper()
+    if "WHL" in detected:
+        final_channels.update(["WHL", "CL1"])
 
-    # ---------------------------
-    # 1. Persona Detection (strongest signal)
-    # ---------------------------
-    if "NON-BROKER USER IN H2O" in t or "INTERNAL USER" in t:
-        logger.info("Detected INTERNAL H2O user → WHL")
-        return ["WHL"]
+    # Rule 2 (if explicitly mentioned)
+    if "DTC" in detected:
+        final_channels.add("DTC")
 
-    if "BROKER PORTAL" in t or "BROKER LO" in t:
-        logger.info("Detected Broker persona → WHL")
-        return ["WHL"]
+    if "CL1" in detected:
+        final_channels.add("CL1")
 
-    if "CUSTOMER PORTAL" in t or "BORROWER" in t:
-        logger.info("Detected Borrower persona → RTL")
-        return ["RTL"]
+    logger.info(f"✅ Final channels after rule mapping: {final_channels}\n")
 
-    if "IGNITE" in t or "DIRECT TO CONSUMER" in t:
-        logger.info("Detected Ignite flow → DTC")
-        return ["DTC"]
-
-    if "CORRESPONDENT" in t or "CL1" in t:
-        logger.info("Detected Correspondent → CL1")
-        return ["CL1"]
-
-    # ---------------------------
-    # 2. Feature based detection
-    # ---------------------------
-    if "BUSINESS UNIT" in t or "CREATE LOAN ON BEHALF OF" in t:
-        logger.info("Detected internal operations feature → WHL")
-        return ["WHL"]
-
-    # ---------------------------
-    # Fallback
-    # ---------------------------
-    logger.info("No strong signal → using ALL channels")
-    return ALL_CHANNELS
+    return list(final_channels)
