@@ -1,60 +1,101 @@
-Step-by-Step Actions Guide
+import logging
+import os
+from typing import Dict
 
-Follow these principles strictly when generating test case steps.
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from config.config import get
 
-Atomic Steps
-Write one action per step using imperative verbs such as:
-Launch
-Click
-Enter
-Select
-Navigate
-Submit
-Upload
-Download
+logger = logging.getLogger(__name__)
 
-Natural Language Navigation
-Describe navigation clearly and conversationally.
 
-Example:
-Launch the application URL.
-You will land on the home dashboard.
-Click the Settings option in the left navigation panel.
+class LLMTestcaseGeneratorAgent:
 
-Each sentence represents a single step.
+    def __init__(self):
 
-Field Details
-Mention field names and field types whenever interacting with UI elements.
+        prompt_path = get("PROMPT_TEMPLATE_PATH")
+        step_actions_path = get("STEP_ACTIONS_PATH")
 
-Supported field types:
-text box
-dropdown
-checkbox
-radio button
-date picker
-button
+        if not os.path.exists(prompt_path):
+            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
 
-Explicit Page Transitions
-Always describe the resulting page after an action.
+        if not os.path.exists(step_actions_path):
+            raise FileNotFoundError(f"Step Actions file not found: {step_actions_path}")
 
-Example:
-After clicking Next, the system navigates to the User Details page.
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            main_prompt = f.read()
 
-Functionality Coverage
-Test steps must include interactions validating business functionality such as:
-Submitting forms
-Saving or updating records
-Triggering workflows
-Searching or filtering records
-Performing calculations
-Uploading or downloading files
+        with open(step_actions_path, "r", encoding="utf-8") as f:
+            step_rules = f.read()
 
-Expected Result Per Step
-Each step must include the system behavior immediately after the action.
+        # Combine both prompts
+        full_prompt = f"""
+{main_prompt}
 
-Example:
-After clicking Save, the system stores the record and loads the confirmation page.
+------------------------------------------------------------
+STEP WRITING RULES
+------------------------------------------------------------
 
-Test Data
-Use only the test data provided in context files.
-Do not invent values.
+{step_rules}
+"""
+
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "user_story_id",
+                "title",
+                "description",
+                "ac",
+                "channel",
+                "precondition",
+                "historical_steps"
+            ],
+            template=full_prompt
+        )
+
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
+            temperature=0
+        )
+
+        self.chain = self.prompt | self.llm
+
+        logger.info("LLM Testcase Generator initialized")
+
+    # ---------------------------------------------------------
+    # LangGraph Entry
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("LLM Generator Running")
+
+        new_state = dict(state)
+        outputs = {}
+
+        for channel, ctx in state["channel_context"].items():
+
+            payload = {
+                "user_story_id": state["user_story_id"],
+                "title": state.get("title", ""),
+                "description": state.get("description", ""),
+                "ac": state.get("acceptance_criteria", ""),
+                "channel": channel,
+                "precondition": ctx.get("precondition", ""),
+                "historical_steps": ctx.get("historical_steps", "")
+            }
+
+            logger.info(f"Generating testcases for channel → {channel}")
+
+            result = self.chain.invoke(payload)
+
+            output_text = getattr(result, "content", str(result)).strip()
+
+            outputs[channel] = output_text
+
+        new_state["llm_outputs"] = outputs
+
+        logger.info("LLM Generation Completed")
+
+        return new_state
