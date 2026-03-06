@@ -1,172 +1,35 @@
-import logging
-import os
-import re
-from typing import Dict, List
-
-from langchain_openai import AzureChatOpenAI
-from config.config import get
-
-logger = logging.getLogger(__name__)
-
-
-class ReviewAgent:
-
-    def __init__(self):
-
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
-
-        with open("prompts/review_prompt.txt", "r", encoding="utf-8") as f:
-            self.prompt_template = f.read()
-
-        logger.info("Review Agent initialized")
-
-    # ---------------------------------------------------------
-    # Extract keywords from title
-    # ---------------------------------------------------------
-    def extract_title_keywords(self, title: str) -> List[str]:
-
-        words = re.findall(r"[A-Za-z]+(?:\s[A-Za-z]+)?", title)
-
-        keywords = []
-
-        for w in words:
-            if len(w) > 4:
-                keywords.append(w.lower())
-
-        return list(set(keywords))
-
-    # ---------------------------------------------------------
-    # Extract testcase words
-    # ---------------------------------------------------------
-    def extract_testcase_terms(self, testcase):
-
-        text = testcase.lower()
-
-        tokens = re.findall(r"[A-Za-z]+(?:\s[A-Za-z]+)?", text)
-
-        return list(set(tokens))
-
-    # ---------------------------------------------------------
-    # Detect missing keywords
-    # ---------------------------------------------------------
-    def find_missing_keywords(self, keywords, testcase_terms):
-
-        missing = []
-
-        for k in keywords:
-            if k not in testcase_terms:
-                missing.append(k)
-
-        return missing
-
-    # ---------------------------------------------------------
-    # Extract steps from testcase
-    # ---------------------------------------------------------
-    def extract_steps(self, testcase):
-
-        steps = []
-
-        for line in testcase.split("\n"):
-            if line.strip().startswith("Step"):
-                steps.append(line.strip())
-
-        return steps
-
-    # ---------------------------------------------------------
-    # Call LLM to regenerate
-    # ---------------------------------------------------------
-    def regenerate(self, testcase, historical_steps, missing_keywords):
-
-        prompt = self.prompt_template.format(
-            missing_keywords=", ".join(missing_keywords),
-            historical_steps=historical_steps,
-            generated_testcase=testcase
-        )
-
-        response = self.llm.invoke(prompt)
-
-        return response.content.strip()
-
-    # ---------------------------------------------------------
-    # Save testcase logs
-    # ---------------------------------------------------------
-    def save_testcase(self, story_id, channel, testcase):
-
-        os.makedirs("logs", exist_ok=True)
-
-        file_path = f"logs/{story_id}_{channel}_testcase.txt"
-
-        with open(file_path, "w", encoding="utf-8") as f:
-
-            f.write("=====================================\n")
-            f.write("ADO INTELLIGENCE ANALYSIS OUTPUT\n")
-            f.write("=====================================\n\n")
-
-            f.write(testcase)
-
-        logger.info(f"Saved testcase log: {file_path}")
-
-    # ---------------------------------------------------------
-    # Main run
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("Review Agent running")
-
-        title_keywords = self.extract_title_keywords(state["title"])
-
-        for channel, testcase in state["llm_outputs"].items():
-
-            testcase_terms = self.extract_testcase_terms(testcase)
-
-            missing = self.find_missing_keywords(
-                title_keywords,
-                testcase_terms
-            )
-
-            if missing:
-
-                logger.warning(f"{channel} missing keywords: {missing}")
-
-                historical_steps = state["channel_context"][channel]["historical_steps"]
-
-                old_steps = self.extract_steps(testcase)
-
-                updated = self.regenerate(
-                    testcase,
-                    historical_steps,
-                    missing
-                )
-
-                new_steps = self.extract_steps(updated)
-
-                # Detect added steps
-                added_steps = [s for s in new_steps if s not in old_steps]
-
-                if added_steps:
-                    logger.info(f"{channel} → Added Steps:")
-                    for s in added_steps:
-                        logger.info(s)
-
-                state["llm_outputs"][channel] = updated
-
-                final_testcase = updated
-
-            else:
-
-                final_testcase = testcase
-
-            # Save final testcase
-            self.save_testcase(
-                state["user_story_id"],
-                channel,
-                final_testcase
-            )
-
-        return state
+INFO:agents.review_agent:Review Agent running
+WARNING:agents.review_agent:WHL missing keywords: ['additions']
+INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:agents.review_agent:WHL → Added Steps:
+INFO:agents.review_agent:Step 14 | Verify the additions of new fields in the "Generate Disclosures" section | Generate Disclosures | NA | The system displays the 
+newly added fields in the "Generate Disclosures" section | 718521_AC_08
+INFO:agents.review_agent:Step 15 | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
+INFO:agents.review_agent:Saved testcase log: logs/718521_WHL_testcase.txt        
+WARNING:agents.review_agent:RTL missing keywords: ['fields', 'additions']        
+INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:agents.review_agent:RTL → Added Steps:
+INFO:agents.review_agent:Step 12 | Verify the presence of the new additions in the Generate Disclosures section | Generate Disclosures | NA | The system displays 
+the newly added fields under the Generate Disclosures section | 718521_AC_07     
+INFO:agents.review_agent:Step 13 | Validate the functionality of the new additions in the Generate Disclosures section | Generate Disclosures | NA | The system processes the new additions correctly and adheres to the business rules | 718521_AC_07
+INFO:agents.review_agent:Step 14 | Click the "Save" button to save the changes | 
+Generate Disclosures | NA | The system saves the changes and displays a confirmation message | 718521_AC_06
+INFO:agents.review_agent:Step 15 | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
+INFO:agents.review_agent:Saved testcase log: logs/718521_RTL_testcase.txt        
+WARNING:agents.review_agent:DTC missing keywords: ['fields', 'additions']        
+INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:agents.review_agent:DTC → Added Steps:
+INFO:agents.review_agent:Step 23 | Verify the presence of the "Newly Added Fields" section | Generate Disclosures | NA | The system displays the "Newly Added Fields" section | 718521_AC_11
+INFO:agents.review_agent:Step 24 | Validate the additions in the "Newly Added Fields" section | Generate Disclosures | NA | The system correctly displays and processes the additions in the "Newly Added Fields" section | 718521_AC_11
+INFO:agents.review_agent:Step 25 | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
+INFO:agents.review_agent:Saved testcase log: logs/718521_DTC_testcase.txt        
+WARNING:agents.review_agent:CL1 missing keywords: ['additions']
+INFO:httpx:HTTP Request: POST https://centralus.api.cognitive.microsoft.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:agents.review_agent:CL1 → Added Steps:
+INFO:agents.review_agent:Step 18 | Verify the presence of additions in the "Generate Disclosures" section | Generate Disclosures | NA | The system displays the additions in the "Generate Disclosures" section | 718521_AC_09
+INFO:agents.review_agent:Step 19 | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
+INFO:agents.review_agent:Saved testcase log: logs/718521_CL1_testcase.txt        
+INFO:agents.excel_export_agent:Excel Export Agent started
+INFO:agents.excel_export_agent:Sheets after cleanup: ['RTL', 'DTC', 'WHL', 'CL1']
+ Excel Generated at:
+output_excels\Indiv_US_718521_Test_Scripts_v1.0.xlsx
