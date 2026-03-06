@@ -1,108 +1,162 @@
-Role:
-You are a Senior Mortgage QA Review Agent responsible for validating and correcting generated LOS test cases.
+import logging
+import os
+import re
+from typing import Dict, List
 
-Objective:
-Ensure the generated test cases fully cover the user story requirements and follow enterprise QA standards.
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from config.config import get
 
-You must perform BOTH review and correction.
+logger = logging.getLogger(__name__)
 
----
 
-INPUT DATA
+class ReviewAgent:
 
-Channel:
-{channel}
+    def __init__(self):
 
-User Story:
-{title}
+        prompt_path = get("REVIEW_PROMPT_PATH")
 
-Description:
-{description}
+        if not os.path.exists(prompt_path):
+            raise FileNotFoundError(f"Review prompt not found: {prompt_path}")
 
-Acceptance Criteria:
-{ac}
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
 
-Historical Workflow Reference:
-{historical_steps}
+        self.prompt = PromptTemplate(
+            input_variables=[
+                "channel",
+                "title",
+                "description",
+                "ac",
+                "historical_steps",
+                "testcase",
+                "missing_keywords"
+            ],
+            template=prompt_text
+        )
 
-Generated Test Case:
-{testcase}
+        self.llm = AzureChatOpenAI(
+            azure_deployment=get("CHAT_MODEL"),
+            api_version=get("AZURE_OPENAI_API_VERSION"),
+            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
+            api_key=get("AZURE_OPENAI_KEY"),
+            temperature=0
+        )
 
-Missing Keywords (if any):
-{missing_keywords}
+        self.chain = self.prompt | self.llm
 
----
+        logger.info("Review Agent initialized")
 
-REVIEW REQUIREMENTS
+    # ---------------------------------------------------------
+    # Keyword Extraction
+    # ---------------------------------------------------------
+    def _extract_keywords(self, text: str) -> List[str]:
 
-Perform the following validations:
+        text = text.lower()
 
-1. Keyword Coverage Validation
+        text = re.sub(r"[^\w\s]", " ", text)
 
-* Verify that all provided keywords appear in the generated test steps.
-* Keywords must appear within:
-  • Test Step Description
-  • Screen Name
-  • Expected Results
+        words = text.split()
 
-2. User Story Flow Validation
-   Ensure the test case fully represents the business flow including:
-   • Navigation flow
-   • Feature behavior
-   • Business validations
-   • UI interaction
-   • Acceptance criteria coverage
+        stop_words = {
+            "the","is","a","an","to","of","and","in",
+            "when","then","given","should","be","on",
+            "for","that","with","from","as","user"
+        }
 
-3. Context Usage Validation
-   Verify the generated steps align with:
-   • Historical workflow patterns
-   • Correct LOS navigation
-   • Proper screen transitions
-   • Correct field references
+        keywords = [
+            w for w in words
+            if w not in stop_words and len(w) > 3
+        ]
 
-4. Test Case Quality Validation
+        return list(set(keywords))
 
-Ensure:
-• Steps follow logical order
-• Each step performs one action
-• Expected results clearly describe system behavior
-• Navigation flow matches LOS workflow
-• Preconditions are respected
+    # ---------------------------------------------------------
+    # Find Missing Keywords
+    # ---------------------------------------------------------
+    def _find_missing(self, keywords, testcase):
 
----
+        testcase = testcase.lower()
 
-REPAIR RULES
+        missing = []
 
-If ANY of the following occur:
+        for k in keywords:
+            if k not in testcase:
+                missing.append(k)
 
-• Missing keywords
-• Missing acceptance criteria validation
-• Incorrect workflow
-• Missing navigation steps
-• Missing validation steps
+        return missing
 
-Then regenerate the FULL testcase.
+    # ---------------------------------------------------------
+    # Main Execution
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
 
-When regenerating:
-• Use the SAME user story
-• Use the SAME historical workflow reference
-• Preserve valid steps
-• Add missing validations
-• Ensure all keywords appear
-• Maintain step numbering format
+        logger.info("Review Agent Running")
 
----
+        story_text = (
+            state.get("title","") + " " +
+            state.get("description","") + " " +
+            state.get("acceptance_criteria","")
+        )
 
-OUTPUT FORMAT
+        keywords = self._extract_keywords(story_text)
 
-CASE 1 — TESTCASE VALID
+        logger.info(f"Extracted {len(keywords)} keywords from story")
 
-REVIEW STATUS: PASSED
+        max_attempts = 3
 
----
+        for channel, testcase in state["llm_outputs"].items():
 
-CASE 2 — TESTCASE NEEDS CORRECTION
+            logger.info(f"Reviewing channel → {channel}")
 
-REVIEW STATUS: FAILED
+            attempt = 1
 
-Corrected Test Case: <Return the full corrected testcase only>
+            while attempt <= max_attempts:
+
+                missing = self._find_missing(keywords, testcase)
+
+                if not missing:
+
+                    logger.info(
+                        f"{channel} → Keyword coverage satisfied"
+                    )
+                    break
+
+                logger.warning(
+                    f"{channel} → Missing keywords: {missing}"
+                )
+
+                payload = {
+                    "channel": channel,
+                    "title": state.get("title",""),
+                    "description": state.get("description",""),
+                    "ac": state.get("acceptance_criteria",""),
+                    "historical_steps": state["channel_context"][channel]["historical_steps"],
+                    "testcase": testcase,
+                    "missing_keywords": ", ".join(missing)
+                }
+
+                result = self.chain.invoke(payload)
+
+                content = result.content.strip()
+
+                if "REVIEW STATUS: PASSED" in content:
+
+                    logger.info(
+                        f"{channel} → testcase validated"
+                    )
+                    break
+
+                if "Corrected Test Case:" in content:
+
+                    testcase = content.split(
+                        "Corrected Test Case:"
+                    )[-1].strip()
+
+                attempt += 1
+
+            state["llm_outputs"][channel] = testcase
+
+        logger.info("Review Completed")
+
+        return state
