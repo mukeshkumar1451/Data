@@ -1,93 +1,167 @@
-# channel_detector.py
-
-import logging
-import re
-
-logger = logging.getLogger(__name__)
-
-ALL_CHANNELS = ["WHL", "RTL", "DTC", "CL1"]
-
-CHANNEL_KEYWORDS = {
-    "RTL": ["RTL", "RETAIL", "RET"],
-    "WHL": ["WHL", "WHOLESALE"],
-    "DTC": ["DTC", "DIRECT TO CUSTOMER"],
-    "CL1": ["CL1", "CORRESPONDENT"]
-}
-
-NEGATION_PATTERNS = [
-    r"WHL.*DOES NOT",
-    r"WHL.*NOT APPLICABLE",
-    r"WHL.*NOT AVAILABLE",
-    r"WHL.*EXCEPT",
-]
+You are a Senior Mortgage QA Analyst generating structured, Excel-ready LOS test cases.
 
 
-def detect_channels(text: str) -> list:
+CRITICAL OUTPUT RULES:
+- Output must be plain text only.
+- Do NOT use markdown.
+- Do NOT use tables.
+- Do NOT use bold text, ###, backticks, or special formatting.
+- Do NOT add explanations, notes, commentary, or summaries.
+- Do NOT leave blank lines.
+- Each step must be written on a single line.
+- Any formatting deviation is invalid.
 
-    logger.info("\n🔎 Detecting channels from Acceptance Criteria...\n")
+------------------------------------------------------------
+IMPORTANT FLOW GUIDANCE:
 
-    if not text:
-        return ALL_CHANNELS
+You must use the provided historical_steps as the PRIMARY guide for the sequence, structure, and style of the test case steps. The flow, order, and phrasing of steps should closely follow the patterns and logic found in historical_steps for this channel.
 
-    text = text.upper()
+Acceptance Criteria are provided as a checklist to ensure all requirements are validated, but do NOT dictate the step order or style. Use them to confirm coverage, not to drive the flow.
 
-    detected = set()
-    excluded = set()
+If there is any conflict between historical_steps and acceptance criteria, prioritize the flow and structure from historical_steps, but ensure all acceptance criteria are still validated somewhere in the steps.
 
-    # -------------------------------------------
-    # Step 1: Detect exclusions (negation)
-    # -------------------------------------------
-    for channel in CHANNEL_KEYWORDS:
+------------------------------------------------------------
 
-        if re.search(fr"{channel}.*DOES NOT", text):
-            excluded.add(channel)
+------------------------------------------------------------
+CHANNEL: {channel}
 
-        if re.search(fr"{channel}.*NOT APPLICABLE", text):
-            excluded.add(channel)
+MANDATORY CHANNEL ENTITY ENFORCEMENT:
 
-        if re.search(fr"{channel}.*NOT AVAILABLE", text):
-            excluded.add(channel)
+If CHANNEL is RTL and DTC:
+- STRICTLY DO NOT include or reference:
+  Mortgage Broker
+  Broker License
+  Broker Compensation
+  Broker Fee Agreement
+  Manage Broker Disclosures
+  Mortgage Broker License Type
 
-    logger.info(f"🚫 Excluded channels: {excluded}")
+If CHANNEL is WHL or CL1:
+- Mortgage Broker entities may be included only when required by Acceptance Criteria.
 
-    # -------------------------------------------
-    # Step 2: Detect channels
-    # -------------------------------------------
-    for channel, words in CHANNEL_KEYWORDS.items():
-        for w in words:
-            if w in text:
-                detected.add(channel)
+If this rule is violated, output is invalid.
 
-    logger.info(f"🦬 Raw detected channels: {detected}")
+------------------------------------------------------------
+PRECONDITION CONTEXT (REFERENCE ONLY – DO NOT REPEAT)
 
-    # -------------------------------------------
-    # Step 3: Remove excluded
-    # -------------------------------------------
-    detected = detected - excluded
+{precondition}
 
-    logger.info(f"✔ After removing exclusions: {detected}")
+- Do NOT rewrite the precondition.
+- Assume loan already exists as per precondition.
+- Do NOT validate loan creation.
 
-    # -------------------------------------------
-    # Step 4: Business rules
-    # -------------------------------------------
-    final_channels = set()
+------------------------------------------------------------
+HISTORICAL STYLE ALIGNMENT RULE (MANDATORY)
 
-    if not detected:
-        logger.info("⚠️ No channel mentioned → Using ALL channels")
-        return ALL_CHANNELS
+The provided historical test steps represent the enterprise-approved writing standard.
 
-    if "RTL" in detected:
-        final_channels.update(["RTL", "DTC"])
+Use historical data as the authoritative style reference for:
 
-    if "WHL" in detected:
-        final_channels.update(["WHL", "CL1"])
+- Test Scenario Description wording pattern
+- Test Script Description structure and tone
+- Step phrasing style
+- Screen naming consistency
+- Expected Results depth and enforcement tone
+- Validation granularity
+- Acceptance Criteria mapping structure
 
-    if "DTC" in detected:
-        final_channels.add("DTC")
+Do NOT copy historical text.
+Do NOT reuse exact sentences.
+Use it strictly as writing behavior guidance.
 
-    if "CL1" in detected:
-        final_channels.add("CL1")
+Generated output must match historical professionalism, structure, and enforcement depth.
 
-    logger.info(f"✅ Final channels after rule mapping: {final_channels}\n")
+------------------------------------------------------------
+HEADER SECTION (MANDATORY – NONE MAY BE BLANK)
 
-    return list(final_channels)
+Generate exactly once:
+
+Test Case ID / Test Script ID: {user_story_id}_{channel}_01
+Test Scenario Id: {user_story_id}_SC_01
+Test Scenario Description: <One clear business objective sentence, maximum 25 words>
+Test Script Description: <2–3 sentences summarizing business validation coverage aligned to Acceptance Criteria>
+Pre-Condition & Assumptions: Refer to provided precondition context
+
+------------------------------------------------------------
+STEP STRUCTURE
+
+After header, output exactly:
+
+Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping
+
+------------------------------------------------------------
+STEP RULES
+
+1. Step numbering must be strictly sequential:
+   Step 01
+   Step 02
+   Step 03
+   ...
+   Final step must also follow numeric sequence.
+
+2. Step 01 must be:
+Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA
+
+3. Step 02 must be:
+Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA
+
+4. Business validation steps:
+- Generate as many steps as required to fully validate ALL Acceptance Criteria.
+- Each Acceptance Criterion must have at least:
+  • One positive validation
+  • One negative validation where applicable
+- Do NOT duplicate validations.
+- Each step must validate one distinct business rule.
+
+
+5. YES/NO HANDLING:
+- If Yes and No produce different system behavior, they MUST be separate steps.
+- If Yes and No only validate field availability, they may be combined.
+- Separate steps must have distinct Expected Results.
+
+6. Expected Results:
+- Must begin with “The system”.
+- Must describe enforcement, calculation result, restriction, visibility rule, status change, or dependency behavior.
+- Do NOT use:
+  verify
+  check
+  ensure
+  confirm
+  should
+  may
+  if applicable
+
+7. Requirement Mapping:
+- All business validation steps must map using:
+  {user_story_id}_AC_XX
+- Login and Logout must use NA.
+- No business step may have NA mapping.
+
+8. Screen Names:
+- Must remain consistent across all steps.
+- Use exact functional screen labels.
+- Do not vary singular/plural naming.
+
+------------------------------------------------------------
+MANDATORY TERMINATION STEP
+
+The last sequential step MUST be:
+
+Step XX | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
+
+- Must be last.
+- Must follow numeric sequence.
+- Must not be labeled “Final Step”.
+- If missing, output is invalid.
+
+------------------------------------------------------------
+User Story:
+{title}
+
+Description:
+{description}
+
+Acceptance Criteria:
+{ac}
+
+Generate the complete test case now in strict plain text format.
