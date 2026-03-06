@@ -14,6 +14,7 @@ class ReviewAgent:
 
     def __init__(self):
 
+        # LLM initialization
         self.llm = AzureChatOpenAI(
             azure_deployment=get("CHAT_MODEL"),
             api_version=get("AZURE_OPENAI_API_VERSION"),
@@ -22,13 +23,14 @@ class ReviewAgent:
             temperature=0
         )
 
+        # Load review prompt
         with open("prompts/review_prompt.txt", "r", encoding="utf-8") as f:
             self.review_prompt = f.read()
 
-        logger.info("Review Agent initialized")
+        logger.info("✅ Review Agent initialized")
 
     # ---------------------------------------------------------
-    # Extract keywords from title
+    # Extract keywords from Title
     # ---------------------------------------------------------
     def extract_title_keywords(self, title: str) -> List[str]:
 
@@ -37,13 +39,13 @@ class ReviewAgent:
 
         title = title.lower()
 
-        words = re.findall(r"[a-zA-Z]+(?:\s[a-zA-Z]+)?", title)
+        phrases = re.findall(r"[a-zA-Z]+(?:\s[a-zA-Z]+)?", title)
 
         keywords = []
 
-        for w in words:
-            if len(w) > 4:
-                keywords.append(w.strip())
+        for p in phrases:
+            if len(p) > 4:
+                keywords.append(p.strip())
 
         return list(set(keywords))
 
@@ -64,22 +66,23 @@ class ReviewAgent:
         return ""
 
     # ---------------------------------------------------------
-    # Find missing keywords
+    # Find Missing Keywords
     # ---------------------------------------------------------
-    def find_missing_keywords(self, keywords, description):
+    def find_missing_keywords(self, keywords: List[str], description: str):
 
         missing = []
 
-        desc_lower = description.lower()
+        description = description.lower()
 
-        for k in keywords:
-            if k not in desc_lower:
-                missing.append(k)
+        for keyword in keywords:
+
+            if keyword not in description:
+                missing.append(keyword)
 
         return missing
 
     # ---------------------------------------------------------
-    # Regenerate description using LLM
+    # Regenerate Test Script Description
     # ---------------------------------------------------------
     def regenerate_description(
         self,
@@ -88,9 +91,11 @@ class ReviewAgent:
         missing_keywords
     ):
 
+        logger.info("🔄 Regenerating Test Script Description")
+
         prompt = self.review_prompt.format(
-            missing_keywords=", ".join(missing_keywords),
             title=title,
+            missing_keywords=", ".join(missing_keywords),
             generated_testcase=testcase
         )
 
@@ -99,23 +104,43 @@ class ReviewAgent:
         return response.content.strip()
 
     # ---------------------------------------------------------
-    # Save review log
+    # Save Testcase TXT Log
     # ---------------------------------------------------------
-    def save_log(self, state, log_data):
+    def save_testcase_log(self, user_story_id, channel, testcase):
 
         os.makedirs("logs", exist_ok=True)
 
-        path = f"logs/{state['user_story_id']}_review_log.json"
+        file_path = f"logs/{user_story_id}_{channel}_testcase.txt"
 
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(log_data, f, indent=4)
+        with open(file_path, "w", encoding="utf-8") as f:
+
+            f.write("=====================================\n")
+            f.write("ADO INTELLIGENCE ANALYSIS OUTPUT\n")
+            f.write("=====================================\n\n")
+            f.write(testcase)
+
+        logger.info(f"📄 Saved testcase log → {file_path}")
 
     # ---------------------------------------------------------
-    # Main execution
+    # Save Review JSON Log
+    # ---------------------------------------------------------
+    def save_review_log(self, state, log_data):
+
+        os.makedirs("logs", exist_ok=True)
+
+        file_path = f"logs/{state['user_story_id']}_review_log.json"
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, indent=4)
+
+        logger.info(f"📄 Saved review log → {file_path}")
+
+    # ---------------------------------------------------------
+    # Main Execution
     # ---------------------------------------------------------
     def run(self, state: Dict) -> Dict:
 
-        logger.info("Review Agent running")
+        logger.info("🚀 Review Agent Running")
 
         title_keywords = self.extract_title_keywords(state["title"])
 
@@ -127,37 +152,62 @@ class ReviewAgent:
 
         for channel, testcase in state["llm_outputs"].items():
 
+            logger.info(f"🔍 Reviewing channel → {channel}")
+
             description = self.extract_script_description(testcase)
 
-            missing = self.find_missing_keywords(
+            missing_keywords = self.find_missing_keywords(
                 title_keywords,
                 description
             )
 
-            if missing:
+            # -------------------------------------------------
+            # If missing keywords found
+            # -------------------------------------------------
+            if missing_keywords:
 
-                logger.warning(f"{channel} missing keywords: {missing}")
-
-                updated = self.regenerate_description(
-                    state["title"],
-                    testcase,
-                    missing
+                logger.warning(
+                    f"{channel} → Missing keywords: {missing_keywords}"
                 )
 
-                state["llm_outputs"][channel] = updated
+                updated_testcase = self.regenerate_description(
+                    state["title"],
+                    testcase,
+                    missing_keywords
+                )
+
+                state["llm_outputs"][channel] = updated_testcase
+
+                final_testcase = updated_testcase
 
                 review_log["channels"][channel] = {
-                    "missing_keywords": missing,
+                    "missing_keywords": missing_keywords,
                     "status": "REGENERATED"
                 }
 
             else:
+
+                final_testcase = testcase
 
                 review_log["channels"][channel] = {
                     "missing_keywords": [],
                     "status": "PASSED"
                 }
 
-        self.save_log(state, review_log)
+            # -------------------------------------------------
+            # Save final testcase TXT log
+            # -------------------------------------------------
+            self.save_testcase_log(
+                state["user_story_id"],
+                channel,
+                final_testcase
+            )
+
+        # -----------------------------------------------------
+        # Save review log
+        # -----------------------------------------------------
+        self.save_review_log(state, review_log)
+
+        logger.info("✅ Review Agent Completed")
 
         return state
