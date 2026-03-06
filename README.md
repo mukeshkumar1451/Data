@@ -1,27 +1,3 @@
-You are a QA test case reviewer.
-
-Your job is to update a generated test case so that all missing keywords appear naturally in the correct steps.
-
-Rules:
-
-1. Maintain the existing test case structure.
-2. Do NOT modify login or logout steps.
-3. Do NOT add explanations.
-4. Do NOT add markdown formatting.
-5. Use the historical workflow to determine where new steps should be inserted.
-6. Missing keywords must appear naturally in step descriptions.
-
-Missing Keywords:
-{missing_keywords}
-
-Historical Workflow Reference:
-{historical_steps}
-
-Generated Test Case:
-{generated_testcase}
-
-Return the corrected test case only.
-------------------------------------------------------------------------------------
 import logging
 import os
 import re
@@ -55,44 +31,54 @@ class ReviewAgent:
     # ---------------------------------------------------------
     def extract_title_keywords(self, title: str) -> List[str]:
 
-        words = re.findall(r"[A-Za-z]+(?:\s[A-Za-z]+)?", title)
+        phrases = re.findall(r"[A-Za-z]+(?:\s[A-Za-z]+)?", title)
 
         keywords = []
 
-        for w in words:
-            if len(w) > 4:
-                keywords.append(w.lower())
+        for p in phrases:
+            if len(p) > 4:
+                keywords.append(p.lower())
 
         return list(set(keywords))
 
     # ---------------------------------------------------------
-    # Extract testcase terms
+    # Extract Test Step Descriptions only
     # ---------------------------------------------------------
-    def extract_testcase_terms(self, testcase: str) -> List[str]:
+    def extract_step_descriptions(self, testcase: str):
 
-        text = testcase.lower()
+        steps = []
 
-        tokens = re.findall(r"[A-Za-z]+(?:\s[A-Za-z]+)?", text)
+        for line in testcase.split("\n"):
 
-        return list(set(tokens))
+            if line.strip().startswith("Step"):
+
+                parts = line.split("|")
+
+                if len(parts) > 1:
+                    step_desc = parts[1].strip().lower()
+                    steps.append(step_desc)
+
+        return steps
 
     # ---------------------------------------------------------
     # Find missing keywords
     # ---------------------------------------------------------
-    def find_missing_keywords(self, keywords: List[str], testcase_terms: List[str]):
+    def find_missing_keywords(self, keywords, step_descriptions):
+
+        text = " ".join(step_descriptions)
 
         missing = []
 
         for k in keywords:
-            if k not in testcase_terms:
+            if k not in text:
                 missing.append(k)
 
         return missing
 
     # ---------------------------------------------------------
-    # Extract steps
+    # Extract step lines
     # ---------------------------------------------------------
-    def extract_steps(self, testcase: str):
+    def extract_steps(self, testcase):
 
         steps = []
 
@@ -116,29 +102,6 @@ class ReviewAgent:
         response = self.llm.invoke(prompt)
 
         return response.content.strip()
-
-    # ---------------------------------------------------------
-    # Remove duplicate logout
-    # ---------------------------------------------------------
-    def remove_duplicate_logout(self, testcase):
-
-        lines = testcase.split("\n")
-
-        seen_logout = False
-        clean_lines = []
-
-        for line in lines:
-
-            if "log out from h2o-a" in line.lower():
-
-                if seen_logout:
-                    continue
-
-                seen_logout = True
-
-            clean_lines.append(line)
-
-        return "\n".join(clean_lines)
 
     # ---------------------------------------------------------
     # Save testcase logs
@@ -172,11 +135,11 @@ class ReviewAgent:
 
         for channel, testcase in state["llm_outputs"].items():
 
-            testcase_terms = self.extract_testcase_terms(testcase)
+            step_descriptions = self.extract_step_descriptions(testcase)
 
             missing_keywords = self.find_missing_keywords(
                 title_keywords,
-                testcase_terms
+                step_descriptions
             )
 
             if missing_keywords:
@@ -192,8 +155,6 @@ class ReviewAgent:
                     historical_steps,
                     missing_keywords
                 )
-
-                updated_testcase = self.remove_duplicate_logout(updated_testcase)
 
                 new_steps = self.extract_steps(updated_testcase)
 
