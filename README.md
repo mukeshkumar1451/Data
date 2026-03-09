@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from openpyxl import load_workbook
 from config.config import get
@@ -19,38 +20,27 @@ class ExcelExportAgent:
 
         scenario = ""
         script = ""
-        requirement = ""
         steps = []
 
         lines = llm_text.splitlines()
 
         for line in lines:
+
             line = line.strip()
 
             if not line:
                 continue
 
-            if line.startswith("Test Scenario Description:") or line.startswith("Scenario:"):
-                scenario = (
-                    line.replace("Test Scenario Description:", "")
-                        .replace("Scenario:", "")
-                        .strip()
-                )
+            if line.startswith("Test Scenario Description:"):
+                scenario = line.replace("Test Scenario Description:", "").strip()
                 continue
 
-            if line.startswith("Test Script Description:") or line.startswith("Script:"):
-                script = (
-                    line.replace("Test Script Description:", "")
-                        .replace("Script:", "")
-                        .strip()
-                )
+            if line.startswith("Test Script Description:"):
+                script = line.replace("Test Script Description:", "").strip()
                 continue
 
-            if line.startswith("Test Scenario Id:"):
-                requirement = line.replace("Test Scenario Id:", "").strip()
-                continue
-
-            if line.lower().startswith("step") and "|" in line:
+            # Detect Step lines robustly
+            if re.match(r"^step\s*\d+", line.lower()) and "|" in line:
 
                 parts = [p.strip() for p in line.split("|")]
 
@@ -73,11 +63,11 @@ class ExcelExportAgent:
         return {
             "scenario": scenario,
             "script": script,
-            "requirement": requirement,
             "steps": steps
         }
 
     # -------------------------------------------------
+    # MAIN EXECUTION
     # -------------------------------------------------
     def run(self, state: dict) -> dict:
 
@@ -105,25 +95,27 @@ class ExcelExportAgent:
                 logger.warning(f"Sheet '{channel}' not found after cleanup.")
                 continue
 
-            # ...removed log file saving...
-
             ws = wb[channel]
+
             row = 2
             tc_counter = 1
 
             parsed = self._parse_llm_output(llm_text)
 
+            logger.info(f"{channel} → Parsed {len(parsed['steps'])} steps")
+
             if not parsed["steps"]:
                 logger.error(f"No valid steps parsed for channel {channel}")
                 continue
 
-            scenario = parsed["scenario"] or f"Validate {state.get('user_story', '')}"
+            scenario = parsed["scenario"] or f"Validate {state.get('title', '')}"
             script = parsed["script"] or "Positive validation aligned to Acceptance Criteria."
 
             channel_ctx = state.get("channel_context", {})
             precondition = channel_ctx.get(channel, {}).get("precondition", "")
 
             tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
+
             start_row = row
 
             for idx, step in enumerate(parsed["steps"]):
@@ -139,7 +131,6 @@ class ExcelExportAgent:
                 ws.cell(row, 8).value = step["screen"]
                 ws.cell(row, 9).value = step["data"]
                 ws.cell(row, 10).value = step["expected"]
-
                 ws.cell(row, 11).value = ""
                 ws.cell(row, 12).value = ""
                 ws.cell(row, 13).value = ""
@@ -161,10 +152,16 @@ class ExcelExportAgent:
             tc_counter += 1
 
         # -------------------------------------------------
-        # OUTPUT FILE WITH AUTO VERSIONING
+        # OUTPUT FILE
         # -------------------------------------------------
         base_filename = f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
+
         output_path = os.path.join(self.output_dir, base_filename)
+
         wb.save(output_path)
+
+        logger.info(f"\nExcel Generated at:\n{output_path}")
+
         state["excel_output"] = output_path
+
         return state
