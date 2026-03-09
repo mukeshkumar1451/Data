@@ -1,157 +1,110 @@
-Role:
-You are a QA Reviewer.
+=====================================
+ADO INTELLIGENCE ANALYSIS OUTPUT
+=====================================
 
-Task:
-Review generated test cases for completeness, accuracy, and relevance against the provided user story, description, and acceptance criteria.
 
-Instructions:
+Story ID: 718521
+Title: Modernized Audit additions - DIS > Generate Disclosures Fields
+Timestamp: 20260309_133806
+------------ DESCRIPTION ------------
+Business would like to add the following fields to Modernized Audit. Description H2O UI Location HPML DIS > Generate Disclosures > Generate Disclosure Intent to Proceed DIS > Generate Disclosures Mortgage Broker Fee Agreement DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement Mortgage Broker License Type DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement HPML - Intent to Proceed - Mortgage Broker Fee/Compensation Agreement - *Appears to be privilege restricted Mortgage Broker License Type - *Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic. **Also appears to be privilege restricted
+------ ACCEPTANCE CRITERIA ----------
+Business would like to add the following fields to Modernized Audit.DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -Intent to Proceed -Mortgage Broker Fee/Compensation Agreement -*Appears to be privilege restrictedMortgage Broker License Type -*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.**Also appears to be privilege restricted
 
-Contents to review:
-• User story title
-• User story description
-• Acceptance criteria
-• Generated test cases
-• Historical workflow context
+Business would like to add the following fields to Modernized Audit.
 
-Validation Steps:
+DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement
 
-1. Context Usage
-Verify that historical workflow context is used correctly.
+HPML -
 
-• Navigation flow in test cases should align with historical workflow when applicable.
-• Screens referenced in the test cases must exist in the historical workflow context.
-• Historical context should be used only for navigation guidance and not to introduce new functionality.
+[Image Analysis]
+Section:  
+Generate Disclosure  
 
---------------------------------------------------
+Fields:  
+- Intent to Proceed (Checkbox)  
+- Allow Appraisal Order (Checkbox)  
+- Bypass Compliance Check (Checkbox)  
+- Ignore 3rd Party Fee Check (Checkbox)  
+- Title Fees Verified after LA Increase (Checkbox)  
+- Ignore Fee Quote Data Validations (Checkbox)  
+- Higher Priced Mortgage Loan (Dropdown)  
+- HPML DV Override (Checkbox)  
 
-2. User Story Field Coverage
+Buttons:  
+- Send Via (Dropdown)  
 
-Fields to validate may appear in BOTH:
+Values:  
+- Higher Priced Mortgage Loan: Select, Yes, No  
+- Send Via: eSign  
 
-• User Story Description
-• Acceptance Criteria
+Intent to Proceed -
 
-Extract all UI fields mentioned in the description and acceptance criteria.
+[Image Analysis]
+Section:  
+Generate Disclosure  
 
-Examples of fields:
-Intent to Proceed
-Higher Priced Mortgage Loan
-Mortgage Broker Fee Agreement
-Mortgage Broker License Type
-HPML DV Override
+Fields:  
+- Intent to Proceed (Checkbox)  
 
-For each field identified:
+Buttons:  
+None  
 
-• Verify that at least one test step validates that field.
-• If a field is missing validation in test steps, list it as a gap.
+Values:  
+None  
 
-Example format:
+Mortgage Broker Fee/Compensation Agreement -
 
-Intent to Proceed → Covered in Step 4
-Mortgage Broker Fee Agreement → Covered in Step 8
-Mortgage Broker License Type → NOT COVERED
+[Image Analysis]
+Section:  
+Mortgage Broker Fee/Compensation Agreement  
 
---------------------------------------------------
+Fields:  
+- Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?  
 
-3. Business Rule Validation
+Buttons:  
+- Dropdown menu  
 
-Review test cases to confirm validation of:
+Values:  
+- Select...  
+- Yes  
+- No  
 
-• Field presence
-• UI location
-• Field type (checkbox, dropdown, textbox)
-• Dependency logic
-• Privilege restrictions
+---
 
-Example validations:
+Section:  
+Manage Additional Broker Disclosures  
 
-• Mortgage Broker License Type appears when SubPropState = CA
-• Mortgage Broker Fee Agreement is privilege restricted
+Fields:  
+- This functionality provides the ability to:  
+  - Append additional disclosures to the Newrez LE Package  
 
-If any rule is not validated in the test cases, mark it as missing.
+Buttons:  
+- Manage Broker Disclosures  
 
---------------------------------------------------
+*Appears to be privilege restricted
 
-4. Test Case Quality Review
+Mortgage Broker License Type -
 
-Evaluate overall test quality.
+[Image Analysis]
+Section:  
+Mortgage Broker Fee/Compensation Agreement  
 
-Navigation
-• Are navigation steps logical and aligned with the LOS workflow?
+Fields:  
+- Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?  
+- Under which license will you originate this loan?  
 
-Field Validation
-• Are correct UI fields referenced?
-• Are field types correctly described?
+Buttons:  
+- Manage Broker Disclosures  
 
-Expected Results
-• Do expected results clearly describe system behavior?
+Values:  
+- Yes  
+- Select...  
+  - CFL  
+  - DRE  
+  - RML  
 
-Test Flow
-• Are steps sequential and easy to execute?
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.
 
-Identify:
-• Ambiguous steps
-• Missing validations
-• Incorrect navigation
-• Redundant steps
+**Also appears to be privilege restricted
 
---------------------------------------------------
-
-5. Coverage Calculation
-
-Coverage % = (Number of validated fields / Total fields identified) × 100
-
---------------------------------------------------
-
-6. Review Status
-
-If all fields and business rules are validated:
-
-REVIEW STATUS: PASSED
-
-If any field or rule is missing validation:
-
-REVIEW STATUS: FAILED
-
---------------------------------------------------
-
-Output Format
-
-Test Case Review Report
-
-Context Usage Review
-<analysis>
-
-Field Coverage Review
-<field validation results>
-
-Business Rule Validation
-<rule validation results>
-
-Test Case Quality Review
-<quality findings>
-
-Coverage Percentage
-<calculated value>
-
-Improvement Suggestions
-<missing validations>
-
-REVIEW STATUS: PASSED or FAILED
-
---------------------------------------------------
-
-User Story Title
-{title}
-
-Description
-{description}
-
-Acceptance Criteria
-{ac}
-
-Generated Test Cases
-{generated_testcases}
-
-Historical Workflow Context
-{historical_steps}
