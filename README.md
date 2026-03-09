@@ -24,7 +24,7 @@ class ReviewAgent:
         return list(set(keywords))
 
     # ---------------------------------------------------------
-    # Extract step descriptions
+    # Extract Test Step Descriptions
     # ---------------------------------------------------------
     def extract_step_descriptions(self, testcase):
 
@@ -37,16 +37,16 @@ class ReviewAgent:
                 parts = line.split("|")
 
                 if len(parts) > 1:
-                    steps.append(parts[1].lower())
+                    steps.append(parts[1].strip().lower())
 
         return steps
 
     # ---------------------------------------------------------
     # Find missing keywords
     # ---------------------------------------------------------
-    def find_missing_keywords(self, keywords, step_descriptions):
+    def find_missing_keywords(self, keywords, step_desc):
 
-        text = " ".join(step_descriptions)
+        text = " ".join(step_desc)
 
         missing = []
 
@@ -57,48 +57,81 @@ class ReviewAgent:
         return missing
 
     # ---------------------------------------------------------
-    # Search historical steps
+    # Find historical step containing keyword
     # ---------------------------------------------------------
-    def search_historical_steps(self, historical_steps, keyword):
+    def find_historical_step(self, historical_steps, keyword):
 
         for line in historical_steps.split("\n"):
 
             if keyword in line.lower():
-                return line
+                return line.strip()
 
         return None
 
     # ---------------------------------------------------------
-    # Insert new step
+    # Insert steps before logout
     # ---------------------------------------------------------
-      def create_new_step(self, step_number, historical_step):
+    def insert_steps_before_logout(self, testcase_lines, new_steps):
 
-         desc = historical_step.get("Description", "")
-         screen = historical_step.get("Screen", "")
-         expected = historical_step.get("Expected Result", "")
+        logout_index = None
 
-       return (
-          f"Step {step_number:02d} | "
-        f"{desc} | "
-        f"{screen} | "
-        f"NA | "
-        f"{expected} | "
-        f"NA"
-    )
+        for i, line in enumerate(testcase_lines):
+
+            if "log out from h2o-a" in line.lower():
+                logout_index = i
+                break
+
+        if logout_index is None:
+            testcase_lines.extend(new_steps)
+        else:
+            testcase_lines = (
+                testcase_lines[:logout_index]
+                + new_steps
+                + testcase_lines[logout_index:]
+            )
+
+        return testcase_lines
 
     # ---------------------------------------------------------
-    # Save testcase
+    # Renumber steps
+    # ---------------------------------------------------------
+    def renumber_steps(self, testcase_lines):
+
+        step_counter = 1
+        updated_lines = []
+
+        for line in testcase_lines:
+
+            if line.strip().startswith("Step"):
+
+                new_line = re.sub(
+                    r"Step\s*\d+",
+                    f"Step {step_counter:02d}",
+                    line
+                )
+
+                updated_lines.append(new_line)
+
+                step_counter += 1
+
+            else:
+                updated_lines.append(line)
+
+        return updated_lines
+
+    # ---------------------------------------------------------
+    # Save testcase log
     # ---------------------------------------------------------
     def save_log(self, story_id, channel, testcase):
 
         os.makedirs("logs", exist_ok=True)
 
-        file = f"logs/{story_id}_{channel}_testcase.txt"
+        file_path = f"logs/{story_id}_{channel}_testcase.txt"
 
-        with open(file, "w", encoding="utf-8") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(testcase)
 
-        logger.info(f"Saved testcase log: {file}")
+        logger.info(f"Saved testcase log: {file_path}")
 
     # ---------------------------------------------------------
     # MAIN RUN
@@ -118,41 +151,56 @@ class ReviewAgent:
             missing = self.find_missing_keywords(keywords, step_desc)
 
             if not missing:
+                self.save_log(
+                    state["user_story_id"],
+                    channel,
+                    testcase
+                )
                 continue
 
             logger.warning(f"{channel} missing keywords: {missing}")
 
             historical = state["channel_context"][channel]["historical_steps"]
 
-            lines = testcase.split("\n")
+            testcase_lines = testcase.split("\n")
 
-            step_number = len([l for l in lines if l.startswith("Step")]) + 1
-
-            added_steps = []
+            new_steps = []
 
             for keyword in missing:
 
-                hist_step = self.search_historical_steps(historical, keyword)
+                hist_step = self.find_historical_step(
+                    historical,
+                    keyword
+                )
 
                 if hist_step:
 
-                    new_step = self.create_new_step(step_number, hist_step)
+                    new_steps.append(
+                        f"Step XX | {hist_step} | NA | NA | NA | NA"
+                    )
 
-                    added_steps.append(new_step)
-
-                    step_number += 1
-
-            if added_steps:
+            if new_steps:
 
                 logger.info(f"{channel} → Added Steps:")
 
-                for s in added_steps:
+                for s in new_steps:
                     logger.info(s)
 
-                testcase = testcase + "\n" + "\n".join(added_steps)
+                testcase_lines = self.insert_steps_before_logout(
+                    testcase_lines,
+                    new_steps
+                )
 
-            state["llm_outputs"][channel] = testcase
+                testcase_lines = self.renumber_steps(testcase_lines)
 
-            self.save_log(state["user_story_id"], channel, testcase)
+                testcase = "\n".join(testcase_lines)
+
+                state["llm_outputs"][channel] = testcase
+
+            self.save_log(
+                state["user_story_id"],
+                channel,
+                testcase
+            )
 
         return state
