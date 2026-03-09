@@ -1,39 +1,158 @@
-=====================================
-ADO INTELLIGENCE ANALYSIS OUTPUT
-=====================================
+import logging
+import os
+import re
+from typing import Dict, List
 
-Test Case ID / Test Script ID: 718521_RTL_01  
-Test Scenario Id: 718521_SC_01  
-Test Scenario Description: Validate the addition of new fields in the Modernized Audit under DIS > Generate Disclosures.  
-Test Script Description: This test case validates the presence, functionality, and privilege restrictions of the new fields added to the Modernized Audit under DIS > Generate Disclosures. It ensures that the fields behave as expected based on the acceptance criteria and privilege logic.  
-Pre-Condition & Assumptions: Refer to provided precondition context.  
+logger = logging.getLogger(__name__)
 
-Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping  
 
-Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA  
+class ReviewAgent:
 
-Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA  
+    # ---------------------------------------------------------
+    # Extract keywords from title
+    # ---------------------------------------------------------
+    def extract_title_keywords(self, title: str) -> List[str]:
 
-Step 03 | Navigate to the "Generate Disclosures" section under the "DIS" tab | Loan Navigation Menu | NA | The system displays the "Generate Disclosures" screen with all available fields | 718521_AC_01  
+        phrases = re.findall(r"[A-Za-z]+(?:\s[A-Za-z]+)?", title)
 
-Step 04 | Verify the presence of the "Intent to Proceed" checkbox | Generate Disclosures | NA | The system displays the "Intent to Proceed" checkbox in the "Generate Disclosures" section | 718521_AC_02  
+        keywords = []
 
-Step 05 | Check the "Intent to Proceed" checkbox | Generate Disclosures | NA | The system allows the checkbox to be selected and retains the selection | 718521_AC_02  
+        for p in phrases:
+            if len(p) > 4:
+                keywords.append(p.lower())
 
-Step 06 | Verify the presence of the "Higher Priced Mortgage Loan" dropdown | Generate Disclosures | NA | The system displays the "Higher Priced Mortgage Loan" dropdown with options: Select, Yes, No | 718521_AC_03  
+        return list(set(keywords))
 
-Step 07 | Select "Yes" from the "Higher Priced Mortgage Loan" dropdown | Generate Disclosures | Yes | The system updates the field value to "Yes" and retains the selection | 718521_AC_03  
+    # ---------------------------------------------------------
+    # Extract step descriptions
+    # ---------------------------------------------------------
+    def extract_step_descriptions(self, testcase):
 
-Step 08 | Verify the presence of the "HPML DV Override" checkbox | Generate Disclosures | NA | The system displays the "HPML DV Override" checkbox in the "Generate Disclosures" section | 718521_AC_04  
+        steps = []
 
-Step 09 | Check the "HPML DV Override" checkbox | Generate Disclosures | NA | The system allows the checkbox to be selected and retains the selection | 718521_AC_04  
+        for line in testcase.split("\n"):
 
-Step 10 | Verify the presence of the "Send Via" dropdown | Generate Disclosures | NA | The system displays the "Send Via" dropdown with options: eSign | 718521_AC_05  
+            if line.strip().startswith("Step"):
 
-Step 11 | Select "eSign" from the "Send Via" dropdown | Generate Disclosures | eSign | The system updates the field value to "eSign" and retains the selection | 718521_AC_05  
+                parts = line.split("|")
 
-Step 12 | Verify the presence of the new fields added to the Modernized Audit | Generate Disclosures | NA | The system displays the new fields in the Modernized Audit section | 718521_AC_06  
+                if len(parts) > 1:
+                    steps.append(parts[1].lower())
 
-Step 13 | Validate the functionality of the new fields in the Modernized Audit | Generate Disclosures | NA | The system allows interaction with the new fields and retains the changes as expected | 718521_AC_07  
+        return steps
 
-Step 14 | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
+    # ---------------------------------------------------------
+    # Find missing keywords
+    # ---------------------------------------------------------
+    def find_missing_keywords(self, keywords, step_descriptions):
+
+        text = " ".join(step_descriptions)
+
+        missing = []
+
+        for k in keywords:
+            if k not in text:
+                missing.append(k)
+
+        return missing
+
+    # ---------------------------------------------------------
+    # Search historical steps
+    # ---------------------------------------------------------
+    def search_historical_steps(self, historical_steps, keyword):
+
+        for line in historical_steps.split("\n"):
+
+            if keyword in line.lower():
+                return line
+
+        return None
+
+    # ---------------------------------------------------------
+    # Insert new step
+    # ---------------------------------------------------------
+      def create_new_step(self, step_number, historical_step):
+
+         desc = historical_step.get("Description", "")
+         screen = historical_step.get("Screen", "")
+         expected = historical_step.get("Expected Result", "")
+
+       return (
+          f"Step {step_number:02d} | "
+        f"{desc} | "
+        f"{screen} | "
+        f"NA | "
+        f"{expected} | "
+        f"NA"
+    )
+
+    # ---------------------------------------------------------
+    # Save testcase
+    # ---------------------------------------------------------
+    def save_log(self, story_id, channel, testcase):
+
+        os.makedirs("logs", exist_ok=True)
+
+        file = f"logs/{story_id}_{channel}_testcase.txt"
+
+        with open(file, "w", encoding="utf-8") as f:
+            f.write(testcase)
+
+        logger.info(f"Saved testcase log: {file}")
+
+    # ---------------------------------------------------------
+    # MAIN RUN
+    # ---------------------------------------------------------
+    def run(self, state: Dict) -> Dict:
+
+        logger.info("Review Agent running")
+
+        title = state["title"]
+
+        keywords = self.extract_title_keywords(title)
+
+        for channel, testcase in state["llm_outputs"].items():
+
+            step_desc = self.extract_step_descriptions(testcase)
+
+            missing = self.find_missing_keywords(keywords, step_desc)
+
+            if not missing:
+                continue
+
+            logger.warning(f"{channel} missing keywords: {missing}")
+
+            historical = state["channel_context"][channel]["historical_steps"]
+
+            lines = testcase.split("\n")
+
+            step_number = len([l for l in lines if l.startswith("Step")]) + 1
+
+            added_steps = []
+
+            for keyword in missing:
+
+                hist_step = self.search_historical_steps(historical, keyword)
+
+                if hist_step:
+
+                    new_step = self.create_new_step(step_number, hist_step)
+
+                    added_steps.append(new_step)
+
+                    step_number += 1
+
+            if added_steps:
+
+                logger.info(f"{channel} → Added Steps:")
+
+                for s in added_steps:
+                    logger.info(s)
+
+                testcase = testcase + "\n" + "\n".join(added_steps)
+
+            state["llm_outputs"][channel] = testcase
+
+            self.save_log(state["user_story_id"], channel, testcase)
+
+        return state
