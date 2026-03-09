@@ -1,299 +1,157 @@
-import os
-import re
-import base64
-import logging
-import requests
+Role:
+You are a QA Reviewer.
 
-from bs4 import BeautifulSoup
-from PIL import Image
-from dotenv import load_dotenv
-from openai import AzureOpenAI
+Task:
+Review generated test cases for completeness, accuracy, and relevance against the provided user story, description, and acceptance criteria.
 
-from config.config import get
+Instructions:
 
-logger = logging.getLogger(__name__)
+Contents to review:
+• User story title
+• User story description
+• Acceptance criteria
+• Generated test cases
+• Historical workflow context
 
-load_dotenv()
+Validation Steps:
 
-ADO_PAT = os.getenv("ADO_PAT")
+1. Context Usage
+Verify that historical workflow context is used correctly.
 
-MAX_WIDTH = 1200
-JPEG_QUALITY = 85
+• Navigation flow in test cases should align with historical workflow when applicable.
+• Screens referenced in the test cases must exist in the historical workflow context.
+• Historical context should be used only for navigation guidance and not to introduce new functionality.
 
+--------------------------------------------------
 
-class ImageExtractor:
+2. User Story Field Coverage
 
-    def __init__(self):
+Fields to validate may appear in BOTH:
 
-        self.client = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-        )
+• User Story Description
+• Acceptance Criteria
 
-        self.model = get("CHAT_MODEL")
+Extract all UI fields mentioned in the description and acceptance criteria.
 
-    # ------------------------------------------------
-    # CLEAN HTML
-    # ------------------------------------------------
-    def clean_html(self, html):
+Examples of fields:
+Intent to Proceed
+Higher Priced Mortgage Loan
+Mortgage Broker Fee Agreement
+Mortgage Broker License Type
+HPML DV Override
 
-        soup = BeautifulSoup(html, "html.parser")
+For each field identified:
 
-        for tag in soup(["script", "style"]):
-            tag.decompose()
+• Verify that at least one test step validates that field.
+• If a field is missing validation in test steps, list it as a gap.
 
-        text = soup.get_text(" ")
+Example format:
 
-        text = re.sub(r"\s+", " ", text).strip()
+Intent to Proceed → Covered in Step 4
+Mortgage Broker Fee Agreement → Covered in Step 8
+Mortgage Broker License Type → NOT COVERED
 
-        text = text.replace("s a user", "As a user")
+--------------------------------------------------
 
-        return text
+3. Business Rule Validation
 
-    # ------------------------------------------------
-    # FORMAT DESCRIPTION
-    # ------------------------------------------------
-    def format_description(self, text):
+Review test cases to confirm validation of:
 
-        text = text.replace(" As a user", "\nAs a user")
-        text = text.replace(" I want", "\nI want")
-        text = text.replace(" So that", "\nSo that")
-        text = text.replace(" Issue #", "\n\nIssue #")
-        text = text.replace("-Steps to recreate", "\n\nSteps to recreate")
+• Field presence
+• UI location
+• Field type (checkbox, dropdown, textbox)
+• Dependency logic
+• Privilege restrictions
 
-        return text.strip()
+Example validations:
 
-    # ------------------------------------------------
-    # FORMAT ACCEPTANCE CRITERIA
-    # ------------------------------------------------
-    def format_acceptance_criteria(self, text):
+• Mortgage Broker License Type appears when SubPropState = CA
+• Mortgage Broker Fee Agreement is privilege restricted
 
-        replacements = [
-            (" Given ", "\nGiven "),
-            (" When ", "\nWhen "),
-            (" Then ", "\nThen "),
-            (" AND ", "\nAND "),
-            (" AC1:", "\nAC1:"),
-            (" AC2:", "\n\nAC2:")
-        ]
+If any rule is not validated in the test cases, mark it as missing.
 
-        for old, new in replacements:
-            text = text.replace(old, new)
+--------------------------------------------------
 
-        return text.strip()
+4. Test Case Quality Review
 
-    # ------------------------------------------------
-    # DOWNLOAD IMAGE
-    # ------------------------------------------------
-    def download_image(self, url, save_path):
+Evaluate overall test quality.
 
-        try:
+Navigation
+• Are navigation steps logical and aligned with the LOS workflow?
 
-            response = requests.get(url, auth=("", ADO_PAT))
-            response.raise_for_status()
+Field Validation
+• Are correct UI fields referenced?
+• Are field types correctly described?
 
-            with open(save_path, "wb") as f:
-                f.write(response.content)
+Expected Results
+• Do expected results clearly describe system behavior?
 
-            logger.info(f"Image downloaded → {save_path}")
+Test Flow
+• Are steps sequential and easy to execute?
 
-            return save_path
+Identify:
+• Ambiguous steps
+• Missing validations
+• Incorrect navigation
+• Redundant steps
 
-        except Exception as e:
+--------------------------------------------------
 
-            logger.error(f"Image download failed: {e}")
-            return ""
+5. Coverage Calculation
 
-    # ------------------------------------------------
-    # RESIZE IMAGE
-    # ------------------------------------------------
-    def resize_image(self, image_path):
+Coverage % = (Number of validated fields / Total fields identified) × 100
 
-        try:
+--------------------------------------------------
 
-            with Image.open(image_path) as img:
+6. Review Status
 
-                width, height = img.size
+If all fields and business rules are validated:
 
-                if width <= MAX_WIDTH:
-                    return image_path
+REVIEW STATUS: PASSED
 
-                ratio = MAX_WIDTH / float(width)
-                new_height = int(height * ratio)
+If any field or rule is missing validation:
 
-                resized = img.resize((MAX_WIDTH, new_height), Image.LANCZOS)
+REVIEW STATUS: FAILED
 
-                base, _ = os.path.splitext(image_path)
+--------------------------------------------------
 
-                resized_path = base + "_resized.jpg"
+Output Format
 
-                resized.convert("RGB").save(
-                    resized_path,
-                    "JPEG",
-                    quality=JPEG_QUALITY,
-                    optimize=True
-                )
+Test Case Review Report
 
-                logger.info(f"Image resized → {resized_path}")
+Context Usage Review
+<analysis>
 
-                return resized_path
+Field Coverage Review
+<field validation results>
 
-        except Exception as e:
+Business Rule Validation
+<rule validation results>
 
-            logger.error(f"Resize failed: {e}")
-            return image_path
+Test Case Quality Review
+<quality findings>
 
-    # ------------------------------------------------
-    # BASE64 ENCODE
-    # ------------------------------------------------
-    def encode_image(self, path):
+Coverage Percentage
+<calculated value>
 
-        try:
+Improvement Suggestions
+<missing validations>
 
-            with open(path, "rb") as f:
-                return base64.b64encode(f.read()).decode("utf-8")
+REVIEW STATUS: PASSED or FAILED
 
-        except Exception as e:
+--------------------------------------------------
 
-            logger.error(f"Base64 encode failed: {e}")
-            return ""
+User Story Title
+{title}
 
-    # ------------------------------------------------
-    # ANALYZE IMAGE USING GPT VISION
-    # ------------------------------------------------
-    def analyze_image(self, image_path, description):
-
-        logger.info(f"Sending image to Vision model → {image_path}")
-
-        encoded = self.encode_image(image_path)
-
-        prompt = f"""
-You are a QA analyst analyzing a mortgage LOS UI screenshot.
-
-User Story Context:
+Description
 {description}
 
-Extract UI elements from the screenshot.
+Acceptance Criteria
+{ac}
 
-Return ONLY in this format:
+Generated Test Cases
+{generated_testcases}
 
-Section:
-Fields:
-Buttons:
-Values:
-
-Do not explain anything.
-"""
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Analyze screenshot"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{encoded}"
-                            }
-                        }
-                    ]
-                }
-            ]
-        )
-
-        result = response.choices[0].message.content
-
-        logger.info("Vision analysis completed")
-
-        return result
-
-    # ------------------------------------------------
-    # PROCESS HTML (TEXT + IMAGE)
-    # ------------------------------------------------
-    def process_html(self, html, story_id, description):
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        img_folder = os.path.join("downloads", str(story_id))
-        os.makedirs(img_folder, exist_ok=True)
-
-        blocks = []
-        img_index = 1
-
-        elements = soup.find_all(["p", "li", "img"])
-
-        for element in elements:
-
-            # TEXT BLOCK
-            if element.name != "img":
-
-                text = element.get_text(strip=True)
-
-                if text:
-                    blocks.append({
-                        "type": "text",
-                        "value": text
-                    })
-
-            # IMAGE BLOCK
-            if element.name == "img":
-
-                src = element.get("src")
-
-                logger.info(f"Image detected → {src}")
-
-                if not src:
-                    continue
-
-                save_path = os.path.join(
-                    img_folder,
-                    f"image_{img_index}.png"
-                )
-
-                downloaded = self.download_image(src, save_path)
-
-                if not downloaded:
-                    continue
-
-                resized = self.resize_image(downloaded)
-
-                try:
-
-                    analysis = self.analyze_image(resized, description)
-
-                    blocks.append({
-                        "type": "image_analysis",
-                        "value": analysis
-                    })
-
-                except Exception as e:
-
-                    logger.error(f"Image analysis failed: {e}")
-
-                img_index += 1
-
-        return blocks
-
-    # ------------------------------------------------
-    # CONVERT BLOCKS TO FINAL TEXT
-    # ------------------------------------------------
-    def blocks_to_text(self, blocks):
-
-        output = []
-
-        for block in blocks:
-
-            if block["type"] == "text":
-                output.append(block["value"])
-
-            elif block["type"] == "image_analysis":
-
-                output.append("\n[Image Analysis]\n")
-                output.append(block["value"])
-
-        return "\n".join(output)
+Historical Workflow Context
+{historical_steps}
