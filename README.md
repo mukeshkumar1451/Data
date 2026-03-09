@@ -1,79 +1,53 @@
-import logging
-import os
-from typing import Dict
+Role:
+You are a QA Reviewer.
 
-from langchain_openai import AzureChatOpenAI
-from config.config import get
+Task:
+Review generated test cases for completeness, accuracy, and relevance against the provided user story and context.
 
-logger = logging.getLogger(__name__)
+Instructions:
 
+Contents to review:
+• User story from the input folder.
+• Generated test cases from the output folder.
+• Context materials stored in a subfolder named with the user story ID in the context folder.
 
-class ReviewAgent:
+Validation Steps:
 
-    def __init__(self):
+1. Context Usage:
+   - Verify all relevant context materials are used.
+   - Ensure applied context is accurate and relevant to the user story.
 
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
+2. User Story Coverage:
+   - Confirm all acceptance criteria and business rules are covered.
+   - Check that the entire user story flow is represented, including positive, negative, and edge cases.
 
-        with open("prompts/review_prompt.txt", "r", encoding="utf-8") as f:
-            self.prompt_template = f.read()
+3. Test Case Quality:
+   - Validate navigation steps, field names, types, and page transitions against the context.
+   - Ensure preconditions, test data references, and expected results are correct.
+   - Flag unclear or ambiguous steps.
 
-        logger.info("Review Agent initialized")
+Generate Review Report:
+- Organize findings into sections:
+   • Context Usage Review
+   • User Story Coverage Review
+   • Test Case Quality Review
+- Include coverage percentage and highlight gaps or improvement suggestions.
+- If coverage < 100% or major gaps exist, explicitly state: REVIEW STATUS: FAILED.
 
-    # ---------------------------------------------------------
-    # Save Review Report
-    # ---------------------------------------------------------
-    def save_review(self, story_id, review_text):
+Write Output:
+- Save the review report to test_case_review.txt in the output folder.
 
-        os.makedirs("output", exist_ok=True)
+User Story:
+{user_story}
 
-        file_path = f"output/{story_id}_test_case_review.txt"
+Description:
+{description}
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(review_text)
+Acceptance Criteria:
+{acceptance_criteria}
 
-        logger.info(f"Review report saved: {file_path}")
+Generated Test Cases:
+{generated_testcases}
 
-    # ---------------------------------------------------------
-    # MAIN RUN
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
-
-        logger.info("Review Agent running")
-
-        story_id = state["user_story_id"]
-
-        # combine generated testcases from all channels
-        generated_testcases = "\n\n".join(state["llm_outputs"].values())
-
-        # combine historical context
-        historical_data = ""
-
-        for ch in state["channel_context"]:
-            historical_data += (
-                f"\nChannel: {ch}\n"
-                f"{state['channel_context'][ch]['historical_steps']}\n"
-            )
-
-        prompt = self.prompt_template.format(
-            user_story=state["user_story"],
-            description=state["description"],
-            acceptance_criteria=state["acceptance_criteria"],
-            generated_testcases=generated_testcases,
-            historical_data=historical_data
-        )
-
-        response = self.llm.invoke(prompt)
-
-        review_text = response.content.strip()
-
-        self.save_review(story_id, review_text)
-
-        state["review_report"] = review_text
-
-        return state
+Historical Context:
+{historical_data}
