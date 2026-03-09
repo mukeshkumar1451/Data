@@ -1,262 +1,56 @@
-=====================================
-ADO INTELLIGENCE ANALYSIS OUTPUT
-=====================================
+prompt = f"""
+You are a QA automation analyst analyzing a UI screenshot.
 
+User Story Description:
+{description}
 
-Story ID: 718521
-Title: Modernized Audit additions - DIS > Generate Disclosures Fields
-Timestamp: 20260309_143508
------------- DESCRIPTION ------------
-Business would like to add the following fields to Modernized Audit. 
+Acceptance Criteria:
+{acceptance_criteria}
 
-Description 
-H2O UI Location 
-HPML 
-DIS > Generate Disclosures > Generate Disclosure 
-Intent to Proceed 
-DIS > Generate Disclosures 
-Mortgage Broker Fee Agreement
+Your task is to analyze the screenshot and extract UI elements that correspond to fields mentioned in the Acceptance Criteria.
 
-DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement 
-Mortgage Broker License Type 
-DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement 
+Instructions:
 
-HPML -  
+1. Identify field names mentioned in the Acceptance Criteria.
+2. Look for those fields in the screenshot.
+3. Extract only the matching UI elements.
+4. Ignore unrelated UI fields that are not mentioned in the Acceptance Criteria.
 
-Intent to Proceed -  
+For each detected field extract:
+- Section name
+- Field name
+- UI label
+- Field type (Dropdown / Checkbox / Textbox)
+- Dropdown options if available
+- Checkbox state if applicable
+- Buttons present in the section
 
-Mortgage Broker Fee/Compensation Agreement -  
+If UI labels are long sentences, map them to the closest logical field name mentioned in the Acceptance Criteria.
 
-*Appears to be privilege restricted 
+Return strictly in this format:
 
-Mortgage Broker License Type -  
-
-*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
-**Also appears to be privilege restricted
------- ACCEPTANCE CRITERIA ----------
-Business would like to add the following fields to Modernized Audit.DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -Intent to Proceed -Mortgage Broker Fee/Compensation Agreement -*Appears to be privilege restrictedMortgage Broker License Type -*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.**Also appears to be privilege restricted
-
-Business would like to add the following fields to Modernized Audit.
-
-DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement
-
-HPML -
-
-[Image Analysis]
 =====================================
 IMAGE ANALYSIS OUTPUT
 =====================================
 
-Section: Generate Disclosure
+Section: <Section Name>
 
 Fields:
 
-1. Intent to Proceed  
-   UI Label:  
-   Intent to Proceed  
+1. <Field Name>
+   UI Label:
+   <Label>
 
-   Field Type:  
-   Checkbox  
+   Field Type:
+   <Dropdown / Checkbox / Textbox>
 
-   Values:  
-   - Unchecked  
+   Values:
+   - <Option>
 
-2. Allow Appraisal Order  
-   UI Label:  
-   Allow Appraisal Order  
-
-   Field Type:  
-   Checkbox  
-
-   Values:  
-   - Unchecked  
-
-3. Bypass Compliance Check  
-   UI Label:  
-   Bypass Compliance Check  
-
-   Field Type:  
-   Checkbox  
-
-   Values:  
-   - Unchecked  
-
-4. Ignore 3rd Party Fee Check  
-   UI Label:  
-   Ignore 3rd Party Fee Check  
-
-   Field Type:  
-   Checkbox  
-
-   Values:  
-   - Unchecked  
-
-5. Title Fees Verified after LA Increase  
-   UI Label:  
-   Title Fees Verified after LA Increase  
-
-   Field Type:  
-   Checkbox  
-
-   Values:  
-   - Unchecked  
-
-6. Ignore Fee Quote Data Validations  
-   UI Label:  
-   Ignore Fee Quote Data Validations  
-
-   Field Type:  
-   Checkbox  
-
-   Values:  
-   - Checked  
-
-7. Higher Priced Mortgage Loan  
-   UI Label:  
-   Higher Priced Mortgage Loan  
-
-   Field Type:  
-   Dropdown  
-
-   Values:  
-   - Select...  
-   - Yes  
-   - No  
-
-8. HPML DV Override  
-   UI Label:  
-   HPML DV Override  
-
-   Field Type:  
-   Checkbox  
-
-   Values:  
-   - Unchecked  
-
-Buttons:  
-- None visible  
+Buttons:
+- <Button Name>
 
 =====================================
 END OF IMAGE ANALYSIS
 =====================================
-
-Intent to Proceed -
-
-[Image Analysis]
-=====================================
-IMAGE ANALYSIS OUTPUT
-=====================================
-
-Section: Generate Disclosure
-
-Fields:
-
-1. Intent to Proceed
-   UI Label:
-   Intent to Proceed
-
-   Field Type:
-   Checkbox
-
-   Values:
-   - Unchecked
-
-Buttons:
-- None
-
-=====================================
-END OF IMAGE ANALYSIS
-=====================================
-
-Mortgage Broker Fee/Compensation Agreement -
-
-[Image Analysis]
-=====================================
-IMAGE ANALYSIS OUTPUT
-=====================================
-
-Section: Mortgage Broker Fee/Compensation Agreement
-
-Fields:
-
-1. Field Name:
-   Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?
-
-   UI Label:
-   Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?
-
-   Field Type:
-   Dropdown
-
-   Values:
-   - Select...
-   - Yes
-   - No
-
-Buttons:
-- None
-
-=====================================
-
-Section: Manage Additional Broker Disclosures
-
-Fields:
-- None
-
-Buttons:
-- Manage Broker Disclosures
-
-=====================================
-END OF IMAGE ANALYSIS
-=====================================
-
-*Appears to be privilege restricted
-
-Mortgage Broker License Type -
-
-[Image Analysis]
-=====================================
-IMAGE ANALYSIS OUTPUT
-=====================================
-
-Section: Mortgage Broker Fee/Compensation Agreement
-
-Fields:
-
-1. Field Name:
-   Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?
-   UI Label:
-   Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?
-
-   Field Type:
-   Dropdown
-
-   Values:
-   - Yes
-   - No
-
-2. Field Name:
-   Under which license will you originate this loan?
-   UI Label:
-   Under which license will you originate this loan?
-
-   Field Type:
-   Dropdown
-
-   Values:
-   - Select...
-   - CFL
-   - DRE
-   - RML
-
-Buttons:
-- Manage Broker Disclosures
-
-=====================================
-END OF IMAGE ANALYSIS
-=====================================
-
-*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.
-
-**Also appears to be privilege restricted
-
+"""
