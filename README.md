@@ -1,119 +1,170 @@
-import logging
 import os
-from typing import Dict
-
-from langchain_openai import AzureChatOpenAI
+import logging
+from openpyxl import load_workbook
 from config.config import get
 
 logger = logging.getLogger(__name__)
 
 
-class ReviewAgent:
+class ExcelExportAgent:
 
     def __init__(self):
+        self.template_path = get("EXCEL_TEMPLATE_PATH")
+        self.output_dir = get("EXCEL_OUTPUT_DIR")
 
-        self.llm = AzureChatOpenAI(
-            azure_deployment=get("CHAT_MODEL"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_key=get("AZURE_OPENAI_KEY"),
-            temperature=0
-        )
+    # -------------------------------------------------
+    # SAFE PIPE FORMAT PARSER
+    # -------------------------------------------------
+    def _parse_llm_output(self, llm_text: str):
 
-        with open("prompts/review_prompt.txt", "r", encoding="utf-8") as f:
-            self.prompt_template = f.read()
+        scenario = ""
+        script = ""
+        requirement = ""
+        steps = []
 
-        logger.info("Review Agent initialized")
+        lines = llm_text.splitlines()
 
-    # ---------------------------------------------------------
-    # Save Testcase Log
-    # ---------------------------------------------------------
-    def save_testcase_log(self, story_id, channel, testcase):
+        for line in lines:
+            line = line.strip()
 
-        os.makedirs("logs", exist_ok=True)
+            if not line:
+                continue
 
-        file_path = f"logs/{story_id}_{channel}_testcase.txt"
+            if line.startswith("Test Scenario Description:") or line.startswith("Scenario:"):
+                scenario = (
+                    line.replace("Test Scenario Description:", "")
+                        .replace("Scenario:", "")
+                        .strip()
+                )
+                continue
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(testcase)
+            if line.startswith("Test Script Description:") or line.startswith("Script:"):
+                script = (
+                    line.replace("Test Script Description:", "")
+                        .replace("Script:", "")
+                        .strip()
+                )
+                continue
 
-        logger.info(f"Testcase log saved: {file_path}")
+            if line.startswith("Test Scenario Id:"):
+                requirement = line.replace("Test Scenario Id:", "").strip()
+                continue
 
-    # ---------------------------------------------------------
-    # Save Review Report
-    # ---------------------------------------------------------
-    def save_review_report(self, story_id, review_text):
+            if line.lower().startswith("step") and "|" in line:
 
-        os.makedirs("output", exist_ok=True)
+                parts = [p.strip() for p in line.split("|")]
 
-        file_path = f"output/{story_id}_review.txt"
+                if len(parts) < 6:
+                    logger.warning(f"Skipping malformed step line: {line}")
+                    continue
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(review_text)
+                if len(parts) > 6:
+                    parts = parts[:5] + [" | ".join(parts[5:])]
 
-        logger.info(f"Review report saved: {file_path}")
+                steps.append({
+                    "step_no": parts[0],
+                    "desc": parts[1],
+                    "screen": parts[2],
+                    "data": parts[3],
+                    "expected": parts[4],
+                    "requirement": parts[5]
+                })
 
-    # ---------------------------------------------------------
-    # Save Prompt for Debugging
-    # ---------------------------------------------------------
-    def save_prompt(self, story_id, prompt):
+        return {
+            "scenario": scenario,
+            "script": script,
+            "requirement": requirement,
+            "steps": steps
+        }
 
-        os.makedirs("logs", exist_ok=True)
+    # -------------------------------------------------
+    # -------------------------------------------------
+    def run(self, state: dict) -> dict:
 
-        file_path = f"logs/{story_id}_review_prompt.txt"
+        logger.info("Excel Export Agent started")
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(prompt)
+        os.makedirs(self.output_dir, exist_ok=True)
 
-    # ---------------------------------------------------------
-    # MAIN RUN
-    # ---------------------------------------------------------
-    def run(self, state: Dict) -> Dict:
+        wb = load_workbook(self.template_path)
 
-        logger.info("Review Agent running")
+        detected_channels = state.get("channels", [])
 
-        story_id = state["user_story_id"]
+        # Remove unused sheets
+        if detected_channels:
+            for sheet_name in list(wb.sheetnames):
+                if sheet_name not in detected_channels:
+                    wb.remove(wb[sheet_name])
 
-        # Combine generated testcases
-        generated_testcases = "\n\n".join(state["llm_outputs"].values())
+        logger.info(f"Sheets after cleanup: {wb.sheetnames}")
 
-        # Combine historical workflow context
-        historical_data = ""
+        user_story_id = state["user_story_id"]
 
-        for ch in state["channel_context"]:
-            historical_data += (
-                f"\n\nChannel: {ch}\n"
-                f"Historical Steps:\n"
-                f"{state['channel_context'][ch]['historical_steps']}\n"
-            )
+        for channel, llm_text in state.get("llm_outputs", {}).items():
 
-        # Build prompt
-        prompt = self.prompt_template.format(
-            title=state["title"],
-            description=state["description"],
-            acceptance_criteria=state["acceptance_criteria"],
-            generated_testcases=generated_testcases,
-            historical_data=historical_data
-        )
+            if channel not in wb.sheetnames:
+                logger.warning(f"Sheet '{channel}' not found after cleanup.")
+                continue
 
-        # Save prompt for debugging
-        self.save_prompt(story_id, prompt)
+            # ...removed log file saving...
 
-        # Send to LLM
-        response = self.llm.invoke([
-            {"role": "system", "content": "You are a QA reviewer."},
-            {"role": "user", "content": prompt}
-        ])
+            ws = wb[channel]
+            row = 2
+            tc_counter = 1
 
-        review_text = response.content.strip()
+            parsed = self._parse_llm_output(llm_text)
 
-        # Save review report
-        self.save_review_report(story_id, review_text)
+            if not parsed["steps"]:
+                logger.error(f"No valid steps parsed for channel {channel}")
+                continue
 
-        # Save individual testcases per channel
-        for channel, testcase in state["llm_outputs"].items():
-            self.save_testcase_log(story_id, channel, testcase)
+            scenario = parsed["scenario"] or f"Validate {state.get('user_story', '')}"
+            script = parsed["script"] or "Positive validation aligned to Acceptance Criteria."
 
-        state["review_report"] = review_text
+            channel_ctx = state.get("channel_context", {})
+            precondition = channel_ctx.get(channel, {}).get("precondition", "")
 
+            tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
+            start_row = row
+
+            for idx, step in enumerate(parsed["steps"]):
+
+                ws.cell(row, 1).value = tc_id if idx == 0 else ""
+                ws.cell(row, 2).value = f"{user_story_id}-{channel}" if idx == 0 else ""
+                ws.cell(row, 3).value = scenario if idx == 0 else ""
+                ws.cell(row, 4).value = script if idx == 0 else ""
+                ws.cell(row, 5).value = precondition if idx == 0 else ""
+
+                ws.cell(row, 6).value = step["step_no"]
+                ws.cell(row, 7).value = step["desc"]
+                ws.cell(row, 8).value = step["screen"]
+                ws.cell(row, 9).value = step["data"]
+                ws.cell(row, 10).value = step["expected"]
+
+                ws.cell(row, 11).value = ""
+                ws.cell(row, 12).value = ""
+                ws.cell(row, 13).value = ""
+                ws.cell(row, 14).value = ""
+                ws.cell(row, 15).value = step["requirement"]
+
+                row += 1
+
+            end_row = row - 1
+
+            if end_row > start_row:
+                ws.merge_cells(
+                    start_row=start_row,
+                    start_column=2,
+                    end_row=end_row,
+                    end_column=2
+                )
+
+            tc_counter += 1
+
+        # -------------------------------------------------
+        # OUTPUT FILE WITH AUTO VERSIONING
+        # -------------------------------------------------
+        base_filename = f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
+        output_path = os.path.join(self.output_dir, base_filename)
+        wb.save(output_path)
+        state["excel_output"] = output_path
         return state
