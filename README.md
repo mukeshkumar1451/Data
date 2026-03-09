@@ -1,215 +1,209 @@
-### Test Case ID / Test Script ID: 718521_RTL_01  
-### Test Scenario Id: 718521_SC_01  
-### Test Scenario Description: Validate the addition of new fields in the Modernized Audit section under DIS > Generate Disclosures.  
-### Test Script Description: This test script validates the visibility, functionality, and business rules of the newly added fields in the Modernized Audit section under DIS > Generate Disclosures. It includes positive and negative scenarios for field interactions and privilege restrictions.  
-### Pre-Condition & Assumptions:  
-Refer to provided precondition context:  
-1. Channel: Retail  
-2. Loan Type: Conventional  
-3. Product Code: Any  
-4. Branch Name: Ret-testURLA-URLA  
-5. Loan stage: Application Accepted.  
-6. Loan should not be locked.  
-7. ComplianceEase toggle switch is turned On.  
-8. Brand: "Platinum Eagle Mortgage LLC"  
+import os
+import re
+import logging
+from openpyxl import load_workbook
+from config.config import get
 
----
+logger = logging.getLogger(__name__)
 
-### Test Steps  
 
-#### Step 01  
-**Test Step Description:** Log in to H2O-A in UAT environment.  
-**Screen Name:** Login  
-**Test Data:** Valid UAT credentials  
-**Expected Results:** The system authenticates the user and displays the dashboard.  
-**Requirement Mapping:** NA  
+class ExcelExportAgent:
 
----
+    def __init__(self):
+        self.template_path = get("EXCEL_TEMPLATE_PATH")
+        self.output_dir = get("EXCEL_OUTPUT_DIR")
 
-#### Step 02  
-**Test Step Description:** Open the loan created as per precondition.  
-**Screen Name:** Loan Summary  
-**Test Data:** Loan Number from precondition  
-**Expected Results:** The system loads the loan in editable state.  
-**Requirement Mapping:** NA  
+    # -------------------------------------------------
+    # NORMALIZE LLM TEXT (REMOVE MARKDOWN + FIX STEPS)
+    # -------------------------------------------------
+    def _normalize_llm_text(self, text: str):
 
----
+        if not text:
+            return ""
 
-#### Step 03  
-**Test Step Description:** Navigate to DIS > Generate Disclosures.  
-**Screen Name:** Dashboard > DIS > Generate Disclosures  
-**Test Data:** NA  
-**Expected Results:** The system displays the Generate Disclosures section with all available fields.  
-**Requirement Mapping:** 718521_AC_01  
+        # remove markdown formatting
+        text = text.replace("###", "")
+        text = text.replace("####", "")
+        text = text.replace("**", "")
+        text = text.replace("---", "")
 
----
+        normalized_lines = []
 
-#### Step 04  
-**Test Step Description:** Validate the visibility of the "Intent to Proceed" checkbox field.  
-**Screen Name:** Generate Disclosures  
-**Test Data:** NA  
-**Expected Results:** The system displays the "Intent to Proceed" checkbox field with values: Checked, Unchecked.  
-**Requirement Mapping:** 718521_AC_02  
+        for line in text.splitlines():
 
----
+            line = line.strip()
 
-#### Step 05  
-**Test Step Description:** Validate the functionality of the "Intent to Proceed" checkbox field by selecting "Checked".  
-**Screen Name:** Generate Disclosures  
-**Test Data:** Checked  
-**Expected Results:** The system updates the field value to "Checked" and saves the selection successfully.  
-**Requirement Mapping:** 718521_AC_02  
+            if not line:
+                continue
 
----
+            # normalize step formatting
+            if line.lower().startswith("step"):
+                line = re.sub(r"step\s*(\d+)", r"Step \1", line, flags=re.IGNORECASE)
 
-#### Step 06  
-**Test Step Description:** Validate the functionality of the "Intent to Proceed" checkbox field by selecting "Unchecked".  
-**Screen Name:** Generate Disclosures  
-**Test Data:** Unchecked  
-**Expected Results:** The system updates the field value to "Unchecked" and saves the selection successfully.  
-**Requirement Mapping:** 718521_AC_02  
+            normalized_lines.append(line)
 
----
+        return "\n".join(normalized_lines)
 
-#### Step 07  
-**Test Step Description:** Validate the visibility of the "Higher Priced Mortgage Loan" dropdown field.  
-**Screen Name:** Generate Disclosures  
-**Test Data:** NA  
-**Expected Results:** The system displays the "Higher Priced Mortgage Loan" dropdown field with values: Select..., Yes, No.  
-**Requirement Mapping:** 718521_AC_03  
+    # -------------------------------------------------
+    # SAFE PIPE FORMAT PARSER
+    # -------------------------------------------------
+    def _parse_llm_output(self, llm_text: str):
 
----
+        scenario = ""
+        script = ""
+        steps = []
 
-#### Step 08  
-**Test Step Description:** Validate the functionality of the "Higher Priced Mortgage Loan" dropdown field by selecting "Yes".  
-**Screen Name:** Generate Disclosures  
-**Test Data:** Yes  
-**Expected Results:** The system updates the field value to "Yes" and saves the selection successfully.  
-**Requirement Mapping:** 718521_AC_03  
+        lines = llm_text.splitlines()
 
----
+        for line in lines:
 
-#### Step 09  
-**Test Step Description:** Validate the functionality of the "Higher Priced Mortgage Loan" dropdown field by selecting "No".  
-**Screen Name:** Generate Disclosures  
-**Test Data:** No  
-**Expected Results:** The system updates the field value to "No" and saves the selection successfully.  
-**Requirement Mapping:** 718521_AC_03  
+            line = line.strip()
 
----
+            if not line:
+                continue
 
-#### Step 10  
-**Test Step Description:** Validate the visibility of the "HPML DV Override" checkbox field.  
-**Screen Name:** Generate Disclosures  
-**Test Data:** NA  
-**Expected Results:** The system displays the "HPML DV Override" checkbox field with values: Checked, Unchecked.  
-**Requirement Mapping:** 718521_AC_04  
+            if line.startswith("Test Scenario Description:"):
+                scenario = line.replace("Test Scenario Description:", "").strip()
+                continue
 
----
+            if line.startswith("Test Script Description:"):
+                script = line.replace("Test Script Description:", "").strip()
+                continue
 
-#### Step 11  
-**Test Step Description:** Validate the functionality of the "HPML DV Override" checkbox field by selecting "Checked".  
-**Screen Name:** Generate Disclosures  
-**Test Data:** Checked  
-**Expected Results:** The system updates the field value to "Checked" and saves the selection successfully.  
-**Requirement Mapping:** 718521_AC_04  
+            # detect step lines flexibly
+            if re.search(r"step\s*\d+", line.lower()) and "|" in line:
 
----
+                parts = [p.strip() for p in line.split("|")]
 
-#### Step 12  
-**Test Step Description:** Validate the functionality of the "HPML DV Override" checkbox field by selecting "Unchecked".  
-**Screen Name:** Generate Disclosures  
-**Test Data:** Unchecked  
-**Expected Results:** The system updates the field value to "Unchecked" and saves the selection successfully.  
-**Requirement Mapping:** 718521_AC_04  
+                # malformed line safeguard
+                if len(parts) < 6:
+                    logger.warning(f"Skipping malformed step line: {line}")
+                    continue
 
----
+                # merge overflow columns
+                if len(parts) > 6:
+                    parts = parts[:5] + [" | ".join(parts[5:])]
 
-#### Step 13  
-**Screen Name:** Generate Disclosures  
-**Test Data:** NA  
-**Requirement Mapping:** 718521_AC_05  
+                steps.append({
+                    "step_no": parts[0],
+                    "desc": parts[1],
+                    "screen": parts[2],
+                    "data": parts[3],
+                    "expected": parts[4],
+                    "requirement": parts[5]
+                })
 
----
+        return {
+            "scenario": scenario,
+            "script": script,
+            "steps": steps
+        }
 
-#### Step 14  
-**Test Step Description:** Log out from H2O-A.  
-**Screen Name:** Application Header  
-**Test Data:** NA  
-**Expected Results:** The system terminates the session and redirects to the login page.  
-**Requirement Mapping:** NA  
+    # -------------------------------------------------
+    # MAIN EXECUTION
+    # -------------------------------------------------
+    def run(self, state: dict) -> dict:
 
----
+        logger.info("Excel Export Agent started")
 
-### Notes:  
-- Privilege restrictions are validated implicitly by ensuring the absence of broker-related fields in the UI.  
-- All validations align strictly with the acceptance criteria and channel rules.
-=================================================================================================
-### Test Case: 718521_WHL_01  
-**Test Scenario ID:** 718521_SC_01  
-**Test Scenario Description:** Validate the addition of new fields in the Modernized Audit section under DIS > Generate Disclosures.  
+        os.makedirs(self.output_dir, exist_ok=True)
 
-**Test Script Description:** This test script validates the presence, functionality, and business rules of the newly added fields in the Modernized Audit section under DIS > Generate Disclosures. It includes positive and negative scenarios for field interactions and privilege restrictions.  
+        wb = load_workbook(self.template_path)
 
-**Pre-Condition & Assumptions:**  
-Refer to provided precondition context:  
-1. Channel: Wholesale  
-2. Loan Type: Conventional  
-3. Product Code: CF30  
-4. Branch: Any CE branch  
-5. Loan stage: Created  
-6. Loan should not be locked  
+        detected_channels = state.get("channels", [])
 
----
+        # Remove unused sheets
+        if detected_channels:
+            for sheet_name in list(wb.sheetnames):
+                if sheet_name not in detected_channels:
+                    wb.remove(wb[sheet_name])
 
-### Test Steps  
+        logger.info(f"Sheets after cleanup: {wb.sheetnames}")
 
-**Step 01** | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA  
+        user_story_id = state["user_story_id"]
 
-**Step 02** | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA  
+        # read reviewed testcases
+        testcase_source = state.get("final_testcases") or state.get("llm_outputs", {})
 
-**Step 03** | Navigate to DIS > Generate Disclosures | Left Navigation Panel | NA | The system displays the Generate Disclosures section | NA  
+        for channel, llm_text in testcase_source.items():
 
-**Step 04** | Validate the presence of the "Intent to Proceed" checkbox | Generate Disclosures | NA | The system displays the "Intent to Proceed" checkbox with values: Checked, Unchecked | 718521_AC_01  
+            if channel not in wb.sheetnames:
+                logger.warning(f"Sheet '{channel}' not found after cleanup.")
+                continue
 
-**Step 05** | Check the "Intent to Proceed" checkbox | Generate Disclosures | NA | The system marks the checkbox as Checked | 718521_AC_01  
+            ws = wb[channel]
 
-**Step 06** | Uncheck the "Intent to Proceed" checkbox | Generate Disclosures | NA | The system marks the checkbox as Unchecked | 718521_AC_01  
+            row = 2
+            tc_counter = 1
 
-**Step 07** | Validate the presence of the "Higher Priced Mortgage Loan" dropdown | Generate Disclosures | NA | The system displays the "Higher Priced Mortgage Loan" dropdown with values: Select..., Yes, No | 718521_AC_02  
+            # normalize text
+            cleaned_text = self._normalize_llm_text(llm_text)
 
-**Step 08** | Select "Yes" from the "Higher Priced Mortgage Loan" dropdown | Generate Disclosures | NA | The system updates the field value to Yes | 718521_AC_02  
+            # parse
+            parsed = self._parse_llm_output(cleaned_text)
 
-**Step 09** | Select "No" from the "Higher Priced Mortgage Loan" dropdown | Generate Disclosures | NA | The system updates the field value to No | 718521_AC_02  
+            logger.info(f"{channel} → Parsed {len(parsed['steps'])} steps")
 
-**Step 10** | Validate the presence of the "HPML DV Override" checkbox | Generate Disclosures | NA | The system displays the "HPML DV Override" checkbox with values: Checked, Unchecked | 718521_AC_03  
+            if not parsed["steps"]:
+                logger.error(f"No valid steps parsed for channel {channel}")
+                continue
 
-**Step 11** | Check the "HPML DV Override" checkbox | Generate Disclosures | NA | The system marks the checkbox as Checked | 718521_AC_03  
+            scenario = parsed["scenario"] or f"Validate {state.get('title', '')}"
+            script = parsed["script"] or "Positive validation aligned to Acceptance Criteria."
 
-**Step 12** | Uncheck the "HPML DV Override" checkbox | Generate Disclosures | NA | The system marks the checkbox as Unchecked | 718521_AC_03  
+            channel_ctx = state.get("channel_context", {})
+            precondition = channel_ctx.get(channel, {}).get("precondition", "")
 
-**Step 13** | Validate the presence of the "Mortgage Broker Fee Agreement" dropdown | Mortgage Broker Fee/Compensation Agreement | NA | The system displays the "Mortgage Broker Fee Agreement" dropdown with values: Select..., Yes, No | 718521_AC_04  
+            tc_id = f"US_{user_story_id}_{channel}_TC_{tc_counter:02d}"
 
-**Step 14** | Select "Yes" from the "Mortgage Broker Fee Agreement" dropdown | Mortgage Broker Fee/Compensation Agreement | NA | The system updates the field value to Yes | 718521_AC_04  
+            start_row = row
 
-**Step 15** | Select "No" from the "Mortgage Broker Fee Agreement" dropdown | Mortgage Broker Fee/Compensation Agreement | NA | The system updates the field value to No | 718521_AC_04  
+            for idx, step in enumerate(parsed["steps"]):
 
-**Step 16** | Validate the presence of the "Mortgage Broker License Type" dropdown | Mortgage Broker Fee/Compensation Agreement | NA | The system displays the "Mortgage Broker License Type" dropdown with values: Select..., CFL, DRE, RML | 718521_AC_05  
+                ws.cell(row, 1).value = tc_id if idx == 0 else ""
+                ws.cell(row, 2).value = f"{user_story_id}-{channel}" if idx == 0 else ""
+                ws.cell(row, 3).value = scenario if idx == 0 else ""
+                ws.cell(row, 4).value = script if idx == 0 else ""
+                ws.cell(row, 5).value = precondition if idx == 0 else ""
 
-**Step 17** | Select "CFL" from the "Mortgage Broker License Type" dropdown | Mortgage Broker Fee/Compensation Agreement | NA | The system updates the field value to CFL | 718521_AC_05  
+                ws.cell(row, 6).value = step["step_no"]
+                ws.cell(row, 7).value = step["desc"]
+                ws.cell(row, 8).value = step["screen"]
+                ws.cell(row, 9).value = step["data"]
+                ws.cell(row, 10).value = step["expected"]
 
-**Step 18** | Select "DRE" from the "Mortgage Broker License Type" dropdown | Mortgage Broker Fee/Compensation Agreement | NA | The system updates the field value to DRE | 718521_AC_05  
+                ws.cell(row, 11).value = ""
+                ws.cell(row, 12).value = ""
+                ws.cell(row, 13).value = ""
+                ws.cell(row, 14).value = ""
+                ws.cell(row, 15).value = step["requirement"]
 
-**Step 19** | Select "RML" from the "Mortgage Broker License Type" dropdown | Mortgage Broker Fee/Compensation Agreement | NA | The system updates the field value to RML | 718521_AC_05  
+                row += 1
 
-**Step 20** | Validate privilege restrictions for "Mortgage Broker Fee Agreement" and "Mortgage Broker License Type" fields | Mortgage Broker Fee/Compensation Agreement | NA | The system restricts access to these fields based on user privileges | 718521_AC_06  
+            end_row = row - 1
 
-**Step 21** | Validate the visibility of "Mortgage Broker License Type" when SubPropState = CA | Mortgage Broker Fee/Compensation Agreement | SubPropState = CA | The system displays the "Mortgage Broker License Type" dropdown when SubPropState = CA | 718521_AC_07  
+            # merge testcase id cells
+            if end_row > start_row:
+                ws.merge_cells(
+                    start_row=start_row,
+                    start_column=2,
+                    end_row=end_row,
+                    end_column=2
+                )
 
-**Step 22** | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA  
+            tc_counter += 1
 
----
+        # -------------------------------------------------
+        # OUTPUT FILE
+        # -------------------------------------------------
+        base_filename = f"Indiv_US_{user_story_id}_Test_Scripts_v1.0.xlsx"
 
-### Notes:  
-- Privilege restrictions for "Mortgage Broker Fee Agreement" and "Mortgage Broker License Type" must be validated using appropriate user roles.  
-- SubPropState = CA logic must be confirmed with development for exact implementation.
+        output_path = os.path.join(self.output_dir, base_filename)
+
+        wb.save(output_path)
+
+        logger.info(f"\nExcel Generated at:\n{output_path}")
+
+        state["excel_output"] = output_path
+
+        return state
