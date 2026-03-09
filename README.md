@@ -1,297 +1,262 @@
-import os
-import re
-import base64
-import logging
-import requests
-
-from bs4 import BeautifulSoup
-from PIL import Image
-from dotenv import load_dotenv
-from openai import AzureOpenAI
-
-from config.config import get
-
-logger = logging.getLogger(__name__)
-
-load_dotenv()
-
-ADO_PAT = os.getenv("ADO_PAT")
-
-MAX_WIDTH = 1200
-JPEG_QUALITY = 85
+=====================================
+ADO INTELLIGENCE ANALYSIS OUTPUT
+=====================================
 
 
-class ImageExtractor:
+Story ID: 718521
+Title: Modernized Audit additions - DIS > Generate Disclosures Fields
+Timestamp: 20260309_143508
+------------ DESCRIPTION ------------
+Business would like to add the following fields to Modernized Audit. 
 
-    def __init__(self):
+Description 
+H2O UI Location 
+HPML 
+DIS > Generate Disclosures > Generate Disclosure 
+Intent to Proceed 
+DIS > Generate Disclosures 
+Mortgage Broker Fee Agreement
 
-        self.client = AzureOpenAI(
-            api_key=get("AZURE_OPENAI_KEY"),
-            azure_endpoint=get("AZURE_OPENAI_ENDPOINT"),
-            api_version=get("AZURE_OPENAI_API_VERSION"),
-        )
+DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement 
+Mortgage Broker License Type 
+DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement 
 
-        self.model = get("CHAT_MODEL")
+HPML -  
 
-    # ------------------------------------------------
-    # CLEAN HTML
-    # ------------------------------------------------
-    def clean_html(self, html):
+Intent to Proceed -  
 
-        soup = BeautifulSoup(html, "html.parser")
+Mortgage Broker Fee/Compensation Agreement -  
 
-        for tag in soup(["script", "style"]):
-            tag.decompose()
+*Appears to be privilege restricted 
 
-        text = soup.get_text("\n")
+Mortgage Broker License Type -  
 
-        text = re.sub(r"\n\s*\n", "\n\n", text)
-        text = re.sub(r"[ \t]+", " ", text)
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.  
+**Also appears to be privilege restricted
+------ ACCEPTANCE CRITERIA ----------
+Business would like to add the following fields to Modernized Audit.DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -Intent to Proceed -Mortgage Broker Fee/Compensation Agreement -*Appears to be privilege restrictedMortgage Broker License Type -*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.**Also appears to be privilege restricted
 
-        return text.strip()
+Business would like to add the following fields to Modernized Audit.
 
-    # ------------------------------------------------
-    # FORMAT DESCRIPTION
-    # ------------------------------------------------
-    def format_description(self, text):
+DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement
 
-        text = text.replace(" As a user", "\nAs a user")
-        text = text.replace(" I want", "\nI want")
-        text = text.replace(" So that", "\nSo that")
+HPML -
 
-        return text.strip()
-
-    # ------------------------------------------------
-    # FORMAT ACCEPTANCE CRITERIA
-    # ------------------------------------------------
-    def format_acceptance_criteria(self, text):
-
-        replacements = [
-            (" Given ", "\nGiven "),
-            (" When ", "\nWhen "),
-            (" Then ", "\nThen "),
-            (" And ", "\nAnd "),
-            (" AC1:", "\nAC1:"),
-            (" AC2:", "\n\nAC2:")
-        ]
-
-        for old, new in replacements:
-            text = text.replace(old, new)
-
-        return text.strip()
-
-    # ------------------------------------------------
-    # DOWNLOAD IMAGE
-    # ------------------------------------------------
-    def download_image(self, url, save_path):
-
-        try:
-
-            response = requests.get(url, auth=("", ADO_PAT))
-            response.raise_for_status()
-
-            with open(save_path, "wb") as f:
-                f.write(response.content)
-
-            return save_path
-
-        except Exception as e:
-
-            logger.error(f"Image download failed: {e}")
-            return ""
-
-    # ------------------------------------------------
-    # RESIZE IMAGE
-    # ------------------------------------------------
-    def resize_image(self, image_path):
-
-        try:
-
-            with Image.open(image_path) as img:
-
-                width, height = img.size
-
-                if width <= MAX_WIDTH:
-                    return image_path
-
-                ratio = MAX_WIDTH / float(width)
-                new_height = int(height * ratio)
-
-                resized = img.resize((MAX_WIDTH, new_height), Image.LANCZOS)
-
-                base, _ = os.path.splitext(image_path)
-
-                resized_path = base + "_resized.jpg"
-
-                resized.convert("RGB").save(
-                    resized_path,
-                    "JPEG",
-                    quality=JPEG_QUALITY,
-                    optimize=True
-                )
-
-                return resized_path
-
-        except Exception as e:
-
-            logger.error(f"Resize failed: {e}")
-            return image_path
-
-    # ------------------------------------------------
-    # BASE64 ENCODE IMAGE
-    # ------------------------------------------------
-    def encode_image(self, path):
-
-        try:
-
-            with open(path, "rb") as f:
-                return base64.b64encode(f.read()).decode("utf-8")
-
-        except Exception as e:
-
-            logger.error(f"Base64 encode failed: {e}")
-            return ""
-
-    # ------------------------------------------------
-    # ANALYZE IMAGE WITH LLM
-    # ------------------------------------------------
-    def analyze_image(self, image_path, description, acceptance_criteria):
-
-        encoded = self.encode_image(image_path)
-
-        prompt = f"""
-You are a QA automation analyst analyzing a mortgage application UI screenshot.
-
-User Story Description:
-{description}
-
-Acceptance Criteria:
-{acceptance_criteria}
-
-Your task:
-Extract UI elements visible in the screenshot that relate to the acceptance criteria.
-
-Focus especially on these fields if present:
-- HPML
-- Intent to Proceed
-- Mortgage Broker Fee/Compensation Agreement
-- Mortgage Broker License Type
-
-Instructions:
-
-1. Identify the SECTION name.
-2. Extract the fields under that section.
-3. Capture the exact UI label text.
-4. Identify field type:
-   - Dropdown
-   - Checkbox
-   - Textbox
-5. For dropdowns list all visible values.
-6. For checkboxes return the state: Checked or Unchecked.
-7. Identify any buttons visible.
-
-Do NOT hallucinate fields not present in the screenshot.
-
-Return strictly in this format:
-
+[Image Analysis]
 =====================================
 IMAGE ANALYSIS OUTPUT
 =====================================
 
-Section: <Section Name>
+Section: Generate Disclosure
 
 Fields:
 
-1. <Field Name>
-   UI Label:
-   <Label>
+1. Intent to Proceed  
+   UI Label:  
+   Intent to Proceed  
 
-   Field Type:
-   <Dropdown / Checkbox / Textbox>
+   Field Type:  
+   Checkbox  
 
-   Values:
-   - <Option>
+   Values:  
+   - Unchecked  
 
-Buttons:
-- <Button Name>
+2. Allow Appraisal Order  
+   UI Label:  
+   Allow Appraisal Order  
+
+   Field Type:  
+   Checkbox  
+
+   Values:  
+   - Unchecked  
+
+3. Bypass Compliance Check  
+   UI Label:  
+   Bypass Compliance Check  
+
+   Field Type:  
+   Checkbox  
+
+   Values:  
+   - Unchecked  
+
+4. Ignore 3rd Party Fee Check  
+   UI Label:  
+   Ignore 3rd Party Fee Check  
+
+   Field Type:  
+   Checkbox  
+
+   Values:  
+   - Unchecked  
+
+5. Title Fees Verified after LA Increase  
+   UI Label:  
+   Title Fees Verified after LA Increase  
+
+   Field Type:  
+   Checkbox  
+
+   Values:  
+   - Unchecked  
+
+6. Ignore Fee Quote Data Validations  
+   UI Label:  
+   Ignore Fee Quote Data Validations  
+
+   Field Type:  
+   Checkbox  
+
+   Values:  
+   - Checked  
+
+7. Higher Priced Mortgage Loan  
+   UI Label:  
+   Higher Priced Mortgage Loan  
+
+   Field Type:  
+   Dropdown  
+
+   Values:  
+   - Select...  
+   - Yes  
+   - No  
+
+8. HPML DV Override  
+   UI Label:  
+   HPML DV Override  
+
+   Field Type:  
+   Checkbox  
+
+   Values:  
+   - Unchecked  
+
+Buttons:  
+- None visible  
 
 =====================================
 END OF IMAGE ANALYSIS
 =====================================
-"""
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Analyze the UI screenshot and extract fields."
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{encoded}"
-                            }
-                        }
-                    ]
-                }
-            ]
-        )
+Intent to Proceed -
 
-        return response.choices[0].message.content
+[Image Analysis]
+=====================================
+IMAGE ANALYSIS OUTPUT
+=====================================
 
-    # ------------------------------------------------
-    # PROCESS HTML
-    # ------------------------------------------------
-    def process_html(self, html, story_id):
+Section: Generate Disclosure
 
-        soup = BeautifulSoup(html, "html.parser")
+Fields:
 
-        img_folder = os.path.join("downloads", str(story_id))
-        os.makedirs(img_folder, exist_ok=True)
+1. Intent to Proceed
+   UI Label:
+   Intent to Proceed
 
-        blocks = []
-        img_index = 1
+   Field Type:
+   Checkbox
 
-        for element in soup.descendants:
+   Values:
+   - Unchecked
 
-            if element.name in ["p", "div", "li", "span"]:
+Buttons:
+- None
 
-                text = element.get_text(strip=True)
+=====================================
+END OF IMAGE ANALYSIS
+=====================================
 
-                if text:
-                    blocks.append({
-                        "type": "text",
-                        "value": text
-                    })
+Mortgage Broker Fee/Compensation Agreement -
 
-            elif element.name == "img":
+[Image Analysis]
+=====================================
+IMAGE ANALYSIS OUTPUT
+=====================================
 
-                src = element.get("src")
+Section: Mortgage Broker Fee/Compensation Agreement
 
-                if src:
+Fields:
 
-                    save_path = os.path.join(
-                        img_folder,
-                        f"image_{img_index}.png"
-                    )
+1. Field Name:
+   Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?
 
-                    downloaded = self.download_image(src, save_path)
+   UI Label:
+   Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?
 
-                    if downloaded:
+   Field Type:
+   Dropdown
 
-                        resized = self.resize_image(downloaded)
+   Values:
+   - Select...
+   - Yes
+   - No
 
-                        blocks.append({
-                            "type": "image",
-                            "path": resized
-                        })
+Buttons:
+- None
 
-                    img_index += 1
+=====================================
 
-        return blocks
+Section: Manage Additional Broker Disclosures
+
+Fields:
+- None
+
+Buttons:
+- Manage Broker Disclosures
+
+=====================================
+END OF IMAGE ANALYSIS
+=====================================
+
+*Appears to be privilege restricted
+
+Mortgage Broker License Type -
+
+[Image Analysis]
+=====================================
+IMAGE ANALYSIS OUTPUT
+=====================================
+
+Section: Mortgage Broker Fee/Compensation Agreement
+
+Fields:
+
+1. Field Name:
+   Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?
+   UI Label:
+   Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?
+
+   Field Type:
+   Dropdown
+
+   Values:
+   - Yes
+   - No
+
+2. Field Name:
+   Under which license will you originate this loan?
+   UI Label:
+   Under which license will you originate this loan?
+
+   Field Type:
+   Dropdown
+
+   Values:
+   - Select...
+   - CFL
+   - DRE
+   - RML
+
+Buttons:
+- Manage Broker Disclosures
+
+=====================================
+END OF IMAGE ANALYSIS
+=====================================
+
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.
+
+**Also appears to be privilege restricted
+
