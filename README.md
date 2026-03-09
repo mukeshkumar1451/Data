@@ -84,7 +84,7 @@ class ImageExtractor:
         return text.strip()
 
     # ------------------------------------------------
-    # DOWNLOAD IMAGE
+    # DOWNLOAD IMAGE FROM ADO
     # ------------------------------------------------
     def download_image(self, url, save_path):
 
@@ -104,7 +104,7 @@ class ImageExtractor:
             return ""
 
     # ------------------------------------------------
-    # RESIZE IMAGE
+    # RESIZE IMAGE FOR LLM
     # ------------------------------------------------
     def resize_image(self, image_path):
 
@@ -123,7 +123,6 @@ class ImageExtractor:
                 resized = img.resize((MAX_WIDTH, new_height), Image.LANCZOS)
 
                 base, _ = os.path.splitext(image_path)
-
                 resized_path = base + "_resized.jpg"
 
                 resized.convert("RGB").save(
@@ -156,29 +155,29 @@ class ImageExtractor:
             return ""
 
     # ------------------------------------------------
-    # ANALYZE IMAGE
+    # ANALYZE IMAGE USING GPT VISION
     # ------------------------------------------------
     def analyze_image(self, image_path, description):
 
         encoded = self.encode_image(image_path)
 
         prompt = f"""
-        You are a QA Analyst analyzing a UI screenshot.
+You are a QA analyst analyzing a mortgage LOS UI screenshot.
 
-        User Story Context:
-        {description}
+User Story Context:
+{description}
 
-        Extract UI elements from the screenshot.
+Extract UI information.
 
-        Return ONLY in this format:
+Return ONLY in this structure:
 
-        Section:
-        Fields:
-        Buttons:
-        Values:
+Section:
+Fields:
+Buttons:
+Values:
 
-        Do not include explanations.
-        """
+Do not explain anything.
+"""
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -203,9 +202,9 @@ class ImageExtractor:
         return response.choices[0].message.content
 
     # ------------------------------------------------
-    # PROCESS HTML
+    # PROCESS HTML AND EXTRACT IMAGES + TEXT
     # ------------------------------------------------
-    def process_html(self, html, story_id):
+    def process_html(self, html, story_id, description):
 
         soup = BeautifulSoup(html, "html.parser")
 
@@ -215,9 +214,14 @@ class ImageExtractor:
         blocks = []
         img_index = 1
 
-        for element in soup.descendants:
+        elements = soup.find_all(["p", "div", "li", "span", "img"])
 
-            if element.name in ["p", "div", "li", "span"]:
+        for element in elements:
+
+            # -------------------------
+            # TEXT BLOCK
+            # -------------------------
+            if element.name != "img":
 
                 text = element.get_text(strip=True)
 
@@ -227,26 +231,62 @@ class ImageExtractor:
                         "value": text
                     })
 
-            elif element.name == "img":
+            # -------------------------
+            # IMAGE BLOCK
+            # -------------------------
+            else:
 
                 src = element.get("src")
 
-                if src:
+                if not src:
+                    continue
 
-                    save_path = os.path.join(
-                        img_folder,
-                        f"image_{img_index}.png"
-                    )
+                save_path = os.path.join(
+                    img_folder,
+                    f"image_{img_index}.png"
+                )
 
-                    downloaded = self.download_image(src, save_path)
+                downloaded = self.download_image(src, save_path)
 
-                    if downloaded:
+                if not downloaded:
+                    continue
 
-                        blocks.append({
-                            "type": "image",
-                            "path": downloaded
-                        })
+                resized = self.resize_image(downloaded)
 
-                    img_index += 1
+                logger.info(f"Analyzing image {img_index}")
+
+                try:
+
+                    analysis = self.analyze_image(resized, description)
+
+                    blocks.append({
+                        "type": "image_analysis",
+                        "value": analysis
+                    })
+
+                except Exception as e:
+
+                    logger.error(f"Image analysis failed: {e}")
+
+                img_index += 1
 
         return blocks
+
+    # ------------------------------------------------
+    # CONVERT BLOCKS BACK TO TEXT
+    # ------------------------------------------------
+    def blocks_to_text(self, blocks):
+
+        output = []
+
+        for block in blocks:
+
+            if block["type"] == "text":
+                output.append(block["value"])
+
+            elif block["type"] == "image_analysis":
+
+                output.append("\n[Image Analysis]\n")
+                output.append(block["value"])
+
+        return "\n".join(output)
