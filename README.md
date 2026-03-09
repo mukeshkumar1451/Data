@@ -1,145 +1,116 @@
-Role:
-You are a Senior QA Reviewer responsible for validating generated LOS test cases.
-
-Your task is to review the generated test cases against the provided user story, description, acceptance criteria, and historical workflow context.
-
-IMPORTANT REVIEW RULES:
-1. Only evaluate rules that are explicitly present in the User Story, Description, or Acceptance Criteria.
-2. Do NOT invent additional business rules.
-3. Do NOT infer new requirements from historical data.
-4. Historical context must be used ONLY to validate navigation flow or screen transitions.
-5. Do NOT add new test steps or rewrite the test cases. This task is ONLY for reviewing.
-
-Inputs Provided:
-- User Story Title
-- Description
-- Acceptance Criteria
-- Generated Test Cases
-- Historical Workflow Context
-
-Your Review Must Evaluate the Following:
-
---------------------------------------------------
-1. Context Usage Review
---------------------------------------------------
-Verify that the generated test cases properly utilize the provided context.
-
-Check the following:
-• Navigation flow matches historical workflow where applicable.
-• Screens referenced in the test cases exist in the historical workflow.
-• No unrelated historical logic is incorrectly introduced.
-
-If navigation differs from the historical flow, identify the specific step where the deviation occurs.
-
---------------------------------------------------
-2. User Story Coverage Review
---------------------------------------------------
-Evaluate whether the generated test cases cover the acceptance criteria.
-
-For each acceptance criterion:
-• Identify which test steps validate it.
-• If an acceptance criterion is missing validation, explicitly state it.
-
-Example format:
-
-AC1 → Covered in Steps 3–5  
-AC2 → Covered in Steps 6–8  
-AC3 → NOT COVERED
-
---------------------------------------------------
-3. Test Case Quality Review
---------------------------------------------------
-Evaluate the overall quality of the generated test cases.
-
-Check the following:
-
-Navigation:
-• Are navigation steps logical and consistent with LOS workflow?
-
-Field Validation:
-• Are fields from the acceptance criteria validated?
-• Are correct field types referenced (checkbox, dropdown, textbox, etc.)?
-
-Expected Results:
-• Do expected results clearly describe system behavior?
-• Are results deterministic and verifiable?
-
-Test Flow:
-• Does the flow logically move between screens?
-• Are steps atomic and clear?
-
-Identify any:
-• Ambiguous steps
-• Missing validations
-• Incorrect navigation
-• Redundant steps
-
---------------------------------------------------
-4. Coverage Calculation
---------------------------------------------------
-Calculate acceptance criteria coverage using this formula:
-
-Coverage % = (Number of AC validated / Total AC) × 100
-
-Example:
-AC Covered = 3
-Total AC = 4
-Coverage = 75%
-
---------------------------------------------------
-5. Review Status
---------------------------------------------------
-Determine final status:
-
-If ALL acceptance criteria are validated AND no major navigation errors exist:
-
-REVIEW STATUS: PASSED
-
-If any acceptance criteria are missing OR major gaps exist:
-
-REVIEW STATUS: FAILED
-
---------------------------------------------------
-Output Format
---------------------------------------------------
-
-### Test Case Review Report
-
-Context Usage Review
-<analysis>
-
-User Story Coverage Review
-<AC mapping analysis>
-
-Test Case Quality Review
-<quality findings>
-
-Coverage Percentage
-<calculated value>
-
-Improvement Suggestions
-<list of gaps or improvements>
-
-REVIEW STATUS: PASSED or FAILED
+=====================================
+ADO INTELLIGENCE ANALYSIS OUTPUT
+=====================================
 
 
---------------------------------------------------
-User Story
---------------------------------------------------
-{user_story}
+Story ID: 718521
+Title: Modernized Audit additions - DIS > Generate Disclosures Fields
+Timestamp: 20260309_122419
+------------ DESCRIPTION ------------
+Business would like to add the following fields to Modernized Audit. Description H2O UI Location HPML DIS > Generate Disclosures > Generate Disclosure Intent to Proceed DIS > Generate Disclosures Mortgage Broker Fee Agreement DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement Mortgage Broker License Type DIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement HPML - Intent to Proceed - Mortgage Broker Fee/Compensation Agreement - *Appears to be privilege restricted Mortgage Broker License Type - *Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic. **Also appears to be privilege restricted
+------ ACCEPTANCE CRITERIA ----------
+Business would like to add the following fields to Modernized Audit.DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementHPML -Intent to Proceed -Mortgage Broker Fee/Compensation Agreement -*Appears to be privilege restrictedMortgage Broker License Type -*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.**Also appears to be privilege restricted
 
-Description
---------------------------------------------------
-{description}
+Business would like to add the following fields to Modernized Audit.
 
-Acceptance Criteria
---------------------------------------------------
-{acceptance_criteria}
+DescriptionH2O UI LocationHPMLDIS > Generate Disclosures > Generate DisclosureIntent to ProceedDIS > Generate DisclosuresMortgage Broker Fee AgreementDIS > Generate Disclosures > Mortgage Broker Fee/Compensation AgreementMortgage Broker License TypeDIS > Generate Disclosures > Mortgage Broker Fee/Compensation Agreement
 
-Generated Test Cases
---------------------------------------------------
-{generated_testcases}
+HPML -
 
-Historical Workflow Context
---------------------------------------------------
-{historical_data}
+[Image Analysis]
+Section:  
+Generate Disclosure  
+
+Fields:  
+- Intent to Proceed (Checkbox)  
+- Allow Appraisal Order (Checkbox)  
+- Bypass Compliance Check (Checkbox)  
+- Ignore 3rd Party Fee Check (Checkbox)  
+- Title Fees Verified after LA Increase (Checkbox)  
+- Ignore Fee Quote Data Validations (Checkbox)  
+- Higher Priced Mortgage Loan (Dropdown)  
+- HPML DV Override (Checkbox)  
+
+Buttons:  
+- Send Via (Dropdown)  
+
+Values:  
+- Higher Priced Mortgage Loan: Select..., Yes, No  
+- Send Via: eSign  
+
+Intent to Proceed -
+
+[Image Analysis]
+Section:  
+Generate Disclosure  
+
+Fields:  
+- Intent to Proceed (Checkbox)  
+
+Buttons:  
+None  
+
+Values:  
+None  
+
+Mortgage Broker Fee/Compensation Agreement -
+
+[Image Analysis]
+Section:  
+Mortgage Broker Fee/Compensation Agreement  
+
+Fields:  
+- Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package?  
+
+Buttons:  
+- Dropdown menu (Select, Yes, No)  
+
+Values:  
+- Select  
+- Yes  
+- No  
+
+Section:  
+Manage Additional Broker Disclosures  
+
+Fields:  
+- This functionality provides the ability to:  
+  - Append additional disclosures to the Newrez LE Package  
+
+Buttons:  
+- Manage Broker Disclosures  
+
+*Appears to be privilege restricted
+
+Mortgage Broker License Type -
+
+[Image Analysis]
+Section:  
+Mortgage Broker Fee/Compensation Agreement  
+
+Fields:  
+- Do you want to include Mortgage Broker Fee/Compensation Agreement in the Newrez LE Package? (Dropdown: Yes/No)  
+- Under which license will you originate this loan? (Dropdown: Select..., CFL, DRE, RML)  
+
+Buttons:  
+- None  
+
+Values:  
+- Disclosures to be appended to Newrez LE Package: 0  
+
+Section:  
+Manage Additional Broker Disclosures  
+
+Fields:  
+- None  
+
+Buttons:  
+- Manage Broker Disclosures  
+
+Values:  
+- None  
+
+*Unsure of exact logic to get this license section to appear but it looks like it is appears when SubPropState = CA. Dev to advise of logic.
+
+**Also appears to be privilege restricted
+
