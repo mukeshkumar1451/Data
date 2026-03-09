@@ -1,56 +1,25 @@
-prompt = f"""
-You are a QA automation analyst analyzing a UI screenshot.
+Expected Output Format
 
-User Story Description:
-{description}
+Test Case ID / Test Script ID: {user_story_id}_{channel}_01
+Test Scenario Id: {user_story_id}_SC_01
+Test Scenario Description: One sentence describing the business objective (max 25 words)
+Test Script Description: 2–3 sentences summarizing validations performed
+Pre-Condition & Assumptions: Refer to provided precondition context
 
-Acceptance Criteria:
-{acceptance_criteria}
+Test Step No. | Test Step Description | Screen Name | Test Data | Expected Results | Requirement Mapping
 
-Your task is to analyze the screenshot and extract UI elements that correspond to fields mentioned in the Acceptance Criteria.
+Step 01 | Log in to H2O-A in UAT environment | Login | Valid UAT credentials | The system authenticates the user and displays the dashboard | NA
 
-Instructions:
+Step 02 | Open the loan created as per precondition | Loan Summary | Loan Number from precondition | The system loads the loan in editable state | NA
 
-1. Identify field names mentioned in the Acceptance Criteria.
-2. Look for those fields in the screenshot.
-3. Extract only the matching UI elements.
-4. Ignore unrelated UI fields that are not mentioned in the Acceptance Criteria.
+Generate steps to validate all acceptance criteria.
 
-For each detected field extract:
-- Section name
-- Field name
-- UI label
-- Field type (Dropdown / Checkbox / Textbox)
-- Dropdown options if available
-- Checkbox state if applicable
-- Buttons present in the section
+Expected Results must start with "The system".
 
-If UI labels are long sentences, map them to the closest logical field name mentioned in the Acceptance Criteria.
+Requirement Mapping:
+Business validation steps must map to {user_story_id}_AC_XX.
 
-Return strictly in this format:
+Final Step:
+Step XX | Log out from H2O-A | Application Header | NA | The system terminates the session and redirects to the login page | NA
 
-=====================================
-IMAGE ANALYSIS OUTPUT
-=====================================
-
-Section: <Section Name>
-
-Fields:
-
-1. <Field Name>
-   UI Label:
-   <Label>
-
-   Field Type:
-   <Dropdown / Checkbox / Textbox>
-
-   Values:
-   - <Option>
-
-Buttons:
-- <Button Name>
-
-=====================================
-END OF IMAGE ANALYSIS
-=====================================
-"""
+---
